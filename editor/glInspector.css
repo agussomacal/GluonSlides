@@ -1,0 +1,130 @@
+/* ============================================================
+   editor/glInspector.css — Styles for the .gl context menu and
+   read-only source inspector drawer.
+   ============================================================ */
+
+#gl-context-menu {
+    position: fixed;
+    z-index: 9999;
+    min-width: 180px;
+    background: var(--bg-panel, #1e293b);
+    color: var(--text-main, #f8fafc);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 6px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+    padding: 4px;
+    display: none;
+    font-size: 13px;
+}
+
+#gl-context-menu.open {
+    display: block;
+}
+
+#gl-context-menu button {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    color: inherit;
+    border: none;
+    border-radius: 4px;
+    padding: 7px 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#gl-context-menu button:hover {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+#gl-inspector-drawer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 260px;
+    z-index: 900;
+    display: none;
+    flex-direction: column;
+    background: var(--bg-panel, #0f172a);
+    color: var(--text-main, #e2e8f0);
+    border-top: 1px solid var(--border-color, #334155);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+}
+
+#gl-inspector-drawer.open {
+    display: flex;
+}
+
+.gl-inspector-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-color, #334155);
+    background: rgba(15, 23, 42, 0.65);
+    user-select: none;
+}
+
+.gl-inspector-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: monospace;
+}
+
+.gl-inspector-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.gl-inspector-actions button {
+    background: rgba(148, 163, 184, 0.15);
+    color: inherit;
+    border: 1px solid var(--border-color, #475569);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.gl-inspector-actions button:hover {
+    background: rgba(148, 163, 184, 0.28);
+}
+
+.gl-inspector-body {
+    flex: 1;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    padding: 6px 0;
+}
+
+.gl-line {
+    display: flex;
+    padding: 0 12px;
+    white-space: pre;
+}
+
+.gl-line-num {
+    width: 44px;
+    flex-shrink: 0;
+    color: #64748b;
+    user-select: none;
+    text-align: right;
+    padding-right: 12px;
+}
+
+.gl-line-code {
+    flex: 1;
+}
+
+.gl-line.highlighted {
+    background: rgba(59, 130, 246, 0.24);
+    outline: 1px solid rgba(96, 165, 250, 0.65);
+}
