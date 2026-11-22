@@ -19,11 +19,12 @@ import {initKeyboardShortcuts} from './core/clipboard.js';
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
 import {hydrateFigureElements} from './elements/figure/figure.js';
+
 // Editor + export modules.
 import {
     renderEditor, addElement, addSlide, selectSlide, renameCurrentSlide, updateThumbnailLive,
 } from './editor/editor.js';
-import {initGlInspector, openGlInspector, closeGlInspector} from './editor/glInspector.js';
+import {initGlInspector, openGlInspector, closeGlInspector, attachGlInspectorToRender} from './editor/glInspector.js';
 import {projectExportHtml, projectExportPdf} from './export/index.js';
 
 // ---------- View switching ----------
@@ -394,12 +395,14 @@ Object.assign(window, {
     renameProject,
     openMacrosModal, closeMacrosModal, saveMacros,
     directExport, projectExportHtml, projectExportPdf,
+    openGlInspector, closeGlInspector,
     ElementRegistry,
 });
 
 // ---------- Startup ----------
 
-bindMarkDirtyAndRender(renderEditor);
+const syncedRenderEditor = attachGlInspectorToRender(renderEditor);
+bindMarkDirtyAndRender(syncedRenderEditor);
 
 applyThemeToggle();
 syncGridSizeSelect();

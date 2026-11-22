@@ -4,7 +4,7 @@
 // in ElementRegistry, with indented block bodies.
 // ============================================================
 
-import { ElementRegistry } from '../registry.js';
+import {ElementRegistry} from '../registry.js';
 
 export const GL_FORMAT_VERSION = 2;
 
@@ -104,28 +104,73 @@ function unindentBodyLine(line) {
     return s.startsWith('\\.') ? s.slice(1) : s;
 }
 
+function normalizeUniqueIds(project) {
+    let maxId = Math.max(1, Number(project.nextId) || 1);
+    const seenSlideIds = new Set();
+    const seenElementIds = new Set();
+
+    const allocFreshId = () => {
+        const id = maxId;
+        maxId += 1;
+        return id;
+    };
+
+    for (const slide of (project.slides || [])) {
+        const rawSlideId = Number(slide.id);
+        let slideId = Number.isInteger(rawSlideId) && rawSlideId > 0 ? rawSlideId : null;
+        if (slideId === null || seenSlideIds.has(slideId)) {
+            slideId = allocFreshId();
+        }
+        slide.id = slideId;
+        seenSlideIds.add(slideId);
+        if (slideId >= maxId) maxId = slideId + 1;
+
+        for (const el of (slide.elements || [])) {
+            const rawElId = Number(el.id);
+            let elId = Number.isInteger(rawElId) && rawElId > 0 ? rawElId : null;
+            if (elId === null || seenElementIds.has(elId)) {
+                elId = allocFreshId();
+            }
+            el.id = elId;
+            seenElementIds.add(elId);
+            if (elId >= maxId) maxId = elId + 1;
+        }
+    }
+
+    project.nextId = maxId;
+}
+
 // ---------- serializer ----------
 
 export function serializeGl(project) {
+    const working = {
+        ...project,
+        slides: (project.slides || []).map(s => ({
+            ...s,
+            elements: (s.elements || []).map(el => ({...el})),
+        })),
+    };
+    normalizeUniqueIds(working);
+
     const lines = [];
     lines.push('# Gluon slide project — saved by Slide Studio');
     lines.push('# Indented lines after an .element.* directive form its body.');
 
     const headerParams = {
         version: GL_FORMAT_VERSION,
-        width: project.slideWidth ?? 1920,
-        height: project.slideHeight ?? 1080,
-        grid: project.gridSize ?? 20,
-        darkmode: project.isDarkMode ? 'yes' : 'no',
-        nextid: project.nextId ?? 1,
+        width: working.slideWidth ?? 1920,
+        height: working.slideHeight ?? 1080,
+        grid: working.gridSize ?? 20,
+        darkmode: working.isDarkMode ? 'yes' : 'no',
+        nextid: working.nextId ?? 1,
     };
-    const headerArgs = project.projectName ? ` {${encodeBraceArg(project.projectName)}}` : '';
+    const headerArgs = working.projectName ? ` {${encodeBraceArg(working.projectName)}}` : '';
     const header = PROJECT_PARAMS
         .map(k => `${k}:${encodeParamValue(headerParams[k])}`)
         .join(' ');
     lines.push(`.project${headerArgs} ${header}`);
 
-    (project.slides || []).forEach(slide => {
+    (working.slides || []).forEach(slide => {
         const title = slide.title ? ` {${encodeBraceArg(slide.title)}}` : '';
         lines.push('');
         lines.push(`.slide${title} id:${encodeParamValue(slide.id ?? '')}`);
@@ -274,6 +319,8 @@ export function parseGl(text) {
             .join(' | ');
         throw new Error(`No .slide found in project file. Seen lines: ${preview || '(none)'}`);
     }
+
+    normalizeUniqueIds(project);
     return project;
 }
 
@@ -306,16 +353,19 @@ function flushBody(element, bodyLines) {
 
 function extractBraceArg(rest) {
     rest = rest.replace(/^\s+/, '');
-    if (!rest.startsWith('{')) return { value: '', rawLength: 0 };
+    if (!rest.startsWith('{')) return {value: '', rawLength: 0};
     let depth = 0;
     for (let i = 0; i < rest.length; i++) {
         const ch = rest[i];
-        if (ch === '\\') { i++; continue; }
+        if (ch === '\\') {
+            i++;
+            continue;
+        }
         if (ch === '{') depth++;
         else if (ch === '}') {
             depth--;
             if (depth === 0) {
-                return { value: decodeBraceArg(rest.slice(1, i)), rawLength: i + 1 };
+                return {value: decodeBraceArg(rest.slice(1, i)), rawLength: i + 1};
             }
         }
     }
@@ -347,7 +397,7 @@ function applyProjectParams(project, name, params) {
 
 function buildElement(type, params) {
     const rawId = params.id !== undefined && params.id !== '' ? Number(params.id) : NaN;
-    const el = { type, id: Number.isFinite(rawId) ? rawId : null };
+    const el = {type, id: Number.isFinite(rawId) ? rawId : null};
     const spec = getElementGlSpec(type);
 
     const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => k !== 'id');
@@ -373,3 +423,4 @@ export function looksLikeGl(content) {
     }
     return false;
 }
+
