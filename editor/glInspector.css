@@ -1,6 +1,6 @@
 /* ============================================================
-   editor/glInspector.css — Styles for the .gl context menu and
-   bidirectional source inspector drawer.
+   editor/glInspector.css — Styles for the .gl context menu,
+   bidirectional source inspector drawer, and syntax tokens.
    ============================================================ */
 
 #gl-context-menu {
@@ -40,6 +40,12 @@
 }
 
 #gl-inspector-drawer {
+    --gl-mono: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    --gl-font-size: 13px;
+    --gl-line-height: 20px;
+    --gl-pad-top: 10px;
+    --gl-pad-left: 14px;
+
     position: fixed;
     left: 0;
     right: 0;
@@ -48,8 +54,8 @@
     z-index: 900;
     display: none;
     flex-direction: column;
-    background: var(--bg-panel, #0f172a);
-    color: var(--text-main, #e2e8f0);
+    background: #0f172a;
+    color: #e2e8f0;
     border-top: 1px solid var(--border-color, #334155);
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
 }
@@ -66,7 +72,8 @@
     padding: 6px 12px;
     font-size: 12px;
     border-bottom: 1px solid var(--border-color, #334155);
-    background: rgba(15, 23, 42, 0.72);
+    background: #0b1120;
+    color: #e2e8f0;
     user-select: none;
 }
 
@@ -74,7 +81,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: var(--gl-mono);
     min-width: 0;
 }
 
@@ -115,7 +122,7 @@
 
 .gl-inspector-actions button {
     background: rgba(148, 163, 184, 0.15);
-    color: inherit;
+    color: #e2e8f0;
     border: 1px solid var(--border-color, #475569);
     border-radius: 4px;
     padding: 3px 8px;
@@ -139,24 +146,141 @@
 
 .gl-inspector-body {
     flex: 1;
-    display: flex;
+    overflow: auto;
     min-height: 0;
-    position: relative;
+    background: #0f172a;
 }
 
-.gl-inspector-textarea {
-    flex: 1;
+.gl-line-editor {
+    min-height: 100%;
+    padding: 10px 14px;
+    font-family: var(--gl-mono);
+    font-size: var(--gl-font-size);
+    line-height: var(--gl-line-height);
+    tab-size: 2;
+    -moz-tab-size: 2;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.gl-tok-line {
+    display: block;
+    min-height: var(--gl-line-height);
+    line-height: var(--gl-line-height);
+    white-space: pre;
+    outline: none;
+}
+
+.gl-tok-line.highlighted {
+    background: rgba(59, 130, 246, 0.22);
+}
+
+#gl-inspector-drawer .gl-highlight-layer,
+#gl-inspector-drawer textarea.gl-inspector-textarea {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     width: 100%;
     height: 100%;
-    resize: none;
-    border: none;
+    margin: 0;
+    padding: var(--gl-pad-top) var(--gl-pad-left);
+    border: 0;
     outline: none;
-    padding: 10px 14px;
-    background: transparent;
-    color: inherit;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 12.5px;
-    line-height: 1.5;
+    font-family: var(--gl-mono);
+    font-size: var(--gl-font-size);
+    line-height: var(--gl-line-height);
+    font-weight: 400;
+    font-style: normal;
+    font-variant-ligatures: none;
+    font-kerning: none;
+    letter-spacing: 0px;
+    word-spacing: 0px;
     tab-size: 2;
+    -moz-tab-size: 2;
     box-sizing: border-box;
+    white-space: pre;
+    overflow: auto;
+}
+
+#gl-inspector-drawer .gl-highlight-layer {
+    pointer-events: none;
+    user-select: none;
+    z-index: 1;
+}
+
+#gl-inspector-drawer textarea.gl-inspector-textarea {
+    z-index: 2;
+    resize: none;
+    background: transparent;
+    color: transparent;
+    caret-color: #f8fafc;
+}
+
+.gl-tok-line {
+    display: block;
+    height: var(--gl-line-height);
+    line-height: var(--gl-line-height);
+}
+
+.gl-tok-line.highlighted {
+    background: rgba(59, 130, 246, 0.22);
+}
+
+/* Syntax token colors (no font-weight/italic shifts on tokens to keep monospace metrics exact) */
+.gl-tok-comment {
+    color: #64748b;
+}
+
+.gl-tok-directive-struct {
+    color: #c084fc;
+}
+
+.gl-tok-directive-element {
+    color: #38bdf8;
+}
+
+.gl-tok-brace-arg {
+    color: #fbbf24;
+}
+
+.gl-tok-param-key {
+    color: #a5b4fc;
+}
+
+.gl-tok-param-punct {
+    color: #64748b;
+}
+
+.gl-tok-param-num {
+    color: #fdba74;
+}
+
+.gl-tok-param-color {
+    color: #2dd4bf;
+}
+
+.gl-tok-param-str {
+    color: #86efac;
+}
+
+.gl-tok-param-val {
+    color: #cbd5e1;
+}
+
+.gl-tok-body-indent {
+    color: transparent;
+}
+
+.gl-tok-body-text {
+    color: #f1f5f9;
+}
+
+.gl-tok-body-math {
+    color: #f472b6;
+}
+
+.gl-tok-plain {
+    color: #e2e8f0;
 }

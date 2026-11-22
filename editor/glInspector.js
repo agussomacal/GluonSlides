@@ -1,19 +1,14 @@
 // ============================================================
 // editor/glInspector.js — Editable, bidirectionally synced .gl
-// source inspector with slide/element context menu ("Go to Gluon
-// file") and jump-to-line.
-//
-// Sync model:
-// - When the inspector is focused or has an unapplied draft, the
-//   editor listens for .gl edits (debounced + Ctrl/Cmd+Enter /
-//   Apply button) and does not overwrite the user's text/caret.
-// - When the editor is active (inspector not focused), state
-//   changes refresh the inspector and jump to the target line.
+// source inspector with per-line syntax highlighting, native
+// cursor placement, cross-line arrow/backspace navigation,
+// context menu ("Go to Gluon file"), and jump-to-line.
 // ============================================================
 
 import { state, serializeProject, markDirty, ensureElementIds } from '../core/state.js';
 import { parseGl, looksLikeGl } from '../core/gl/glformat.js';
 import { hydrateFigureElements } from '../elements/figure/figure.js';
+import { tokenizeGlDocument } from './glTokenizer.js';
 import {
     bindMarkDirtyAndRender,
     syncSlideSizeSelect,
@@ -30,6 +25,7 @@ const SLIDE_NODE_SELECTOR = '[data-slide-id], [data-slide-index], .slide-thumb, 
 const ELEMENT_NODE_SELECTOR = '[data-element-id], [data-el-id], [data-el-index], .element, .element-wrapper, .canvas-element';
 
 let currentTarget = null; // { slideId, elementId }
+let highlightedLine = -1;
 let isOpen = false;
 let initialized = false;
 let isInspectorFocused = false;
@@ -38,54 +34,292 @@ let isApplyingFromInspector = false;
 let debounceTimer = null;
 let renderEditorRef = null;
 
-// ---------- Pluggable Editor Adapter (swap for CodeMirror/syntax view later) ----------
+// ---------- Native Per-Line Highlighted Editor Adapter ----------
 
-function createTextareaAdapter(textarea) {
+function createLineEditorAdapter(host) {
+    let currentText = '';
+    let inputHandler = null;
+    let focusChangeHandler = null;
+    let keyDownHandler = null;
+    let isRenderingDom = false;
+
+    function readTextFromDom() {
+        const lineEls = [...host.querySelectorAll('.gl-tok-line')];
+        if (lineEls.length === 0) return currentText;
+        return lineEls.map(el => el.textContent.replace(/\u00A0$/, '')).join('\n');
+    }
+
+    function renderLines(text, activeLineIdx, { restoreLine = -1, restoreCol = 0 } = {}) {
+        isRenderingDom = true;
+        try {
+            const tokenizedLines = tokenizeGlDocument(text);
+            const frag = document.createDocumentFragment();
+
+            tokenizedLines.forEach((tokens, lineIdx) => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'gl-tok-line' + (lineIdx === activeLineIdx ? ' highlighted' : '');
+                lineDiv.dataset.line = String(lineIdx);
+                lineDiv.contentEditable = 'true';
+                lineDiv.spellcheck = false;
+
+                if (!tokens || tokens.length === 0) {
+                    lineDiv.appendChild(document.createTextNode('\u00A0'));
+                } else {
+                    tokens.forEach(tok => {
+                        const span = document.createElement('span');
+                        span.className = `gl-tok-${tok.type}`;
+                        span.textContent = tok.value;
+                        lineDiv.appendChild(span);
+                    });
+                }
+
+                if (lineDiv.textContent === '') {
+                    lineDiv.appendChild(document.createTextNode('\u00A0'));
+                }
+
+                frag.appendChild(lineDiv);
+            });
+
+            host.innerHTML = '';
+            host.appendChild(frag);
+
+            if (restoreLine >= 0) {
+                const targetLine = host.querySelector(`.gl-tok-line[data-line="${restoreLine}"]`);
+                if (targetLine) {
+                    targetLine.focus({ preventScroll: true });
+                    placeCaretInLine(targetLine, restoreCol);
+                    ensureLineVisible(targetLine);
+                }
+            }
+        } finally {
+            isRenderingDom = false;
+        }
+    }
+
+    function ensureLineVisible(lineEl) {
+        if (!lineEl) return;
+        const lineTop = lineEl.offsetTop;
+        const lineBottom = lineTop + lineEl.offsetHeight;
+        const viewTop = host.scrollTop;
+        const viewBottom = viewTop + host.clientHeight;
+
+        if (lineTop < viewTop + 10) {
+            host.scrollTop = Math.max(0, lineTop - 10);
+        } else if (lineBottom > viewBottom - 10) {
+            host.scrollTop = Math.max(0, lineBottom - host.clientHeight + 10);
+        }
+    }
+
+    function getCaretLineAndCol() {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return { line: -1, col: 0 };
+        const range = sel.getRangeAt(0);
+        const lineEl = range.startContainer.nodeType === Node.ELEMENT_NODE
+            ? range.startContainer.closest('.gl-tok-line')
+            : range.startContainer.parentElement?.closest('.gl-tok-line');
+        if (!lineEl || !host.contains(lineEl)) return { line: -1, col: 0 };
+
+        const lineIdx = Number(lineEl.dataset.line);
+        const preRange = document.createRange();
+        preRange.selectNodeContents(lineEl);
+        preRange.setEnd(range.startContainer, range.startOffset);
+        const col = preRange.toString().replace(/\u00A0$/, '').length;
+        return { line: Number.isFinite(lineIdx) ? lineIdx : -1, col };
+    }
+
+    function placeCaretInLine(lineEl, col = 0) {
+        const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT);
+        let remaining = Math.max(0, col);
+        let targetNode = null;
+        let targetOffset = 0;
+
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const len = node.textContent.replace(/\u00A0$/, '').length;
+            if (remaining <= len) {
+                targetNode = node;
+                targetOffset = remaining;
+                break;
+            }
+            remaining -= len;
+        }
+
+        const sel = window.getSelection();
+        const range = document.createRange();
+        if (targetNode) {
+            const maxOffset = targetNode.textContent.replace(/\u00A0$/, '').length;
+            range.setStart(targetNode, Math.min(targetOffset, maxOffset));
+        } else {
+            range.setStart(lineEl, 0);
+        }
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    function moveToLine(nextLine, preferredCol) {
+        const lines = currentText.split('\n');
+        const clamped = Math.max(0, Math.min(nextLine, lines.length - 1));
+        const targetText = lines[clamped] || '';
+        const clampedCol = Math.max(0, Math.min(preferredCol, targetText.length));
+
+        highlightedLine = clamped;
+        host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
+            el.classList.toggle('highlighted', idx === highlightedLine);
+        });
+
+        const targetEl = host.querySelector(`.gl-tok-line[data-line="${clamped}"]`);
+        if (targetEl) {
+            targetEl.focus({ preventScroll: true });
+            placeCaretInLine(targetEl, clampedCol);
+            ensureLineVisible(targetEl);
+        }
+    }
+
+    host.addEventListener('input', () => {
+        if (isRenderingDom) return;
+        const { line, col } = getCaretLineAndCol();
+        currentText = readTextFromDom();
+        if (line >= 0) {
+            highlightedLine = line;
+        }
+        renderLines(currentText, highlightedLine, { restoreLine: line, restoreCol: col });
+        if (inputHandler) inputHandler(currentText);
+    });
+
+    host.addEventListener('click', () => {
+        const { line } = getCaretLineAndCol();
+        if (line >= 0 && line !== highlightedLine) {
+            highlightedLine = line;
+            host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
+                el.classList.toggle('highlighted', idx === highlightedLine);
+            });
+        }
+    });
+
+    host.addEventListener('keydown', (e) => {
+        const { line, col } = getCaretLineAndCol();
+        const lines = currentText.split('\n');
+
+        if (line >= 0) {
+            if (e.key === 'ArrowUp' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                if (line > 0) {
+                    e.preventDefault();
+                    moveToLine(line - 1, col);
+                    return;
+                }
+            }
+
+            if (e.key === 'ArrowDown' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                if (line < lines.length - 1) {
+                    e.preventDefault();
+                    moveToLine(line + 1, col);
+                    return;
+                }
+            }
+
+            if (e.key === 'ArrowLeft' && col === 0 && line > 0 && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault();
+                moveToLine(line - 1, (lines[line - 1] || '').length);
+                return;
+            }
+
+            const currentLineStr = lines[line] || '';
+            if (e.key === 'ArrowRight' && col >= currentLineStr.length && line < lines.length - 1 && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault();
+                moveToLine(line + 1, 0);
+                return;
+            }
+
+            if (e.key === 'Backspace' && col === 0 && line > 0 && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                const prevLen = (lines[line - 1] || '').length;
+                const merged = (lines[line - 1] || '') + currentLineStr;
+                lines.splice(line - 1, 2, merged);
+                currentText = lines.join('\n');
+                highlightedLine = line - 1;
+                renderLines(currentText, highlightedLine, { restoreLine: line - 1, restoreCol: prevLen });
+                if (inputHandler) inputHandler(currentText);
+                return;
+            }
+
+            if (e.key === 'Enter' && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                const before = currentLineStr.slice(0, col);
+                const after = currentLineStr.slice(col);
+                lines.splice(line, 1, before, after);
+                currentText = lines.join('\n');
+                highlightedLine = line + 1;
+                renderLines(currentText, highlightedLine, { restoreLine: line + 1, restoreCol: 0 });
+                if (inputHandler) inputHandler(currentText);
+                return;
+            }
+        }
+
+        if (keyDownHandler) keyDownHandler(e);
+    });
+
+    host.addEventListener('focusin', () => {
+        const { line } = getCaretLineAndCol();
+        if (line >= 0) {
+            highlightedLine = line;
+            host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
+                el.classList.toggle('highlighted', idx === highlightedLine);
+            });
+        }
+        if (focusChangeHandler) focusChangeHandler(true);
+    });
+
+    host.addEventListener('focusout', (e) => {
+        if (!host.contains(e.relatedTarget)) {
+            if (focusChangeHandler) focusChangeHandler(false);
+        }
+    });
+
     return {
         getValue() {
-            return textarea.value;
+            return currentText;
         },
         setValue(text) {
-            if (textarea.value !== text) {
-                textarea.value = text;
-            }
+            currentText = String(text ?? '');
+            renderLines(currentText, highlightedLine);
+        },
+        setHighlightLine(lineIndex) {
+            highlightedLine = lineIndex;
+            renderLines(currentText, highlightedLine);
         },
         focus() {
-            textarea.focus({ preventScroll: true });
+            const firstLine = host.querySelector('.gl-tok-line');
+            if (firstLine) {
+                firstLine.focus();
+                placeCaretInLine(firstLine, 0);
+            }
         },
         isFocused() {
-            return document.activeElement === textarea;
+            return host.contains(document.activeElement);
         },
         jumpToLine(lineIndex, statusText) {
-            const text = textarea.value;
-            const lines = text.split('\n');
+            const lines = currentText.split('\n');
             const clampedLine = Math.max(0, Math.min(lineIndex, Math.max(0, lines.length - 1)));
+            highlightedLine = clampedLine;
+            renderLines(currentText, clampedLine);
 
-            let startOffset = 0;
-            for (let i = 0; i < clampedLine; i++) {
-                startOffset += lines[i].length + 1;
+            const targetRow = host.querySelector(`.gl-tok-line[data-line="${clampedLine}"]`);
+            if (targetRow) {
+                targetRow.focus();
+                placeCaretInLine(targetRow, 0);
+                host.scrollTop = Math.max(0, targetRow.offsetTop - host.clientHeight * 0.35);
             }
-            const endOffset = Math.min(text.length, startOffset + (lines[clampedLine] || '').length);
-
-            textarea.focus({ preventScroll: false });
-            textarea.setSelectionRange(startOffset, endOffset);
-
-            const computed = getComputedStyle(textarea);
-            const fontSize = parseFloat(computed.fontSize) || 12.5;
-            const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.5;
-            textarea.scrollTop = Math.max(0, clampedLine * lineHeight - textarea.clientHeight * 0.35);
-
             setStatus(statusText);
         },
         onInput(handler) {
-            textarea.addEventListener('input', () => handler(textarea.value));
+            inputHandler = handler;
         },
         onFocusChange(handler) {
-            textarea.addEventListener('focus', () => handler(true));
-            textarea.addEventListener('blur', () => handler(false));
+            focusChangeHandler = handler;
         },
         onKeyDown(handler) {
-            textarea.addEventListener('keydown', handler);
+            keyDownHandler = handler;
         },
     };
 }
@@ -155,13 +389,13 @@ function ensureDom() {
                 </div>
             </div>
             <div class="gl-inspector-body">
-                <textarea id="gl-inspector-textarea" class="gl-inspector-textarea" spellcheck="false"></textarea>
+                <div id="gl-inspector-editor" class="gl-line-editor" role="textbox" aria-multiline="true"></div>
             </div>
         `;
         document.body.appendChild(drawer);
 
-        const textarea = document.getElementById('gl-inspector-textarea');
-        adapter = createTextareaAdapter(textarea);
+        const editorHost = document.getElementById('gl-inspector-editor');
+        adapter = createLineEditorAdapter(editorHost);
 
         adapter.onFocusChange((focused) => {
             isInspectorFocused = focused;
@@ -381,6 +615,7 @@ export function jumpToGlTarget(target = {}, { focusEditor = true } = {}) {
     if (focusEditor) {
         adapter.jumpToLine(lineIdx, label);
     } else {
+        adapter.setHighlightLine(lineIdx);
         setStatus(label);
     }
 }
@@ -392,14 +627,14 @@ export function refreshGlInspectorText(target = currentTarget, { force = false, 
     ensureDom();
     currentTarget = target || currentTarget || {};
     const glText = serializeProject();
+    const lineIdx = findGlTargetLine(glText, currentTarget);
+    highlightedLine = lineIdx;
     adapter.setValue(glText);
     setModeBadge('synced', 'Editor Sync');
 
     if (jump) {
-        const lineIdx = findGlTargetLine(glText, currentTarget);
         adapter.jumpToLine(lineIdx, formatTargetLabel(currentTarget, lineIdx));
     } else {
-        const lineIdx = findGlTargetLine(glText, currentTarget);
         setStatus(formatTargetLabel(currentTarget, lineIdx));
     }
 }
@@ -580,7 +815,6 @@ export function initGlInspector() {
         }
     });
 
-    // Editor -> Inspector sync when not actively typing in the inspector
     document.addEventListener('slide-content-changed', () => {
         refreshGlInspectorText(currentTarget);
     });
@@ -589,8 +823,6 @@ export function initGlInspector() {
     });
 }
 
-// Wrap bindMarkDirtyAndRender so any editor render pass also updates
-// the inspector when the inspector is not actively being edited.
 export function attachGlInspectorToRender(originalRenderFn) {
     renderEditorRef = originalRenderFn;
     return function wrappedRenderEditor(...args) {
