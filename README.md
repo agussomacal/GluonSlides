@@ -24,7 +24,7 @@ Instead of an opaque JSON blob, a GluonSlides project is a text file heavily ins
 
 .slide {Introduction} id:1
 .element.text id:1 x:200 y:200 width:800 height:160 fontSize:42 fontFamily:sans-serif fontColor:#0f172a textAlign:center verticalAlign:center bg:transparent borderCol:transparent borderWidth:0 borderStyle:solid
-Welcome to **GluonSlides** with math: $x^2 + y^2 = r^2$
+    Welcome to **GluonSlides** with math: $x^2 + y^2 = r^2$
 
 .element.shape id:2 x:100 y:900 width:300 height:40 bg:#3366ff borderCol:#1e40af borderWidth:2 borderStyle:solid
 
@@ -38,7 +38,7 @@ The rules are simple:
 - `.project` is the header: name, canvas size, grid, theme, and the next available element ID.
 - Each `.slide {Title}` starts a slide.
 - Each `.element.<type> id:n k:v k:v ...` places an element; the parameters are exactly the properties you see in the editor's right-hand panel.
-- Lines following a `.element.text` directive are its body — Markdown and LaTeX verbatim. A figure's data URI is stored the same way, as its body.
+- Lines following a `.element.text` directive are its body — Markdown and LaTeX verbatim.
 
 Because the format is deterministic (fixed property order, stable IDs, no timestamps), the file plays nicely with `git diff`, and every position change in the GUI translates into a tiny, reviewable edit. You can also hand-edit the file and reopen it — the parser reports friendly, actionable errors.
 
@@ -50,64 +50,62 @@ The editor includes a built-in **source view with syntax highlighting** for `.gl
 
 Elements are plugins registered in a central registry (`core/registry.js`). To add one — say, a table element:
 
-1. **Create `elements/table/table.js`** and export an object implementing the element contract:
+1. **Create `elements/shape2/shape2.js`** and export an object implementing the element contract:
 
    ```javascript
-   import { state } from '../../core/state.js';
-   import { ElementRegistry } from '../../core/registry.js';
-
-   const TableElement = {
-       type: 'table',                  // unique key
-       label: 'Add Table',             // toolbar label
-       icon: '📊',                     // toolbar icon
-       className: 'element-shape',     // base CSS class for the wrapper
-
-       defaults(ctx) {                 // default properties for new elements
-           return {
-               type: 'table',
-               x: 0, y: 0,
-               width: 400, height: 300,
-               rows: 3, cols: 3,
-               bg: 'transparent', borderCol: 'transparent',
-               borderWidth: 0, borderStyle: 'solid',
-           };
-       },
-
-       renderDom(domEl, el, ctx) {     // paint onto canvas ('canvas') or thumbnail ('thumb')
-           domEl.innerHTML = `<table>...</table>`;
-       },
-
-       exportInner(el) {               // inner HTML used by HTML/PDF export
-           return `<table>...</table>`;
-       },
-
-       properties(el, elIndex) {       // extra controls for the right-hand panel
-           return `
-               <div class="prop-group">
-                   <label>Rows</label>
-                   <input type="number" class="prop-control"
-                          value="${el.rows}" oninput="updateProp('rows', this.value)">
-               </div>`;
-       },
-   };
-
-   ElementRegistry.register(TableElement);
+    // ============================================================
+    // elements/shape/shape.js — Rectangle shape element
+    // ============================================================
+    
+    import { state } from '../../core/state.js';
+    import { ElementRegistry } from '../../core/registry.js';
+    
+    const ShapeElement = {
+        type: 'shape',
+        label: 'Add Rectangle',
+        icon: '⬛',
+        className: 'element-shape',
+    
+        gl: {
+            props: ['x', 'y', 'width', 'height', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
+            numericProps: ['x', 'y', 'width', 'height', 'borderWidth'],
+            body: null,
+        },
+    
+        defaults(ctx) {
+            const scale = state.slideWidth / 1920;
+            return {
+                type: 'shape',
+                x: 0, y: 0,
+                width: Math.round(400 * scale),
+                height: Math.round(300 * scale),
+                bg: state.isDarkMode ? '#334155' : '#cbd5e1',
+                borderCol: state.isDarkMode ? '#64748b' : '#475569',
+                borderWidth: 2,
+                borderStyle: 'solid',
+            };
+        },
+    
+        renderDom(domEl, el, ctx) {
+            // Shapes are purely visual boxes — common box styles handle layout/appearance.
+        },
+    
+        exportInner(el) {
+            return '';
+        },
+    
+        properties(el, elIndex) {
+            return '';
+        },
+    };
+    
+    ElementRegistry.register(ShapeElement);
    ```
 
 2. **Register it** in `elements/index.js` — one import line:
 
    ```javascript
-   import './table/table.js';
-   ```
-
-3. **Declare its `.gl` schema** in the `SCHEMAS` table in `core/gl/glformat.js` so the new type survives save/load:
-
-   ```javascript
-   table: {
-       props: ['x', 'y', 'width', 'height', 'rows', 'cols',
-               'bg', 'borderCol', 'borderWidth', 'borderStyle'],
-       body: null, // or 'content' if the element has editable text
-   },
+   import './shape2/shape2.js';
    ```
 
 That's it. The toolbar button appears automatically (the toolbar is generated from the registry), geometry/selection/drag/resize/undo come for free from the editor core, and the element persists to `.gl` with the properties you whitelisted.
