@@ -1,14 +1,14 @@
 // ============================================================
 // core/gl/glformat.js — The Gluon (.gl) project format.
 // Generic serializer/parser driven by each element's `gl` spec
-// in ElementRegistry, with indented block bodies.
+// in ElementRegistry, with tab-indented block bodies.
 // ============================================================
 
 import {ElementRegistry} from '../registry.js';
 
 export const GL_FORMAT_VERSION = 2;
 
-const BODY_INDENT = '  ';
+const BODY_INDENT = '\t';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'nextid'];
 const DIRECTIVE_RE = /^\.(project|slide|element)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
@@ -94,10 +94,10 @@ function indentBodyLine(line) {
 
 function unindentBodyLine(line) {
     let s = line;
-    if (s.startsWith(BODY_INDENT)) {
-        s = s.slice(BODY_INDENT.length);
-    } else if (s.startsWith('\t')) {
+    if (s.startsWith('\t')) {
         s = s.slice(1);
+    } else if (s.startsWith('  ')) {
+        s = s.slice(2);
     } else if (s.startsWith(' ')) {
         s = s.replace(/^ +/, '');
     }
@@ -423,4 +423,3 @@ export function looksLikeGl(content) {
     }
     return false;
 }
-

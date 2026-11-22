@@ -2,8 +2,9 @@
 // editor/glInspector.js — Editable, bidirectionally synced .gl
 // source inspector with per-line syntax highlighting, native
 // cursor placement, cross-line navigation, Tab/Shift+Tab
-// insertion, customizable editor & highlight settings,
-// context menu ("Go to Gluon file"), and jump-to-line.
+// insertion, auto-indent on Enter, customizable editor &
+// highlight settings, context menu ("Go to Gluon file"), and
+// jump-to-line.
 // ============================================================
 
 import { state, serializeProject, markDirty, ensureElementIds } from '../core/state.js';
@@ -103,6 +104,7 @@ function saveSettings() {
 
 function applySettingsToDom() {
     const drawer = document.getElementById(INSPECTOR_ID);
+    const editorHost = document.getElementById('gl-inspector-editor');
     if (!drawer) return;
 
     const tabSize = Math.max(1, Math.min(16, Number(settings.tabSize) || 2));
@@ -115,6 +117,19 @@ function applySettingsToDom() {
     drawer.style.setProperty('--gl-tab-size', String(tabSize));
     drawer.style.setProperty('--gl-font-size', `${fontSize}px`);
     drawer.style.setProperty('--gl-line-height', `${lineHeight}px`);
+    drawer.style.tabSize = String(tabSize);
+    drawer.style.MozTabSize = String(tabSize);
+
+    if (editorHost) {
+        editorHost.style.setProperty('--gl-tab-size', String(tabSize));
+        editorHost.style.tabSize = String(tabSize);
+        editorHost.style.MozTabSize = String(tabSize);
+        editorHost.querySelectorAll('.gl-tok-line, .gl-tok-line span').forEach(node => {
+            node.style.setProperty('--gl-tab-size', String(tabSize));
+            node.style.tabSize = String(tabSize);
+            node.style.MozTabSize = String(tabSize);
+        });
+    }
 
     for (const field of TOKEN_COLOR_FIELDS) {
         const val = settings.colors[field.key] || DEFAULT_SETTINGS.colors[field.key];
@@ -196,6 +211,34 @@ function buildSettingsPopoverHtml() {
 
 // ---------- Native Per-Line Highlighted Editor Adapter ----------
 
+function cleanLineText(raw) {
+    return String(raw ?? '').replace(/\u00A0/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+}
+
+function normalizeIndentToTabs(indentStr) {
+    const tabWidth = Math.max(1, Number(settings.tabSize) || 2);
+    let out = '';
+    let spaces = 0;
+
+    for (const ch of indentStr) {
+        if (ch === '\t') {
+            out += '\t';
+            spaces = 0;
+        } else if (ch === ' ') {
+            spaces += 1;
+            if (spaces >= tabWidth) {
+                out += '\t';
+                spaces = 0;
+            }
+        }
+    }
+
+    if (spaces > 0) {
+        out += ' '.repeat(spaces);
+    }
+    return out;
+}
+
 function createLineEditorAdapter(host) {
     let currentText = '';
     let inputHandler = null;
@@ -208,7 +251,7 @@ function createLineEditorAdapter(host) {
     function readTextFromDom() {
         const lineEls = [...host.querySelectorAll('.gl-tok-line')];
         if (lineEls.length === 0) return currentText;
-        return lineEls.map(el => (el.textContent || '').replace(/\u00A0$/, '')).join('\n');
+        return lineEls.map(el => cleanLineText(el.textContent)).join('\n');
     }
 
     function ensureLineVisible(lineEl) {
@@ -241,7 +284,7 @@ function createLineEditorAdapter(host) {
             const preRange = document.createRange();
             preRange.selectNodeContents(lineEl);
             preRange.setEnd(baseNode, range.startOffset);
-            col = preRange.toString().replace(/\u00A0$/, '').length;
+            col = cleanLineText(preRange.toString()).length;
         } catch {
             col = 0;
         }
@@ -258,20 +301,29 @@ function createLineEditorAdapter(host) {
 
         while (walker.nextNode()) {
             const node = walker.currentNode;
-            const len = (node.textContent || '').replace(/\u00A0$/, '').length;
-            if (remaining <= len) {
+            const rawText = node.textContent || '';
+            const cleanedLen = cleanLineText(rawText).length;
+            if (remaining <= cleanedLen) {
                 targetNode = node;
-                targetOffset = remaining;
+                let rawIdx = 0;
+                let seenClean = 0;
+                while (rawIdx < rawText.length && seenClean < remaining) {
+                    const ch = rawText[rawIdx];
+                    if (ch !== '\u00A0' && !/[\u200B-\u200D\uFEFF]/.test(ch)) {
+                        seenClean++;
+                    }
+                    rawIdx++;
+                }
+                targetOffset = rawIdx;
                 break;
             }
-            remaining -= len;
+            remaining -= cleanedLen;
         }
 
         const sel = window.getSelection();
         const range = document.createRange();
         if (targetNode) {
-            const maxOffset = (targetNode.textContent || '').replace(/\u00A0$/, '').length;
-            range.setStart(targetNode, Math.min(targetOffset, maxOffset));
+            range.setStart(targetNode, Math.min(targetOffset, (targetNode.textContent || '').length));
         } else {
             range.setStart(lineEl, 0);
         }
@@ -285,6 +337,7 @@ function createLineEditorAdapter(host) {
         try {
             const tokenizedLines = tokenizeGlDocument(text);
             const frag = document.createDocumentFragment();
+            const tabSize = String(settings.tabSize || 2);
 
             tokenizedLines.forEach((tokens, lineIdx) => {
                 const lineDiv = document.createElement('div');
@@ -292,19 +345,26 @@ function createLineEditorAdapter(host) {
                 lineDiv.dataset.line = String(lineIdx);
                 lineDiv.contentEditable = 'true';
                 lineDiv.spellcheck = false;
+                lineDiv.style.setProperty('--gl-tab-size', tabSize);
+                lineDiv.style.tabSize = tabSize;
+                lineDiv.style.MozTabSize = tabSize;
 
-                if (!tokens || tokens.length === 0) {
-                    lineDiv.appendChild(document.createTextNode('\u00A0'));
-                } else {
+                let hasVisibleContent = false;
+                if (tokens && tokens.length > 0) {
                     tokens.forEach(tok => {
+                        if (tok.value === '') return;
                         const span = document.createElement('span');
                         span.className = `gl-tok-${tok.type}`;
                         span.textContent = tok.value;
+                        span.style.setProperty('--gl-tab-size', tabSize);
+                        span.style.tabSize = tabSize;
+                        span.style.MozTabSize = tabSize;
                         lineDiv.appendChild(span);
+                        hasVisibleContent = true;
                     });
                 }
 
-                if (lineDiv.textContent === '') {
+                if (!hasVisibleContent) {
                     lineDiv.appendChild(document.createTextNode('\u00A0'));
                 }
 
@@ -478,8 +538,15 @@ function createLineEditorAdapter(host) {
                 e.preventDefault();
                 const before = currentLineStr.slice(0, col);
                 const after = currentLineStr.slice(col);
-                lines.splice(line, 1, before, after);
-                commitText(lines.join('\n'), line + 1, 0);
+                const indentMatch = before.match(/^([ \t]+)/);
+                const isElementHeader = /^\s*\.element\.[a-zA-Z0-9_-]+(?=\s|$|\{)/.test(before);
+                const inheritedIndent = indentMatch
+                    ? normalizeIndentToTabs(indentMatch[1])
+                    : (isElementHeader ? '\t' : '');
+                const cleanedAfter = after.replace(/^[ \t]+/, '');
+                const nextLineText = `${inheritedIndent}${cleanedAfter}`;
+                lines.splice(line, 1, before, nextLineText);
+                commitText(lines.join('\n'), line + 1, inheritedIndent.length);
                 return;
             }
         }
@@ -515,6 +582,9 @@ function createLineEditorAdapter(host) {
             lastLine = 0;
             lastCol = 0;
             renderLines(currentText, highlightedLine);
+        },
+        refreshRender() {
+            renderLines(currentText, highlightedLine, { restoreLine: lastLine, restoreCol: lastCol });
         },
         setHighlightLine(lineIndex) {
             highlightedLine = lineIndex;
@@ -692,23 +762,30 @@ function ensureDom() {
             setSettingsOpen(false);
         };
 
-        document.getElementById('gl-set-tab-size').onchange = (e) => {
+        const handleTabSizeChange = (e) => {
             settings.tabSize = Number(e.target.value) || DEFAULT_SETTINGS.tabSize;
             applySettingsToDom();
             saveSettings();
+            if (adapter) adapter.refreshRender();
         };
+        document.getElementById('gl-set-tab-size').onchange = handleTabSizeChange;
+        document.getElementById('gl-set-tab-size').oninput = handleTabSizeChange;
 
-        document.getElementById('gl-set-font-size').onchange = (e) => {
+        const handleFontSizeChange = (e) => {
             settings.fontSize = Number(e.target.value) || DEFAULT_SETTINGS.fontSize;
             applySettingsToDom();
             saveSettings();
         };
+        document.getElementById('gl-set-font-size').onchange = handleFontSizeChange;
+        document.getElementById('gl-set-font-size').oninput = handleFontSizeChange;
 
-        document.getElementById('gl-set-line-height').onchange = (e) => {
+        const handleLineHeightChange = (e) => {
             settings.lineHeight = Number(e.target.value) || DEFAULT_SETTINGS.lineHeight;
             applySettingsToDom();
             saveSettings();
         };
+        document.getElementById('gl-set-line-height').onchange = handleLineHeightChange;
+        document.getElementById('gl-set-line-height').oninput = handleLineHeightChange;
 
         document.getElementById('gl-set-auto-apply').onchange = (e) => {
             settings.autoApply = !!e.target.checked;
@@ -729,6 +806,7 @@ function ensureDom() {
             settings = structuredClone(DEFAULT_SETTINGS);
             applySettingsToDom();
             saveSettings();
+            if (adapter) adapter.refreshRender();
         };
     }
 }

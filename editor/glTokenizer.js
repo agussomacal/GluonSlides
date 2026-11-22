@@ -3,7 +3,7 @@
 // text. Produces `{ type, value }` tokens for comments,
 // structural/function directives, element directives, brace args,
 // key:value parameters, and indented body content (including
-// inline/display math).
+// inline/display math) while preserving original whitespace/tabs.
 // ============================================================
 
 const STRUCTURAL_DIRECTIVES = new Set(['project', 'slide', 'function', 'var']);
@@ -117,7 +117,7 @@ function tokenizeDirectiveLine(line) {
 
 function tokenizeBodyLine(line) {
     const tokens = [];
-    const indentMatch = line.match(/^(\s+)/);
+    const indentMatch = line.match(/^([ \t]+)/);
     let idx = 0;
     if (indentMatch) {
         tokens.push({ type: 'body-indent', value: indentMatch[1] });
@@ -150,7 +150,7 @@ export function tokenizeGlLine(line, { inElementBody = false } = {}) {
         return [{ type: 'plain', value: '' }];
     }
 
-    const trimmedStart = s.replace(/^[\s\u200B-\u200D\uFEFF]+/, '');
+    const trimmedStart = s.replace(/^[ \t\u200B-\u200D\uFEFF]+/, '');
     if (!inElementBody && trimmedStart.startsWith('#')) {
         return [{ type: 'comment', value: s }];
     }
@@ -173,7 +173,7 @@ export function tokenizeGlDocument(text) {
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const trimmedStart = line.replace(/^[\s\u200B-\u200D\uFEFF]+/, '');
+        const trimmedStart = line.replace(/^[ \t\u200B-\u200D\uFEFF]+/, '');
 
         if (DIRECTIVE_HEAD_RE.test(trimmedStart)) {
             inElementBody = trimmedStart.startsWith('.element.');
@@ -182,7 +182,12 @@ export function tokenizeGlDocument(text) {
         }
 
         if (line.trim() === '') {
-            result.push([{ type: 'body-text', value: '' }]);
+            const indentMatch = line.match(/^([ \t]+)/);
+            if (inElementBody && indentMatch) {
+                result.push([{ type: 'body-indent', value: indentMatch[1] }]);
+            } else {
+                result.push([{ type: 'body-text', value: line }]);
+            }
             continue;
         }
 

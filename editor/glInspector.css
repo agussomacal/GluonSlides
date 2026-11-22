@@ -73,6 +73,8 @@
     color: #e2e8f0;
     border-top: 1px solid var(--border-color, #334155);
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+    tab-size: var(--gl-tab-size);
+    -moz-tab-size: var(--gl-tab-size);
 }
 
 #gl-inspector-drawer.open {
@@ -171,6 +173,8 @@
     min-height: 0;
     background: #0f172a;
     position: relative;
+    tab-size: var(--gl-tab-size);
+    -moz-tab-size: var(--gl-tab-size);
 }
 
 .gl-line-editor {
@@ -190,9 +194,14 @@
     min-height: var(--gl-line-height);
     line-height: var(--gl-line-height);
     white-space: pre;
-    tab-size: inherit;
-    -moz-tab-size: inherit;
+    tab-size: var(--gl-tab-size);
+    -moz-tab-size: var(--gl-tab-size);
     outline: none;
+}
+
+.gl-tok-line span {
+    tab-size: var(--gl-tab-size);
+    -moz-tab-size: var(--gl-tab-size);
 }
 
 .gl-tok-line.highlighted {
@@ -210,7 +219,7 @@
 .gl-tok-param-color { color: var(--gl-tok-param-color); }
 .gl-tok-param-str { color: var(--gl-tok-param-str); }
 .gl-tok-param-val { color: var(--gl-tok-param-val); }
-.gl-tok-body-indent { color: transparent; }
+.gl-tok-body-indent { color: var(--gl-tok-body-text); }
 .gl-tok-body-text { color: var(--gl-tok-body-text); }
 .gl-tok-body-math { color: var(--gl-tok-body-math); }
 .gl-tok-plain { color: var(--gl-tok-plain); }
