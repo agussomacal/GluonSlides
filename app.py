@@ -10,6 +10,39 @@ from requirements import check_and_install_dependencies
 
 
 class Api:
+    def _app_dir(self):
+        return os.path.dirname(os.path.abspath(__file__))
+
+    def _inspector_settings_path(self):
+        return os.path.join(self._app_dir(), "gl_inspector_settings.json")
+
+    def get_inspector_settings(self):
+        """Load persisted .gl inspector and syntax highlight settings."""
+        path = self._inspector_settings_path()
+        if not os.path.exists(path):
+            return {"success": True, "settings": None}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return {"success": True, "settings": None}
+            return {"success": True, "settings": data}
+        except Exception as e:
+            return {"success": False, "error": str(e), "settings": None}
+
+    def save_inspector_settings(self, settings_data):
+        """Persist .gl inspector and syntax highlight settings to disk."""
+        path = self._inspector_settings_path()
+        try:
+            parsed = json.loads(settings_data) if isinstance(settings_data, str) else settings_data
+            if not isinstance(parsed, dict):
+                return {"success": False, "error": "Invalid settings payload."}
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(parsed, f, indent=2)
+            return {"success": True, "path": path}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _initial_dir(self, override=None):
         """Dialog start directory: given override or the user's home."""
         return override or os.path.expanduser('~')
@@ -222,17 +255,12 @@ class Api:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    # ------------------------------------------------------------------
-    # Headless-browser PDF generation (vector, pixel-perfect)
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _find_chromium_browser():
         """Locate an installed Chromium-family browser for headless printing.
         Returns an executable path or None."""
         candidates = []
 
-        # PATH lookup first (linux/mac chromium installs, pinned versions)
         for name in ("chrome", "chromium", "chromium-browser", "google-chrome"):
             found = shutil.which(name)
             if found:
@@ -319,7 +347,7 @@ class Api:
 
     def get_recent_projects(self):
         """Load recent projects from recents.json and filter out deleted/non-existent paths."""
-        recents_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recents.json")
+        recents_file = os.path.join(self._app_dir(), "recents.json")
         if not os.path.exists(recents_file):
             return {"success": True, "projects": []}
         try:
@@ -341,7 +369,7 @@ class Api:
 
     def add_recent_project(self, name, path):
         """Add or update a project in recents.json."""
-        recents_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recents.json")
+        recents_file = os.path.join(self._app_dir(), "recents.json")
         projects = []
         try:
             if os.path.exists(recents_file):

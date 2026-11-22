@@ -24,7 +24,13 @@ import {hydrateFigureElements} from './elements/figure/figure.js';
 import {
     renderEditor, addElement, addSlide, selectSlide, renameCurrentSlide, updateThumbnailLive,
 } from './editor/editor.js';
-import {initGlInspector, openGlInspector, closeGlInspector, attachGlInspectorToRender} from './editor/glInspector.js';
+import {
+    initGlInspector,
+    openGlInspector,
+    closeGlInspector,
+    attachGlInspectorToRender,
+    loadPersistedInspectorSettings,
+} from './editor/glInspector.js';
 import {projectExportHtml, projectExportPdf} from './export/index.js';
 
 // ---------- View switching ----------
@@ -83,6 +89,7 @@ function renderRecents() {
 }
 
 async function initRecents() {
+    await loadPersistedInspectorSettings();
     const api = pyApi();
     if (api) {
         try {
@@ -156,6 +163,7 @@ async function loadProjectMacrosFromDisk() {
 
 async function openProjectByPath(path, content) {
     try {
+        await loadPersistedInspectorSettings();
         if (typeof content !== 'string' || !content.trim()) {
             const api = pyApi();
             if (!api || !api.load_project_at) {

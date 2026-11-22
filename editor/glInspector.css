@@ -45,6 +45,7 @@
     --gl-font-size: 13px;
     --gl-line-height: 20px;
     --gl-tab-size: 2;
+    --gl-drawer-height: 280px;
     --gl-highlight-line-bg: rgba(59, 130, 246, 0.22);
 
     --gl-tok-comment: #64748b;
@@ -65,13 +66,13 @@
     left: 0;
     right: 0;
     bottom: 0;
-    height: 280px;
+    height: var(--gl-drawer-height);
     z-index: 900;
     display: none;
     flex-direction: column;
     background: #0f172a;
     color: #e2e8f0;
-    border-top: 1px solid var(--border-color, #334155);
+    border-top: 2px solid var(--border-color, #334155);
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
     tab-size: var(--gl-tab-size);
     -moz-tab-size: var(--gl-tab-size);
@@ -79,6 +80,28 @@
 
 #gl-inspector-drawer.open {
     display: flex;
+}
+
+#gl-inspector-drawer.resizing {
+    border-top-color: #60a5fa;
+    user-select: none;
+}
+
+.gl-inspector-resize-handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -4px;
+    height: 8px;
+    cursor: ns-resize;
+    z-index: 910;
+    background: transparent;
+    transition: background 0.12s ease;
+}
+
+.gl-inspector-resize-handle:hover,
+#gl-inspector-drawer.resizing .gl-inspector-resize-handle {
+    background: rgba(96, 165, 250, 0.45);
 }
 
 .gl-inspector-header {
@@ -228,7 +251,7 @@
 .gl-settings-popover {
     position: fixed;
     right: 12px;
-    bottom: 290px;
+    bottom: calc(var(--gl-drawer-height, 280px) + 10px);
     width: 340px;
     max-width: calc(100vw - 24px);
     max-height: 65vh;

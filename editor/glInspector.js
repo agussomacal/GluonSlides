@@ -2,12 +2,20 @@
 // editor/glInspector.js — Editable, bidirectionally synced .gl
 // source inspector with per-line syntax highlighting, native
 // cursor placement, cross-line navigation, Tab/Shift+Tab
-// insertion, auto-indent on Enter, customizable editor &
-// highlight settings, context menu ("Go to Gluon file"), and
-// jump-to-line.
+// insertion, auto-indent on Enter, vertical pane resizing,
+// caret-to-editor navigation, persistent settings, context
+// menu ("Go to Gluon file"), and jump-to-line.
 // ============================================================
 
-import { state, serializeProject, markDirty, ensureElementIds } from '../core/state.js';
+import {
+    state,
+    pyApi,
+    serializeProject,
+    markDirty,
+    ensureElementIds,
+    setSelectedElementIndices,
+    setSelectedSlideIndices,
+} from '../core/state.js';
 import { parseGl, looksLikeGl } from '../core/gl/glformat.js';
 import { hydrateFigureElements } from '../elements/figure/figure.js';
 import { tokenizeGlDocument } from './glTokenizer.js';
@@ -21,9 +29,11 @@ import {
 const INSPECTOR_ID = 'gl-inspector-drawer';
 const MENU_ID = 'gl-context-menu';
 const SETTINGS_ID = 'gl-inspector-settings-popover';
+const RESIZE_HANDLE_ID = 'gl-inspector-resize-handle';
 const STYLESHEET_HREF = 'editor/glInspector.css';
 const SETTINGS_STORAGE_KEY = 'gluon_gl_inspector_settings_v1';
 const APPLY_DEBOUNCE_MS = 350;
+const MIN_DRAWER_HEIGHT = 140;
 
 const SLIDE_NODE_SELECTOR = '[data-slide-id], [data-slide-index], .slide-thumb, .thumbnail, .slide-item, .slide-card';
 const ELEMENT_NODE_SELECTOR = '[data-element-id], [data-el-id], [data-el-index], .element, .element-wrapper, .canvas-element';
@@ -32,6 +42,7 @@ const DEFAULT_SETTINGS = {
     tabSize: 2,
     fontSize: 13,
     lineHeight: 20,
+    drawerHeight: 280,
     autoApply: true,
     colors: {
         directiveStruct: '#c084fc',
@@ -62,7 +73,7 @@ const TOKEN_COLOR_FIELDS = [
     { key: 'comment', label: 'Comments (#)', cssVar: '--gl-tok-comment' },
 ];
 
-let settings = loadSettings();
+let settings = loadSettingsFromLocalStorage();
 let currentTarget = null; // { slideId, elementId }
 let highlightedLine = -1;
 let isOpen = false;
@@ -71,54 +82,105 @@ let initialized = false;
 let isInspectorFocused = false;
 let hasUnappliedDraft = false;
 let isApplyingFromInspector = false;
+let isNavigatingFromCaret = false;
 let debounceTimer = null;
 let renderEditorRef = null;
+let adapter = null;
 
-function loadSettings() {
+function sanitizeSettingsObject(parsed) {
+    if (!parsed || typeof parsed !== 'object') return structuredClone(DEFAULT_SETTINGS);
+    const maxHeight = Math.max(MIN_DRAWER_HEIGHT, Math.round(window.innerHeight * 0.8));
+    return {
+        tabSize: Math.max(1, Math.min(16, Number.isFinite(Number(parsed.tabSize)) ? Number(parsed.tabSize) : DEFAULT_SETTINGS.tabSize)),
+        fontSize: Math.max(10, Math.min(28, Number.isFinite(Number(parsed.fontSize)) ? Number(parsed.fontSize) : DEFAULT_SETTINGS.fontSize)),
+        lineHeight: Math.max(14, Math.min(42, Number.isFinite(Number(parsed.lineHeight)) ? Number(parsed.lineHeight) : DEFAULT_SETTINGS.lineHeight)),
+        drawerHeight: Math.max(
+            MIN_DRAWER_HEIGHT,
+            Math.min(maxHeight, Number.isFinite(Number(parsed.drawerHeight)) ? Number(parsed.drawerHeight) : DEFAULT_SETTINGS.drawerHeight)
+        ),
+        autoApply: parsed.autoApply !== undefined ? !!parsed.autoApply : DEFAULT_SETTINGS.autoApply,
+        colors: {
+            ...DEFAULT_SETTINGS.colors,
+            ...(parsed.colors && typeof parsed.colors === 'object' ? parsed.colors : {}),
+        },
+    };
+}
+
+function loadSettingsFromLocalStorage() {
     try {
         const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
         if (!raw) return structuredClone(DEFAULT_SETTINGS);
-        const parsed = JSON.parse(raw);
-        return {
-            tabSize: Number.isFinite(Number(parsed.tabSize)) ? Number(parsed.tabSize) : DEFAULT_SETTINGS.tabSize,
-            fontSize: Number.isFinite(Number(parsed.fontSize)) ? Number(parsed.fontSize) : DEFAULT_SETTINGS.fontSize,
-            lineHeight: Number.isFinite(Number(parsed.lineHeight)) ? Number(parsed.lineHeight) : DEFAULT_SETTINGS.lineHeight,
-            autoApply: parsed.autoApply !== undefined ? !!parsed.autoApply : DEFAULT_SETTINGS.autoApply,
-            colors: {
-                ...DEFAULT_SETTINGS.colors,
-                ...(parsed.colors || {}),
-            },
-        };
+        return sanitizeSettingsObject(JSON.parse(raw));
     } catch {
         return structuredClone(DEFAULT_SETTINGS);
     }
 }
 
 function saveSettings() {
+    settings = sanitizeSettingsObject(settings);
     try {
         localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
     } catch {
         // Ignore storage quota errors
     }
+
+    const api = pyApi();
+    if (api && typeof api.save_inspector_settings === 'function') {
+        try {
+            const ret = api.save_inspector_settings(JSON.stringify(settings));
+            if (ret && typeof ret.catch === 'function') {
+                ret.catch(() => {});
+            }
+        } catch {
+            // Ignore bridge errors
+        }
+    }
+}
+
+export async function loadPersistedInspectorSettings() {
+    const api = pyApi();
+    if (api && typeof api.get_inspector_settings === 'function') {
+        try {
+            const res = await api.get_inspector_settings();
+            if (res && res.success && res.settings && typeof res.settings === 'object') {
+                settings = sanitizeSettingsObject(res.settings);
+                try {
+                    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+                } catch {}
+                applySettingsToDom();
+                if (adapter) adapter.refreshRender();
+                return settings;
+            }
+        } catch {
+            // Fall back to localStorage
+        }
+    }
+    settings = loadSettingsFromLocalStorage();
+    applySettingsToDom();
+    if (adapter) adapter.refreshRender();
+    return settings;
 }
 
 function applySettingsToDom() {
+    settings = sanitizeSettingsObject(settings);
     const drawer = document.getElementById(INSPECTOR_ID);
     const editorHost = document.getElementById('gl-inspector-editor');
+    const popover = document.getElementById(SETTINGS_ID);
     if (!drawer) return;
 
-    const tabSize = Math.max(1, Math.min(16, Number(settings.tabSize) || 2));
-    const fontSize = Math.max(10, Math.min(28, Number(settings.fontSize) || 13));
-    const lineHeight = Math.max(14, Math.min(42, Number(settings.lineHeight) || 20));
-    settings.tabSize = tabSize;
-    settings.fontSize = fontSize;
-    settings.lineHeight = lineHeight;
+    const { tabSize, fontSize, lineHeight, drawerHeight } = settings;
 
     drawer.style.setProperty('--gl-tab-size', String(tabSize));
     drawer.style.setProperty('--gl-font-size', `${fontSize}px`);
     drawer.style.setProperty('--gl-line-height', `${lineHeight}px`);
+    drawer.style.setProperty('--gl-drawer-height', `${drawerHeight}px`);
+    drawer.style.height = `${drawerHeight}px`;
     drawer.style.tabSize = String(tabSize);
     drawer.style.MozTabSize = String(tabSize);
+
+    if (popover) {
+        popover.style.bottom = `${drawerHeight + 10}px`;
+    }
 
     if (editorHost) {
         editorHost.style.setProperty('--gl-tab-size', String(tabSize));
@@ -162,7 +224,10 @@ function setSettingsOpen(open) {
     const btn = document.getElementById('gl-inspector-settings-btn');
     if (popover) popover.classList.toggle('open', isSettingsOpen);
     if (btn) btn.classList.toggle('active', isSettingsOpen);
-    if (isSettingsOpen) syncSettingsControlsFromState();
+    if (isSettingsOpen) {
+        applySettingsToDom();
+        syncSettingsControlsFromState();
+    }
 }
 
 function buildSettingsPopoverHtml() {
@@ -209,6 +274,148 @@ function buildSettingsPopoverHtml() {
     `;
 }
 
+// ---------- Target Resolution & Line Lookup ----------
+
+function parseIdValue(raw) {
+    if (raw === undefined || raw === null || raw === '') return null;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : String(raw);
+}
+
+function extractIdFromDirective(line) {
+    const m = String(line ?? '').match(/(?:^|\s)id:(?:"([^"]*)"|(\S+))/);
+    if (!m) return null;
+    return parseIdValue(m[1] !== undefined ? m[1] : m[2]);
+}
+
+function hasIdParam(line, targetId) {
+    if (targetId === undefined || targetId === null || targetId === '') return false;
+    const escaped = String(targetId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|\\s)id:(?:"${escaped}"|${escaped})(?=\\s|$)`).test(line);
+}
+
+export function findGlTargetLine(glText, { slideId = null, elementId = null } = {}) {
+    const lines = String(glText ?? '').split('\n');
+    const normSlideId = parseIdValue(slideId);
+    const normElementId = parseIdValue(elementId);
+
+    let slideLineIndex = -1;
+    let inTargetSlide = normSlideId === null;
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trimStart();
+
+        if (trimmed.startsWith('.slide')) {
+            if (normSlideId !== null) {
+                if (hasIdParam(trimmed, normSlideId)) {
+                    slideLineIndex = i;
+                    inTargetSlide = true;
+                    if (normElementId === null) {
+                        return i;
+                    }
+                } else if (inTargetSlide) {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if (normElementId !== null && inTargetSlide) {
+            if (trimmed.startsWith('.element.') && hasIdParam(trimmed, normElementId)) {
+                return i;
+            }
+        }
+    }
+
+    if (slideLineIndex !== -1) return slideLineIndex;
+    return normElementId !== null || normSlideId !== null ? 0 : -1;
+}
+
+function findTargetAtLine(glText, lineIdx) {
+    const lines = String(glText ?? '').split('\n');
+    if (lineIdx < 0 || lines.length === 0) return null;
+    const clamped = Math.min(lineIdx, lines.length - 1);
+
+    let activeSlideId = null;
+    let activeElementId = null;
+
+    for (let i = 0; i <= clamped; i++) {
+        const trimmed = lines[i].trimStart();
+        if (trimmed.startsWith('.slide')) {
+            activeSlideId = extractIdFromDirective(trimmed);
+            activeElementId = null;
+        } else if (trimmed.startsWith('.element.')) {
+            activeElementId = extractIdFromDirective(trimmed);
+        }
+    }
+
+    if (activeSlideId === null && activeElementId === null) return null;
+    return { slideId: activeSlideId, elementId: activeElementId };
+}
+
+function navigateEditorToTarget(target) {
+    if (!target || !Array.isArray(state.slides) || state.slides.length === 0) return;
+
+    let slideIdx = -1;
+    if (target.slideId !== null && target.slideId !== undefined) {
+        slideIdx = state.slides.findIndex(s => parseIdValue(s.id) === parseIdValue(target.slideId));
+    }
+    if (slideIdx === -1) {
+        slideIdx = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
+    }
+
+    const slide = state.slides[slideIdx];
+    if (!slide) return;
+
+    let elIdx = -1;
+    if (target.elementId !== null && target.elementId !== undefined && Array.isArray(slide.elements)) {
+        elIdx = slide.elements.findIndex(el => parseIdValue(el.id) === parseIdValue(target.elementId));
+    }
+
+    const slideChanged = state.currentSlideIndex !== slideIdx;
+    const currentSelected = state.selectedElementIndices || [];
+    const targetSelected = elIdx >= 0 ? [elIdx] : [];
+    const selectionChanged =
+        currentSelected.length !== targetSelected.length ||
+        currentSelected.some((v, i) => v !== targetSelected[i]);
+
+    if (!slideChanged && !selectionChanged) return;
+
+    currentTarget = {
+        slideId: slide.id,
+        elementId: elIdx >= 0 ? slide.elements[elIdx].id : null,
+    };
+
+    state.currentSlideIndex = slideIdx;
+    setSelectedSlideIndices([slideIdx]);
+    if (elIdx >= 0) {
+        setSelectedElementIndices([elIdx], elIdx);
+    } else {
+        setSelectedElementIndices([], null);
+    }
+
+    syncSlideSizeSelect();
+    syncGridSizeSelect();
+    updateDimensionsCSS();
+
+    if (typeof renderEditorRef === 'function') {
+        isNavigatingFromCaret = true;
+        try {
+            renderEditorRef();
+        } finally {
+            isNavigatingFromCaret = false;
+        }
+    }
+}
+
+function formatTargetLabel(target = {}, lineIdx = -1) {
+    const parts = [];
+    if (target.slideId !== null && target.slideId !== undefined) parts.push(`slide id:${target.slideId}`);
+    if (target.elementId !== null && target.elementId !== undefined) parts.push(`element id:${target.elementId}`);
+    const desc = parts.length ? ` (${parts.join(', ')})` : '';
+    return lineIdx >= 0 ? `Line ${lineIdx + 1}${desc}` : 'Full file';
+}
+
 // ---------- Native Per-Line Highlighted Editor Adapter ----------
 
 function cleanLineText(raw) {
@@ -244,6 +451,7 @@ function createLineEditorAdapter(host) {
     let inputHandler = null;
     let focusChangeHandler = null;
     let keyDownHandler = null;
+    let cursorMoveHandler = null;
     let isRenderingDom = false;
     let lastLine = 0;
     let lastCol = 0;
@@ -332,6 +540,19 @@ function createLineEditorAdapter(host) {
         sel.addRange(range);
     }
 
+    function notifyCursorLine(lineIdx) {
+        if (lineIdx < 0) return;
+        const lineChanged = lineIdx !== highlightedLine;
+        highlightedLine = lineIdx;
+        lastLine = lineIdx;
+        host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
+            el.classList.toggle('highlighted', idx === highlightedLine);
+        });
+        if (lineChanged && cursorMoveHandler) {
+            cursorMoveHandler(lineIdx);
+        }
+    }
+
     function renderLines(text, activeLineIdx, { restoreLine = -1, restoreCol = 0 } = {}) {
         isRenderingDom = true;
         try {
@@ -392,13 +613,8 @@ function createLineEditorAdapter(host) {
         const targetText = lines[clamped] || '';
         const clampedCol = Math.max(0, Math.min(preferredCol, targetText.length));
 
-        highlightedLine = clamped;
-        lastLine = clamped;
         lastCol = clampedCol;
-
-        host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
-            el.classList.toggle('highlighted', idx === highlightedLine);
-        });
+        notifyCursorLine(clamped);
 
         const targetEl = host.querySelector(`.gl-tok-line[data-line="${clamped}"]`);
         if (targetEl) {
@@ -414,6 +630,7 @@ function createLineEditorAdapter(host) {
         lastCol = nextCol;
         renderLines(currentText, highlightedLine, { restoreLine: nextLine, restoreCol: nextCol });
         if (inputHandler) inputHandler(currentText);
+        if (cursorMoveHandler) cursorMoveHandler(nextLine);
     }
 
     host.addEventListener('input', () => {
@@ -428,19 +645,14 @@ function createLineEditorAdapter(host) {
         }
         renderLines(currentText, highlightedLine, { restoreLine: safeLine, restoreCol: col });
         if (inputHandler) inputHandler(currentText);
+        if (cursorMoveHandler && safeLine >= 0) cursorMoveHandler(safeLine);
     });
 
     host.addEventListener('click', () => {
         const { line, col } = getCaretLineAndCol();
         if (line >= 0) {
-            lastLine = line;
             lastCol = col;
-            if (line !== highlightedLine) {
-                highlightedLine = line;
-                host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
-                    el.classList.toggle('highlighted', idx === highlightedLine);
-                });
-            }
+            notifyCursorLine(line);
         }
     });
 
@@ -448,8 +660,8 @@ function createLineEditorAdapter(host) {
         if (isRenderingDom) return;
         const { line, col } = getCaretLineAndCol();
         if (line >= 0) {
-            lastLine = line;
             lastCol = col;
+            notifyCursorLine(line);
         }
     });
 
@@ -557,12 +769,8 @@ function createLineEditorAdapter(host) {
     host.addEventListener('focusin', () => {
         const { line, col } = getCaretLineAndCol();
         if (line >= 0) {
-            highlightedLine = line;
-            lastLine = line;
             lastCol = col;
-            host.querySelectorAll('.gl-tok-line').forEach((el, idx) => {
-                el.classList.toggle('highlighted', idx === highlightedLine);
-            });
+            notifyCursorLine(line);
         }
         if (focusChangeHandler) focusChangeHandler(true);
     });
@@ -623,10 +831,57 @@ function createLineEditorAdapter(host) {
         onKeyDown(handler) {
             keyDownHandler = handler;
         },
+        onCursorLineChange(handler) {
+            cursorMoveHandler = handler;
+        },
     };
 }
 
-let adapter = null;
+// ---------- Resize Handle ----------
+
+function attachDrawerResize(drawer) {
+    if (!drawer || document.getElementById(RESIZE_HANDLE_ID)) return;
+
+    const handle = document.createElement('div');
+    handle.id = RESIZE_HANDLE_ID;
+    handle.className = 'gl-inspector-resize-handle';
+    handle.title = 'Drag up or down to resize inspector';
+    drawer.prepend(handle);
+
+    let startY = 0;
+    let startHeight = 0;
+    let dragging = false;
+
+    const onMouseMove = (e) => {
+        if (!dragging) return;
+        const deltaY = startY - e.clientY;
+        const maxHeight = Math.max(MIN_DRAWER_HEIGHT, Math.round(window.innerHeight * 0.8));
+        const nextHeight = Math.max(MIN_DRAWER_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
+        settings.drawerHeight = nextHeight;
+        applySettingsToDom();
+    };
+
+    const onMouseUp = () => {
+        if (!dragging) return;
+        dragging = false;
+        drawer.classList.remove('resizing');
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        saveSettings();
+    };
+
+    handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragging = true;
+        startY = e.clientY;
+        startHeight = drawer.getBoundingClientRect().height || settings.drawerHeight || 280;
+        drawer.classList.add('resizing');
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    });
+}
 
 // ---------- DOM & Styles ----------
 
@@ -696,6 +951,7 @@ function ensureDom() {
             </div>
         `;
         document.body.appendChild(drawer);
+        attachDrawerResize(drawer);
 
         const popover = document.createElement('div');
         popover.id = SETTINGS_ID;
@@ -707,6 +963,15 @@ function ensureDom() {
         adapter = createLineEditorAdapter(editorHost);
 
         applySettingsToDom();
+
+        adapter.onCursorLineChange((lineIdx) => {
+            const target = findTargetAtLine(adapter.getValue(), lineIdx);
+            if (!target) return;
+            setStatus(formatTargetLabel(target, lineIdx));
+            if (!hasUnappliedDraft) {
+                navigateEditorToTarget(target);
+            }
+        });
 
         adapter.onFocusChange((focused) => {
             isInspectorFocused = focused;
@@ -809,65 +1074,6 @@ function ensureDom() {
             if (adapter) adapter.refreshRender();
         };
     }
-}
-
-// ---------- Target Resolution & Line Lookup ----------
-
-function parseIdValue(raw) {
-    if (raw === undefined || raw === null || raw === '') return null;
-    const num = Number(raw);
-    return Number.isFinite(num) ? num : String(raw);
-}
-
-function hasIdParam(line, targetId) {
-    if (targetId === undefined || targetId === null || targetId === '') return false;
-    const escaped = String(targetId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?:^|\\s)id:(?:"${escaped}"|${escaped})(?=\\s|$)`).test(line);
-}
-
-export function findGlTargetLine(glText, { slideId = null, elementId = null } = {}) {
-    const lines = String(glText ?? '').split('\n');
-    const normSlideId = parseIdValue(slideId);
-    const normElementId = parseIdValue(elementId);
-
-    let slideLineIndex = -1;
-    let inTargetSlide = normSlideId === null;
-
-    for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trimStart();
-
-        if (trimmed.startsWith('.slide')) {
-            if (normSlideId !== null) {
-                if (hasIdParam(trimmed, normSlideId)) {
-                    slideLineIndex = i;
-                    inTargetSlide = true;
-                    if (normElementId === null) {
-                        return i;
-                    }
-                } else if (inTargetSlide) {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        if (normElementId !== null && inTargetSlide) {
-            if (trimmed.startsWith('.element.') && hasIdParam(trimmed, normElementId)) {
-                return i;
-            }
-        }
-    }
-
-    if (slideLineIndex !== -1) return slideLineIndex;
-    return normElementId !== null || normSlideId !== null ? 0 : -1;
-}
-
-function formatTargetLabel(target = {}, lineIdx = -1) {
-    const parts = [];
-    if (target.slideId !== null && target.slideId !== undefined) parts.push(`slide id:${target.slideId}`);
-    if (target.elementId !== null && target.elementId !== undefined) parts.push(`element id:${target.elementId}`);
-    const desc = parts.length ? ` (${parts.join(', ')})` : '';
-    return lineIdx >= 0 ? `Line ${lineIdx + 1}${desc}` : 'Full file';
 }
 
 // ---------- Inspector <-> Editor Sync ----------
@@ -990,7 +1196,7 @@ export function jumpToGlTarget(target = {}, { focusEditor = true } = {}) {
 }
 
 export function refreshGlInspectorText(target = currentTarget, { force = false, jump = false } = {}) {
-    if (!isOpen || isApplyingFromInspector) return;
+    if (!isOpen || isApplyingFromInspector || isNavigatingFromCaret) return;
     if (!force && (isInspectorFocused || hasUnappliedDraft)) return;
 
     ensureDom();
@@ -1148,6 +1354,7 @@ export function initGlInspector() {
     if (initialized) return;
     initialized = true;
     ensureDom();
+    loadPersistedInspectorSettings();
 
     const menu = document.getElementById(MENU_ID);
     const gotoBtn = document.getElementById('gl-menu-goto-btn');
@@ -1201,6 +1408,10 @@ export function initGlInspector() {
         }
     });
 
+    window.addEventListener('beforeunload', () => {
+        saveSettings();
+    });
+
     document.addEventListener('slide-content-changed', () => {
         refreshGlInspectorText(currentTarget);
     });
@@ -1213,7 +1424,7 @@ export function attachGlInspectorToRender(originalRenderFn) {
     renderEditorRef = originalRenderFn;
     return function wrappedRenderEditor(...args) {
         const result = originalRenderFn.apply(this, args);
-        if (isOpen && !isApplyingFromInspector && !isInspectorFocused && !hasUnappliedDraft) {
+        if (isOpen && !isApplyingFromInspector && !isNavigatingFromCaret && !isInspectorFocused && !hasUnappliedDraft) {
             refreshGlInspectorText(currentTarget);
         }
         return result;
