@@ -1,10 +1,7 @@
 // ============================================================
 // elements/text/text.js — Text element (Markdown + LaTeX).
-// No static import of the editor: after content changes we
-// dispatch 'slide-content-changed' on document, which editor.js
-// listens for and uses to re-render. Elements never import the
-// editor — that breaks the dependency cycle at the architecture
-// level, not with workarounds.
+// Editing handlers are bound BEFORE content rendering, so a
+// render failure can never leave the element without edit mode.
 // ============================================================
 
 import { state, markDirty } from '../../core/state.js';
@@ -34,6 +31,15 @@ export function saveAndExitTextEditing(domEl, el) {
     domEl.classList.remove('editing-mode');
     markDirty();
     notifyContentChanged();
+}
+
+function renderContentSafely(domEl, rawText) {
+    try {
+        renderMarkdownAndKatex(domEl, rawText);
+    } catch (e) {
+        console.error('Text element render failed:', e);
+        domEl.textContent = rawText; // graceful degradation
+    }
 }
 
 const TextElement = {
@@ -77,53 +83,53 @@ const TextElement = {
         domEl.style.color = el.fontColor;
         applyAlignmentStyles(domEl, el);
 
+        // Bind editing handlers FIRST — a later render failure can
+        // never detach the editing lifecycle from a canvas element.
+        if (ctx.context === 'canvas') {
+            domEl.ondblclick = (e) => {
+                e.stopPropagation();
+                domEl.classList.add('editing-mode');
+                domEl.contentEditable = 'true';
+                domEl.innerText = el.content;
+                domEl.focus();
+            };
+
+            domEl.oninput = (e) => {
+                el.content = e.target.innerText;
+                markDirty();
+            };
+
+            domEl.onblur = () => {
+                if (domEl.classList.contains('editing-mode')) {
+                    saveAndExitTextEditing(domEl, el);
+                }
+            };
+
+            domEl.onkeydown = (e) => {
+                if (e.key === 'Escape' || e.code === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    saveAndExitTextEditing(domEl, el);
+                }
+            };
+        }
+
         if (ctx.context === 'thumb') {
-            renderMarkdownAndKatex(domEl, el.content);
+            renderContentSafely(domEl, el.content);
             return;
         }
 
-        // Check if this specific element is currently being edited
         const isEditing = state.selectedElementIndex === ctx.elIndex && domEl.classList.contains('editing-mode');
 
         if (isEditing) {
             domEl.contentEditable = 'true';
-            // Only set innerText if the DOM doesn't already match el.content
-            // (prevents resetting cursor position on minor updates)
             if (domEl.innerText !== el.content) {
                 domEl.innerText = el.content;
             }
         } else {
             domEl.contentEditable = 'false';
-            renderMarkdownAndKatex(domEl, el.content);
+            renderContentSafely(domEl, el.content);
         }
-
-        domEl.ondblclick = (e) => {
-            e.stopPropagation();
-            domEl.classList.add('editing-mode');
-            domEl.contentEditable = 'true';
-            domEl.innerText = el.content;
-            domEl.focus();
-        };
-
-        domEl.oninput = (e) => {
-            // Update model directly without resetting innerText/cursor
-            el.content = e.target.innerText;
-            markDirty();
-        };
-
-        domEl.onblur = () => {
-            if (domEl.classList.contains('editing-mode')) {
-                saveAndExitTextEditing(domEl, el);
-            }
-        };
-
-        domEl.onkeydown = (e) => {
-            if (e.key === 'Escape' || e.code === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                saveAndExitTextEditing(domEl, el);
-            }
-        };
     },
 
     exportInner(el) {
@@ -148,7 +154,7 @@ const TextElement = {
                 </div>
                 <div class="prop-group">
                     <label>Text Color</label>
-                    <input type="color" class="prop-control" value="${el.fontColor}" style="height: 34px; padding: 2px;" oninput="updateProp('fontColor', this.value)">
+                    <input type="color" class="prop-control prop-color" value="${el.fontColor}" style="height: 34px; padding: 2px;" oninput="updateProp('fontColor', this.value)">
                 </div>
             </div>
             <div class="prop-row">

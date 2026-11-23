@@ -16,7 +16,7 @@ import {
     syncSlideSizeSelect, syncGridSizeSelect, updateDimensionsCSS,
 } from './core/render.js';
 import {initKeyboardShortcuts} from './core/clipboard.js';
-import { setBibSource, CITATION_STYLES } from './core/citations.js';
+import {setBibSource, CITATION_STYLES} from './core/citations.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
@@ -391,6 +391,7 @@ async function loadBibFromDisk() {
     try {
         const res = await api.load_text_file(state.projectFolder, 'bibliography.bib');
         setBibSource(res && res.success ? res.content : '');
+        if (!res || !res.success) console.warn('No bibliography loaded:', res?.error);
     } catch (e) {
         setBibSource('');
     }

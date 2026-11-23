@@ -26,7 +26,7 @@ import {
 } from '../core/render.js';
 import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } from '../core/geometry.js';
 import { saveAndExitTextEditing } from '../elements/text/text.js';
-import {beginCitationPass} from "../core/citations";
+import { beginCitationPass } from '../core/citations.js';
 
 const SLIDE_DRAG_THRESHOLD_PX = 5;
 

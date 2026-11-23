@@ -1,8 +1,7 @@
 // ============================================================
-// core/render.js — FINAL version. Changes vs the draft:
-//  - markDirty imported statically (no dynamic-import hack).
-//  - markDirtyAndRender uses the bound callback synchronously.
-//  - removed the bogus _noopPlaceholder export.
+// core/render.js — Shared rendering helpers.
+//  - citation resolution is guarded so a bibliography problem can
+//    never take down element painting or editing handlers.
 // ============================================================
 
 import { state, markDirty } from './state.js';
@@ -13,7 +12,14 @@ import { resolveCitations } from './citations.js';
 export function renderMarkdownAndKatex(element, rawText) {
     // Citations are resolved at render time only — the stored content
     // keeps the raw \cite{...} / [@key] markers for round-trip fidelity.
-    const processed = resolveCitations(rawText);
+    let processed;
+    try {
+        processed = resolveCitations(rawText);
+    } catch (e) {
+        console.error('Citation resolution error:', e);
+        processed = rawText;
+    }
+
     let html = processed || '';
     if (window.marked && typeof window.marked.parse === 'function') {
         try {

@@ -13,10 +13,31 @@ export const CITATION_STYLES = ['numeric', 'authoryear'];
 
 // ---------- BibTeX parsing ----------
 
-/** Collapse LaTeX-ish braces and excess whitespace in a field value. */
+/** Strip only the outermost wrapping braces of a field value. */
+function stripOuterBraces(value) {
+    let v = String(value).trim();
+    while (v.startsWith('{') && v.endsWith('}')) {
+        // Only strip if the outer pair actually wraps the whole value
+        // (e.g. "{A} and {B}" must keep its inner braces).
+        let depth = 0;
+        let wraps = true;
+        for (let i = 0; i < v.length; i++) {
+            if (v[i] === '{') depth++;
+            else if (v[i] === '}') depth--;
+            if (depth === 0 && i < v.length - 1) {
+                wraps = false;
+                break;
+            }
+        }
+        if (!wraps) break;
+        v = v.slice(1, -1).trim();
+    }
+    return v;
+}
+
+/** Clean a field value: collapse whitespace, normalize LaTeX accents. */
 function cleanField(value) {
     return String(value)
-        .replace(/[{}]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -72,7 +93,6 @@ export function parseBibtex(src) {
     const entries = {};
     const s = String(src);
 
-    // Drop full-line % comments (BibTeX tolerates them informally).
     const text = s.split('\n')
         .filter(line => !/^\s*%/.test(line))
         .join('\n');
@@ -88,7 +108,6 @@ export function parseBibtex(src) {
         const type = head[1].toLowerCase();
         const open = at + head[0].length - 1; // index of '{'
 
-        // Find matching close brace, honoring nested braces.
         let depth = 1;
         let q = open + 1;
         while (q < text.length && depth > 0) {
@@ -136,7 +155,7 @@ function formatAuthorsBrief(entry) {
 function formatFullReference(key, entry) {
     const bits = [];
     if (entry.author) bits.push(entry.author);
-    if (entry.title) bits.push(`*${entry.title}*`);
+    if (entry.title) bits.push(`*${stripOuterBraces(entry.title)}*`);
     if (entry.journal || entry.booktitle) bits.push(entry.journal || entry.booktitle);
     const tail = [entry.year].filter(Boolean).join(', ');
     if (tail) bits.push(tail);
@@ -146,7 +165,8 @@ function formatFullReference(key, entry) {
 
 // ---------- Citation ordering (numeric style) ----------
 
-const CITE_MARKER_RE = /\\cite\{([^}]*)\}|\[(@)([^\]\s]+)\]/g;
+// Groups: m[1]=\cite keys, m[3]=[@key] key.
+const CITE_MARKER_SOURCE = '\\\\cite\\{([^}]*)\\}|\\[(@)([^\\]\\s]+)\\]';
 
 /** Collect all cited keys across slides in deterministic order. */
 export function collectCitationKeys() {
@@ -156,7 +176,7 @@ export function collectCitationKeys() {
         (slide.elements || []).forEach(el => {
             if (typeof el.content !== 'string') return;
             let m;
-            const re = new RegExp(CITE_MARKER_RE.source, 'g');
+            const re = new RegExp(CITE_MARKER_SOURCE, 'g');
             while ((m = re.exec(el.content)) !== null) {
                 const list = (m[1] !== undefined ? m[1] : m[3])
                     .split(',').map(k => k.trim()).filter(Boolean);
@@ -188,11 +208,11 @@ function resolveSingleKey(key) {
 }
 
 function resolveMatch(m) {
-    if (m[0].startsWith('\\cite')) {
+    if (m[1] !== undefined) {                 // \cite{key1,key2} form
         const keys = m[1].split(',').map(k => k.trim()).filter(Boolean);
         return keys.map(resolveSingleKey).join('');
     }
-    return resolveSingleKey(m[3]); // [@key] form
+    return resolveSingleKey(m[3]);            // [@key] form
 }
 
 /**
@@ -223,7 +243,7 @@ export function resolveCitations(rawText) {
     );
 
     // \cite{...} and [@key]
-    text = text.replace(CITE_MARKER_RE, resolveMatch);
+    text = text.replace(new RegExp(CITE_MARKER_SOURCE, 'g'), resolveMatch);
     return text;
 }
 
