@@ -6,14 +6,18 @@
 // ============================================================
 
 import { state, markDirty } from './state.js';
+import { resolveCitations } from './citations.js';
 
 // ---------- Markdown + KaTeX ----------
 
 export function renderMarkdownAndKatex(element, rawText) {
-    let html = rawText || '';
+    // Citations are resolved at render time only — the stored content
+    // keeps the raw \cite{...} / [@key] markers for round-trip fidelity.
+    const processed = resolveCitations(rawText);
+    let html = processed || '';
     if (window.marked && typeof window.marked.parse === 'function') {
         try {
-            html = window.marked.parse(rawText || '', { breaks: true, gfm: true });
+            html = window.marked.parse(processed || '', { breaks: true, gfm: true });
         } catch (e) {
             console.error('Markdown parsing error:', e);
         }

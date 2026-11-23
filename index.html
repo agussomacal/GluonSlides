@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Slide Creator</title>
+    <title>GluonSlides</title>
     <!-- Local KaTeX CSS -->
     <link rel="stylesheet" href="libs/katex.min.css">
     <!-- Local KaTeX JS -->
@@ -22,8 +22,8 @@
 
 <div id="welcome-view" class="view active">
     <div class="welcome-card">
-        <h1>Slide Studio</h1>
-        <p>Local Markdown, LaTeX, and Freeform presentation builder.</p>
+        <h1>GluonSlides</h1>
+        <p>Local Markdown, LaTeX, and Freeform presentation builder with the Gluon (.gl) format.</p>
         <button class="btn btn-primary" onclick="showNewProjectModal()">+ Create New Project</button>
         <button class="btn btn-secondary" onclick="openProjectFromFile()">📂 Open Project File...</button>
         <div class="existing-projects">
@@ -77,6 +77,27 @@
     </div>
 </div>
 
+<!-- Bibliography modal -->
+<div class="modal-backdrop" id="bib-modal">
+    <div class="modal" style="width: 500px;">
+        <h2>Bibliography</h2>
+        <p>Standard BibTeX entries, saved as <code>bibliography.bib</code> in the project folder. Cite with
+            <code>\cite{key}</code> or <code>[@key]</code>; use <code>\fullcite{key}</code> for the full reference
+            and <code>\printbibliography</code> for the list of cited works.</p>
+        <div class="prop-group">
+            <label>bibliography.bib</label>
+            <textarea id="bib-textarea" class="prop-control" rows="10"
+                      placeholder="@article{knuth1974,&#10;  author = {Donald E. Knuth},&#10;  title  = {Computer Programming as an Art},&#10;  journal = {Communications of the ACM},&#10;  year   = {1974}&#10;}"
+                      style="font-family: monospace; resize: vertical;"></textarea>
+        </div>
+        <div class="modal-error" id="bib-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeBibModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveBib()">Save & Apply</button>
+        </div>
+    </div>
+</div>
+
 <div id="editor-view" class="view">
     <div class="slides-sidebar">
         <div class="sidebar-top">
@@ -116,6 +137,17 @@
                     style="width: 100%; justify-content: center;">
                 <span>🌙</span> Night Mode
             </button>
+            <!-- Bibliography (.bib) + citation style, 3/4 + 1/4 row -->
+            <div class="export-pair-row">
+                <button class="sidebar-btn bib-btn" onclick="openBibModal()" style="flex: 3;">
+                    <span>📚</span> Bibliography (.bib)
+                </button>
+                <select id="citestyle-select" class="toolbar-select" onchange="changeCitestyle(this.value)"
+                        style="flex: 1; min-width: 0;" title="Citation style">
+                    <option value="numeric" selected>[n]</option>
+                    <option value="authoryear">(AY)</option>
+                </select>
+            </div>
             <button class="sidebar-btn" onclick="openMacrosModal()">
                 <span>⚙️</span> Edit LaTeX Macros...
             </button>

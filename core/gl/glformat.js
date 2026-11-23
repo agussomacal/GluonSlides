@@ -9,7 +9,7 @@ import {ElementRegistry} from '../registry.js';
 export const GL_FORMAT_VERSION = 2;
 
 const BODY_INDENT = '\t';
-const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'nextid'];
+const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
 const DIRECTIVE_RE = /^\.(project|slide|element)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
@@ -158,11 +158,12 @@ export function serializeGl(project) {
 
     const headerParams = {
         version: GL_FORMAT_VERSION,
-        width: working.slideWidth ?? 1920,
-        height: working.slideHeight ?? 1080,
-        grid: working.gridSize ?? 20,
-        darkmode: working.isDarkMode ? 'yes' : 'no',
-        nextid: working.nextId ?? 1,
+        width: project.slideWidth,
+        height: project.slideHeight,
+        grid: project.gridSize,
+        darkmode: project.isDarkMode ? 'yes' : 'no',
+        citestyle: project.citestyle || 'numeric',
+        nextid: project.nextId,
     };
     const headerArgs = working.projectName ? ` {${encodeBraceArg(working.projectName)}}` : '';
     const header = PROJECT_PARAMS
@@ -374,25 +375,13 @@ function extractBraceArg(rest) {
 
 function applyProjectParams(project, name, params) {
     if (name) project.name = name;
-    if (params.version !== undefined && params.version !== '') {
-        project.version = Number(params.version) || GL_FORMAT_VERSION;
-    }
-    if (params.width !== undefined && params.width !== '') {
-        project.slideWidth = Number(params.width) || 1920;
-    }
-    if (params.height !== undefined && params.height !== '') {
-        project.slideHeight = Number(params.height) || 1080;
-    }
-    if (params.grid !== undefined && params.grid !== '') {
-        const g = Number(params.grid);
-        project.gridSize = Number.isFinite(g) ? g : 20;
-    }
-    if (params.darkmode !== undefined && params.darkmode !== '') {
-        project.isDarkMode = params.darkmode === 'yes';
-    }
-    if (params.nextid !== undefined && params.nextid !== '') {
-        project.nextId = Math.max(1, Number(params.nextid) || 1);
-    }
+    if (params.version) project.version = Number(params.version) || GL_FORMAT_VERSION;
+    if (params.width) project.slideWidth = Number(params.width) || 1920;
+    if (params.height) project.slideHeight = Number(params.height) || 1080;
+    if (params.grid !== undefined) project.gridSize = Number(params.grid) || 0;
+    if (params.darkmode !== undefined) project.isDarkMode = params.darkmode === 'yes';
+    if (params.citestyle !== undefined) project.citestyle = params.citestyle === 'authoryear' ? 'authoryear' : 'numeric';
+    if (params.nextid) project.nextId = Math.max(1, Number(params.nextid) || 1);
 }
 
 function buildElement(type, params) {

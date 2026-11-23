@@ -1,6 +1,7 @@
 // ============================================================
-// main.js — Patched entry module: handles recents robustness,
-// toolbar plugin registration without duplication, and startup hooks.
+// main.js — Entry module: recents, project lifecycle, view
+// switching, macros + bibliography modals, citation style,
+// exports, startup hooks.
 // ============================================================
 import {
     state, pyApi, parseTexMacros, resetMacros, markDirty,
@@ -15,22 +16,15 @@ import {
     syncSlideSizeSelect, syncGridSizeSelect, updateDimensionsCSS,
 } from './core/render.js';
 import {initKeyboardShortcuts} from './core/clipboard.js';
+import { setBibSource, CITATION_STYLES } from './core/citations.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
-import {hydrateFigureElements} from './elements/figure/figure.js';
 
 // Editor + export modules.
 import {
     renderEditor, addElement, addSlide, selectSlide, renameCurrentSlide, updateThumbnailLive,
 } from './editor/editor.js';
-import {
-    initGlInspector,
-    openGlInspector,
-    closeGlInspector,
-    attachGlInspectorToRender,
-    loadPersistedInspectorSettings,
-} from './editor/glInspector.js';
 import {projectExportHtml, projectExportPdf} from './export/index.js';
 
 // ---------- View switching ----------
@@ -89,7 +83,6 @@ function renderRecents() {
 }
 
 async function initRecents() {
-    await loadPersistedInspectorSettings();
     const api = pyApi();
     if (api) {
         try {
@@ -163,12 +156,8 @@ async function loadProjectMacrosFromDisk() {
 
 async function openProjectByPath(path, content) {
     try {
-        await loadPersistedInspectorSettings();
-        if (typeof content !== 'string' || !content.trim()) {
+        if (!content) {
             const api = pyApi();
-            if (!api || !api.load_project_at) {
-                throw new Error('Project file loader is unavailable.');
-            }
             const res = await api.load_project_at(path);
             if (!res || !res.success) {
                 alert(`Could not open project: ${res ? res.error : 'Unknown error'}`);
@@ -178,18 +167,17 @@ async function openProjectByPath(path, content) {
         }
         deserializeProject(content);
         state.projectPath = path;
-        const lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        state.projectFolder = lastSep > 0 ? path.slice(0, lastSep) : null;
-
-        await hydrateFigureElements(state.slides, state.projectFolder);
+        state.projectFolder = path.replace(/[/\\][^/\\]+$/, '');
 
         document.body.classList.toggle('dark-mode', state.isDarkMode);
         applyThemeToggle();
         syncSlideSizeSelect();
         syncGridSizeSelect();
         updateDimensionsCSS();
+        syncCitestyleSelect();
 
         await loadProjectMacrosFromDisk();
+        await loadBibFromDisk();
 
         addRecent(state.projectName, path);
         state.lastSnapshot = currentSnapshot();
@@ -198,7 +186,6 @@ async function openProjectByPath(path, content) {
         showView('editor-view');
         renderEditor();
     } catch (e) {
-        console.error('openProjectByPath error:', e);
         alert(`Could not open project: ${e.message}`);
     }
 }
@@ -227,7 +214,7 @@ function openSampleProject() {
         elements: [{
             type: 'text',
             x: 200, y: 200, width: 800, height: 160,
-            content: 'Welcome to Slide Studio with **Markdown** and LaTeX: $E = mc^2$',
+            content: 'Welcome to GluonSlides with **Markdown** and LaTeX: $E = mc^2$',
             fontSize: 42,
             fontFamily: 'sans-serif',
             fontColor: '#0f172a',
@@ -335,6 +322,9 @@ async function confirmCreateProject() {
     await api.save_text_file(state.projectFolder, 'macros.tex', state.rawTexMacros);
     await api.save_text_file(state.projectFolder, 'macros.json', JSON.stringify(state.projectMacros, null, 2));
 
+    setBibSource('');
+    await api.save_text_file(state.projectFolder, 'bibliography.bib', '');
+
     const saveRes = await api.save_project_data(state.projectPath, serializeProject());
     if (!saveRes || !saveRes.success) {
         if (err) err.textContent = saveRes ? saveRes.error : 'Save failed';
@@ -382,6 +372,63 @@ async function saveMacros() {
     }
 }
 
+// ---------- Bibliography (.bib) ----------
+
+function syncCitestyleSelect() {
+    const sel = document.getElementById('citestyle-select');
+    if (sel) sel.value = state.citestyle;
+}
+
+export function changeCitestyle(value) {
+    state.citestyle = CITATION_STYLES.includes(value) ? value : 'numeric';
+    markDirty();
+    renderEditor();
+}
+
+async function loadBibFromDisk() {
+    const api = pyApi();
+    if (!api || !state.projectFolder) return;
+    try {
+        const res = await api.load_text_file(state.projectFolder, 'bibliography.bib');
+        setBibSource(res && res.success ? res.content : '');
+    } catch (e) {
+        setBibSource('');
+    }
+}
+
+function openBibModal() {
+    const ta = document.getElementById('bib-textarea');
+    if (ta) ta.value = state.rawBib;
+    const err = document.getElementById('bib-error');
+    if (err) err.textContent = '';
+    const modal = document.getElementById('bib-modal');
+    if (modal) modal.classList.add('show');
+}
+
+function closeBibModal() {
+    const modal = document.getElementById('bib-modal');
+    if (modal) modal.classList.remove('show');
+}
+
+async function saveBib() {
+    const errEl = document.getElementById('bib-error');
+    try {
+        const ta = document.getElementById('bib-textarea');
+        setBibSource(ta ? ta.value : '');
+        markDirty();
+
+        const api = pyApi();
+        if (api && state.projectFolder) {
+            await api.save_text_file(state.projectFolder, 'bibliography.bib', state.rawBib);
+        }
+
+        closeBibModal();
+        renderEditor();
+    } catch (e) {
+        if (errEl) errEl.textContent = `Parsing error: ${e.message}`;
+    }
+}
+
 // ---------- Exports ----------
 
 async function directExport(type) {
@@ -402,25 +449,24 @@ Object.assign(window, {
     toggleDarkMode, changeGridSize, changeSlideSizePreset,
     renameProject,
     openMacrosModal, closeMacrosModal, saveMacros,
+    openBibModal, closeBibModal, saveBib, changeCitestyle,
     directExport, projectExportHtml, projectExportPdf,
-    openGlInspector, closeGlInspector,
     ElementRegistry,
 });
 
 // ---------- Startup ----------
 
-const syncedRenderEditor = attachGlInspectorToRender(renderEditor);
-bindMarkDirtyAndRender(syncedRenderEditor);
+bindMarkDirtyAndRender(renderEditor);
 
 applyThemeToggle();
 syncGridSizeSelect();
 syncSlideSizeSelect();
+syncCitestyleSelect();
 updateDimensionsCSS();
 renderRecents();
 
 startAutosave();
 initKeyboardShortcuts();
-initGlInspector();
 
 window.addEventListener('beforeunload', flushPendingSave);
 

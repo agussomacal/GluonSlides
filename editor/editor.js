@@ -26,6 +26,7 @@ import {
 } from '../core/render.js';
 import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } from '../core/geometry.js';
 import { saveAndExitTextEditing } from '../elements/text/text.js';
+import {beginCitationPass} from "../core/citations";
 
 const SLIDE_DRAG_THRESHOLD_PX = 5;
 
@@ -661,6 +662,7 @@ function syncToolbarSelectsNow() {
 }
 
 export function renderEditor() {
+    beginCitationPass();
     updateDimensionsCSS();
     renderToolbarButtons();
     syncGridSizeSelect();

@@ -43,6 +43,12 @@ export const state = {
     rawTexMacros: DEFAULT_TEX_MACROS,
     projectMacros: {},
 
+    // Citations
+    rawBib: '',
+    bibEntries: {},
+    citestyle: 'numeric',
+    _citationOrder: [],
+
     projectPath: null,
     projectFolder: null,
     projectName: '',
