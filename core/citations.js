@@ -11,6 +11,8 @@ import { state } from './state.js';
 
 export const CITATION_STYLES = ['numeric', 'authoryear'];
 
+const CITE_REGEX = /\\cite\s*\{([^}]*)\}/g;
+
 // ---------- BibTeX parsing ----------
 
 function stripOuterBraces(value) {
@@ -158,7 +160,9 @@ function formatFullReference(key, entry) {
 
 // ---------- Citation ordering (numeric style) ----------
 
-const CITE_MARKER_SOURCE = '\\\\cite\\{([^}]*)\\}';
+function normalizeCiteText(raw) {
+    return String(raw ?? '').replace(/\\\\cite\s*\{/g, '\\cite{');
+}
 
 export function collectCitationKeys() {
     const keys = [];
@@ -166,9 +170,10 @@ export function collectCitationKeys() {
     (state.slides || []).forEach(slide => {
         (slide.elements || []).forEach(el => {
             if (typeof el.content !== 'string') return;
+            const normalized = normalizeCiteText(el.content);
+            const re = new RegExp(CITE_REGEX.source, 'g');
             let m;
-            const re = new RegExp(CITE_MARKER_SOURCE, 'g');
-            while ((m = re.exec(el.content)) !== null) {
+            while ((m = re.exec(normalized)) !== null) {
                 const list = (m[1] || '')
                     .split(',').map(k => k.trim()).filter(Boolean);
                 list.forEach(k => {
@@ -193,11 +198,10 @@ function getBibMap() {
     return state.bibEntries;
 }
 
-/** Rebuild the ordering if this text cites keys not yet in it. */
 function ensureOrderIncludesCitedKeys(text) {
-    let m;
-    const re = new RegExp(CITE_MARKER_SOURCE, 'g');
+    const re = new RegExp(CITE_REGEX.source, 'g');
     let needsRebuild = false;
+    let m;
     while ((m = re.exec(text)) !== null) {
         const keys = (m[1] || '').split(',').map(k => k.trim()).filter(Boolean);
         if (keys.some(k => !(state._citationOrder || []).includes(k))) {
@@ -221,13 +225,13 @@ function resolveSingleKey(key) {
     return `**[${idx >= 0 ? idx + 1 : '?'}]**`;
 }
 
-function resolveMatch(m) {
-    const keys = (m[1] || '').split(',').map(k => k.trim()).filter(Boolean);
+function resolveCiteMatch(_fullMatch, rawKeys) {
+    const keys = String(rawKeys || '').split(',').map(k => k.trim()).filter(Boolean);
     return keys.map(resolveSingleKey).join('');
 }
 
 export function resolveCitations(rawText) {
-    let text = String(rawText ?? '');
+    let text = normalizeCiteText(rawText);
     ensureOrderIncludesCitedKeys(text);
 
     const bibMap = getBibMap();
@@ -251,7 +255,7 @@ export function resolveCitations(rawText) {
         }).join('; ')
     );
 
-    text = text.replace(new RegExp(CITE_MARKER_SOURCE, 'g'), resolveMatch);
+    text = text.replace(new RegExp(CITE_REGEX.source, 'g'), resolveCiteMatch);
     return text;
 }
 
