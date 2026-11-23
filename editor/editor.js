@@ -359,6 +359,7 @@ window.addEventListener('click', (e) => {
 
 // ---------- Element-module notifications (no import cycles) ----------
 document.addEventListener('slide-content-changed', () => {
+    beginCitationPass();   // content may have gained/lost \cite markers
     renderCanvas();
     renderPropertiesPanel();
     updateThumbnailLive();

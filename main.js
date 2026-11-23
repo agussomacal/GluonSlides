@@ -16,16 +16,25 @@ import {
     syncSlideSizeSelect, syncGridSizeSelect, updateDimensionsCSS,
 } from './core/render.js';
 import {initKeyboardShortcuts} from './core/clipboard.js';
-import {setBibSource, CITATION_STYLES} from './core/citations.js';
+import {setBibSource, beginCitationPass, CITATION_STYLES} from './core/citations.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
 
 // Editor + export modules.
 import {
-    renderEditor, addElement, addSlide, selectSlide, renameCurrentSlide, updateThumbnailLive,
+    renderEditor as rawRenderEditor,
+    addElement, addSlide, selectSlide, renameCurrentSlide, updateThumbnailLive,
 } from './editor/editor.js';
+import {initGlInspector, attachGlInspectorToRender} from './editor/glInspector.js';
 import {projectExportHtml, projectExportPdf} from './export/index.js';
+
+function renderEditorWithCitations() {
+    beginCitationPass();
+    rawRenderEditor();
+}
+
+const renderEditor = attachGlInspectorToRender(renderEditorWithCitations);
 
 // ---------- View switching ----------
 
@@ -208,6 +217,7 @@ function openSampleProject() {
     state.projectName = 'Sample Presentation';
     state.projectPath = null;
     state.projectFolder = null;
+    setBibSource('');
     state.slides = [{
         id: 1,
         title: 'Introduction',
@@ -304,6 +314,7 @@ async function confirmCreateProject() {
 
     const api = pyApi();
     if (!api) {
+        setBibSource('');
         startProject(name, null, null);
         closeNewProjectModal();
         return;
@@ -387,7 +398,10 @@ export function changeCitestyle(value) {
 
 async function loadBibFromDisk() {
     const api = pyApi();
-    if (!api || !state.projectFolder) return;
+    if (!api || !state.projectFolder) {
+        setBibSource('');
+        return;
+    }
     try {
         const res = await api.load_text_file(state.projectFolder, 'bibliography.bib');
         setBibSource(res && res.success ? res.content : '');
@@ -399,7 +413,7 @@ async function loadBibFromDisk() {
 
 function openBibModal() {
     const ta = document.getElementById('bib-textarea');
-    if (ta) ta.value = state.rawBib;
+    if (ta) ta.value = state.rawBib || '';
     const err = document.getElementById('bib-error');
     if (err) err.textContent = '';
     const modal = document.getElementById('bib-modal');
@@ -457,6 +471,7 @@ Object.assign(window, {
 
 // ---------- Startup ----------
 
+initGlInspector();
 bindMarkDirtyAndRender(renderEditor);
 
 applyThemeToggle();

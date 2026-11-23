@@ -1,6 +1,6 @@
 // ============================================================
 // core/citations.js — Bibliography support (.bib).
-// Parses BibTeX, resolves \cite{...} / [@...] / \fullcite{...}
+// Parses BibTeX, resolves \cite{...} / \fullcite{...}
 // / \printbibliography markers in text elements, and formats
 // inline citations in the project's citation style.
 //
@@ -13,12 +13,9 @@ export const CITATION_STYLES = ['numeric', 'authoryear'];
 
 // ---------- BibTeX parsing ----------
 
-/** Strip only the outermost wrapping braces of a field value. */
 function stripOuterBraces(value) {
     let v = String(value).trim();
     while (v.startsWith('{') && v.endsWith('}')) {
-        // Only strip if the outer pair actually wraps the whole value
-        // (e.g. "{A} and {B}" must keep its inner braces).
         let depth = 0;
         let wraps = true;
         for (let i = 0; i < v.length; i++) {
@@ -35,14 +32,12 @@ function stripOuterBraces(value) {
     return v;
 }
 
-/** Clean a field value: collapse whitespace, normalize LaTeX accents. */
 function cleanField(value) {
     return String(value)
         .replace(/\s+/g, ' ')
         .trim();
 }
 
-/** Parse the field region of an entry body: name = value pairs. */
 function parseFields(body) {
     const fields = {};
     let p = 0;
@@ -84,14 +79,9 @@ function parseFields(body) {
     return fields;
 }
 
-/**
- * Parse a .bib file into { key: {type, author, year, title, ...} }.
- * Handles standard entries, nested braces, quoted/bare values,
- * @comment/@preamble/@string (ignored) and % comments.
- */
 export function parseBibtex(src) {
     const entries = {};
-    const s = String(src);
+    const s = String(src ?? '').replace(/\r\n?/g, '\n');
 
     const text = s.split('\n')
         .filter(line => !/^\s*%/.test(line))
@@ -106,7 +96,7 @@ export function parseBibtex(src) {
         if (!head) { pos = at + 1; continue; }
 
         const type = head[1].toLowerCase();
-        const open = at + head[0].length - 1; // index of '{'
+        const open = at + head[0].length - 1;
 
         let depth = 1;
         let q = open + 1;
@@ -132,14 +122,17 @@ export function parseBibtex(src) {
 
 // ---------- Formatting helpers ----------
 
-/** Naive author splitting: "Donald E. Knuth and Leslie Lamport" → last names. */
 function authorLastNames(authorField) {
     if (!authorField) return [];
     return authorField
         .split(/\s+and\s+/i)
         .map(a => {
-            const parts = a.trim().split(/\s+/);
-            return parts.length > 0 ? parts[parts.length - 1].replace(/,$/, '') : '';
+            const clean = a.trim();
+            if (clean.includes(',')) {
+                return stripOuterBraces(clean.split(',')[0]).trim();
+            }
+            const parts = clean.split(/\s+/);
+            return parts.length > 0 ? stripOuterBraces(parts[parts.length - 1]).trim() : '';
         })
         .filter(Boolean);
 }
@@ -154,10 +147,10 @@ function formatAuthorsBrief(entry) {
 
 function formatFullReference(key, entry) {
     const bits = [];
-    if (entry.author) bits.push(entry.author);
+    if (entry.author) bits.push(stripOuterBraces(entry.author));
     if (entry.title) bits.push(`*${stripOuterBraces(entry.title)}*`);
-    if (entry.journal || entry.booktitle) bits.push(entry.journal || entry.booktitle);
-    const tail = [entry.year].filter(Boolean).join(', ');
+    if (entry.journal || entry.booktitle) bits.push(stripOuterBraces(entry.journal || entry.booktitle));
+    const tail = [stripOuterBraces(entry.year || '')].filter(Boolean).join(', ');
     if (tail) bits.push(tail);
     if (bits.length === 0) bits.push(`[${key}]`);
     return bits.join('. ');
@@ -165,10 +158,8 @@ function formatFullReference(key, entry) {
 
 // ---------- Citation ordering (numeric style) ----------
 
-// Groups: m[1]=\cite keys, m[3]=[@key] key.
-const CITE_MARKER_SOURCE = '\\\\cite\\{([^}]*)\\}|\\[(@)([^\\]\\s]+)\\]';
+const CITE_MARKER_SOURCE = '\\\\cite\\{([^}]*)\\}';
 
-/** Collect all cited keys across slides in deterministic order. */
 export function collectCitationKeys() {
     const keys = [];
     const seen = new Set();
@@ -178,7 +169,7 @@ export function collectCitationKeys() {
             let m;
             const re = new RegExp(CITE_MARKER_SOURCE, 'g');
             while ((m = re.exec(el.content)) !== null) {
-                const list = (m[1] !== undefined ? m[1] : m[3])
+                const list = (m[1] || '')
                     .split(',').map(k => k.trim()).filter(Boolean);
                 list.forEach(k => {
                     if (!seen.has(k)) { seen.add(k); keys.push(k); }
@@ -189,43 +180,61 @@ export function collectCitationKeys() {
     return keys;
 }
 
-/** Rebuild the per-pass number map. Call at the start of each full render. */
 export function beginCitationPass() {
     state._citationOrder = collectCitationKeys();
 }
 
 // ---------- Resolution ----------
 
+function getBibMap() {
+    if (!state.bibEntries || typeof state.bibEntries !== 'object') {
+        state.bibEntries = {};
+    }
+    return state.bibEntries;
+}
+
+/** Rebuild the ordering if this text cites keys not yet in it. */
+function ensureOrderIncludesCitedKeys(text) {
+    let m;
+    const re = new RegExp(CITE_MARKER_SOURCE, 'g');
+    let needsRebuild = false;
+    while ((m = re.exec(text)) !== null) {
+        const keys = (m[1] || '').split(',').map(k => k.trim()).filter(Boolean);
+        if (keys.some(k => !(state._citationOrder || []).includes(k))) {
+            needsRebuild = true;
+            break;
+        }
+    }
+    if (needsRebuild) beginCitationPass();
+}
+
 function resolveSingleKey(key) {
-    const entry = state.bibEntries[key];
+    const bibMap = getBibMap();
+    const entry = bibMap[key];
     if (!entry) return `**[?]**`;
     if (state.citestyle === 'authoryear') {
-        const year = entry.year || 'n.d.';
+        const year = entry.year ? stripOuterBraces(entry.year) : 'n.d.';
         return `(${formatAuthorsBrief(entry)}, ${year})`;
     }
-    const idx = (state._citationOrder || []).indexOf(key);
+    const order = Array.isArray(state._citationOrder) ? state._citationOrder : collectCitationKeys();
+    const idx = order.indexOf(key);
     return `**[${idx >= 0 ? idx + 1 : '?'}]**`;
 }
 
 function resolveMatch(m) {
-    if (m[1] !== undefined) {                 // \cite{key1,key2} form
-        const keys = m[1].split(',').map(k => k.trim()).filter(Boolean);
-        return keys.map(resolveSingleKey).join('');
-    }
-    return resolveSingleKey(m[3]);            // [@key] form
+    const keys = (m[1] || '').split(',').map(k => k.trim()).filter(Boolean);
+    return keys.map(resolveSingleKey).join('');
 }
 
-/**
- * Replace citation markers with their rendered form and expand
- * \fullcite{key} and \printbibliography.
- */
 export function resolveCitations(rawText) {
     let text = String(rawText ?? '');
+    ensureOrderIncludesCitedKeys(text);
 
-    // \printbibliography — the full list of cited references.
+    const bibMap = getBibMap();
+
     if (/\\printbibliography/.test(text)) {
         const lines = (state._citationOrder || []).map(key => {
-            const entry = state.bibEntries[key];
+            const entry = bibMap[key];
             return entry ? `- ${formatFullReference(key, entry)}` : `- [?] ${key}`;
         });
         const bib = lines.length > 0
@@ -234,15 +243,14 @@ export function resolveCitations(rawText) {
         text = text.replace(/\\printbibliography/g, bib);
     }
 
-    // \fullcite{key} — the full reference inline.
     text = text.replace(/\\fullcite\{([^}]*)\}/g, (_, keys) =>
         keys.split(',').map(k => {
-            const entry = state.bibEntries[k.trim()];
-            return entry ? formatFullReference(k.trim(), entry) : `**[? ${k.trim()}]**`;
+            const trimmed = k.trim();
+            const entry = bibMap[trimmed];
+            return entry ? formatFullReference(trimmed, entry) : `**[? ${trimmed}]**`;
         }).join('; ')
     );
 
-    // \cite{...} and [@key]
     text = text.replace(new RegExp(CITE_MARKER_SOURCE, 'g'), resolveMatch);
     return text;
 }
