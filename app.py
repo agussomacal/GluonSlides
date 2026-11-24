@@ -7,6 +7,7 @@ import subprocess
 import webview
 from PIL import Image
 from requirements import check_and_install_dependencies
+from snap_env import sanitize_snap_environment
 
 
 class Api:
@@ -498,6 +499,7 @@ class Api:
 
 
 if __name__ == '__main__':
+    sanitize_snap_environment()  # must run before webview.start()
     check_and_install_dependencies()
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
