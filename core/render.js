@@ -6,6 +6,7 @@
 
 import { state, markDirty } from './state.js';
 import { resolveCitations } from './citations.js';
+import { ElementRegistry } from './registry.js';
 
 // ---------- Markdown + KaTeX ----------
 
@@ -129,6 +130,39 @@ export function applyCommonBoxStyles(domEl, el) {
     domEl.style.borderColor = el.borderCol;
     domEl.style.borderWidth = `${el.borderWidth}px`;
     domEl.style.borderStyle = el.borderStyle;
+}
+
+// ---------- Element DOM / export markup (shared) ----------
+
+/**
+ * Non-interactive DOM for an element: used for thumbnails, for the
+ * contents of groups that are not being edited, and for elements
+ * outside the group being edited.
+ */
+export function buildStaticElement(el, className = 'thumb-element') {
+    const def = ElementRegistry.get(el.type);
+    const domEl = document.createElement('div');
+    domEl.className = `${className} ${def ? def.className : 'element-shape'}`;
+    domEl.style.position = 'absolute';
+    applyCommonBoxStyles(domEl, el);
+    if (def) def.renderDom(domEl, el, { context: 'thumb', elIndex: -1 });
+    return domEl;
+}
+
+/** Positioned HTML for one element in HTML/PDF exports. */
+export function exportElementMarkup(el) {
+    const def = ElementRegistry.get(el.type);
+    const geo = `position: absolute; left:${el.x}px; top:${el.y}px;`
+        + `width:${el.width}px; height:${el.height}px;`
+        + `background-color:${el.bg};`
+        + `border: ${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
+        + `box-sizing: border-box;`;
+
+    if (!def) return `<div class="el" style="${geo}"></div>`;
+    if (el.type === 'text') {
+        return `<div class="el ${def.className} align-${el.textAlign || 'center'}" style="${geo} ${textElementSharedStyle(el)}">${def.exportInner(el)}</div>`;
+    }
+    return `<div class="el" style="${geo}">${def.exportInner(el)}</div>`;
 }
 
 // ---------- Grid + dimensions ----------

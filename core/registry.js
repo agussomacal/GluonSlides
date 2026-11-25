@@ -13,8 +13,14 @@
 //                   'canvas' | 'thumb'; wire events only for canvas)
 //   exportInner(el) : return inner HTML string for exports
 //   properties(el, elIndex) : type-specific properties-panel HTML
-//   actions      : optional { name: fn(elIndex, payload) } callable
-//                  from inline onclick via ElementRegistry.callAction
+//   toolbar      : optional; false hides the toolbar "add" button
+//   actions      : optional { name: fn(elIndex, arg) }. A button in
+//                  properties() HTML with data-element-action="name"
+//                  (and optional data-arg="...") runs it on click.
+//
+// properties() HTML uses no inline handlers: a control with
+// data-prop="fontSize" updates that property of the selection
+// (selects on change, other inputs while typing).
 //
 // .gl SERIALIZATION — element properties are whitelisted in
 // core/gl/glformat.js (SCHEMAS). When adding a new element type,
@@ -47,7 +53,7 @@ export const ElementRegistry = {
         return [...definitions.values()];
     },
 
-    /** Called from inline onclick handlers in generated properties HTML. */
+    /** Runs an element action (from a data-element-action button). */
     callAction(type, action, elIndex, payload) {
         const def = definitions.get(type);
         if (def && def.actions && typeof def.actions[action] === 'function') {
@@ -56,7 +62,3 @@ export const ElementRegistry = {
         console.warn(`Unknown element action: ${type}.${action}`);
     },
 };
-
-// Global bridge for inline onclick="ElementRegistry.callAction(...)"
-// inside properties-panel HTML strings.
-window.ElementRegistry = ElementRegistry;

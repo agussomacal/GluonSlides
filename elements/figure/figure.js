@@ -5,7 +5,7 @@
 // snapshots and undo history never carry base64 payloads.
 // ============================================================
 
-import { state, pyApi, markDirty } from '../../core/state.js';
+import { state, pyApi, markDirty, activeElements, forEachElementDeep } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml } from '../../core/render.js';
 
@@ -43,10 +43,9 @@ export function figureSrc(el) {
 }
 
 function assignFigureSource(elIndex, src, originalPath, storedPath) {
-    const slide = state.slides[state.currentSlideIndex];
-    if (!slide || !slide.elements[elIndex]) return;
+    const el = activeElements()[elIndex];
+    if (!el) return;
 
-    const el = slide.elements[elIndex];
     el.originalPath = originalPath || '';
     el.filePath = storedPath || '';
     el.borderStyle = 'solid';
@@ -114,15 +113,15 @@ export async function hydrateFigures(slides, projectFolder) {
     const pending = new Map();
 
     for (const slide of slides) {
-        for (const el of (slide.elements || [])) {
-            if (el.type !== 'figure') continue;
+        forEachElementDeep(slide.elements, (el) => {
+            if (el.type !== 'figure') return;
             const key = figureKey(el);
             if (typeof el.src === 'string' && el.src) {
                 if (key && !figureSources.has(key)) figureSources.set(key, el.src);
                 delete el.src;
             }
             if (key && !figureSources.has(key)) pending.set(key, key);
-        }
+        });
     }
 
     await Promise.all([...pending.keys()].map(async (key) => {
@@ -143,7 +142,6 @@ export function clearFigureCache() {
     figureSources.clear();
 }
 
-window.SlideStudioFigure = { browseFigurePath, handleFigureDrop, openPathInSystem };
 
 const FigureElement = {
     type: 'figure',
@@ -205,6 +203,12 @@ const FigureElement = {
         }
     },
 
+    // Buttons in properties() call these via data-element-action.
+    actions: {
+        browse: (elIndex) => browseFigurePath(elIndex),
+        openPath: (elIndex, path) => openPathInSystem(path),
+    },
+
     exportInner(el) {
         const src = figureSrc(el);
         if (src) {
@@ -224,7 +228,7 @@ const FigureElement = {
                 <div style="display: flex; gap: 6px;">
                     <input type="text" class="prop-control" readonly value="${escapeHtml(origPath)}" placeholder="No original path">
                     <button class="btn btn-secondary" style="width: auto; padding: 6px 10px; margin-bottom: 0;"
-                            onclick="SlideStudioFigure.openPathInSystem('${escapeHtml(origPath).replace(/'/g, "\\'")}')"
+                            data-element-action="openPath" data-arg="${escapeHtml(origPath)}"
                             title="Open in File Manager">📂</button>
                 </div>
             </div>
@@ -233,13 +237,13 @@ const FigureElement = {
                 <div style="display: flex; gap: 6px;">
                     <input type="text" class="prop-control" readonly value="${escapeHtml(localPath)}" placeholder="No local copy">
                     <button class="btn btn-secondary" style="width: auto; padding: 6px 10px; margin-bottom: 0;"
-                            onclick="SlideStudioFigure.openPathInSystem('${escapeHtml(absLocalPath || origPath).replace(/'/g, "\\'")}')"
+                            data-element-action="openPath" data-arg="${escapeHtml(absLocalPath || origPath)}"
                             title="Open in File Manager">📂</button>
                 </div>
             </div>
             <div class="prop-group" style="margin-top: 12px;">
                 <button class="btn btn-secondary" style="width: 100%;"
-                        onclick="SlideStudioFigure.browseFigurePath(${elIndex})">📁 Browse New File...</button>
+                        data-element-action="browse">📁 Browse New File...</button>
             </div>
         `;
     },

@@ -24,16 +24,24 @@ export function gridSteps() {
     return { stepX: 1, stepY: 1 };
 }
 
+/**
+ * Screen pixels per slide unit, per axis. Differs between axes inside
+ * a group that was resized non-proportionally.
+ */
 function computeScale(domEl, el) {
-    return domEl.getBoundingClientRect().width / (el.width || 1) || 0.5;
+    const rect = domEl.getBoundingClientRect();
+    return {
+        sx: rect.width / (el.width || 1) || 0.5,
+        sy: rect.height / (el.height || 1) || 0.5,
+    };
 }
 
 /** Cursor feedback while hovering near edges of an element. */
 export function updateResizeCursor(domEl, el, mouseEvent) {
     const rect = domEl.getBoundingClientRect();
-    const scale = computeScale(domEl, el);
-    const localX = (mouseEvent.clientX - rect.left) / scale;
-    const localY = (mouseEvent.clientY - rect.top) / scale;
+    const { sx, sy } = computeScale(domEl, el);
+    const localX = (mouseEvent.clientX - rect.left) / sx;
+    const localY = (mouseEvent.clientY - rect.top) / sy;
 
     const isLeft = localX < EDGE_THRESHOLD;
     const isRight = localX > (el.width - EDGE_THRESHOLD);
@@ -54,7 +62,7 @@ export function updateResizeCursor(domEl, el, mouseEvent) {
  * `groupItems` is an optional array of `{ el, domEl }` for all selected elements.
  */
 export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
-    const scale = computeScale(domEl, el);
+    const { sx, sy } = computeScale(domEl, el);
     const { stepX, stepY } = gridSteps();
 
     const startX = e.clientX;
@@ -63,8 +71,8 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
     let hasDragged = false;
 
     const rect = domEl.getBoundingClientRect();
-    const localX = (e.clientX - rect.left) / scale;
-    const localY = (e.clientY - rect.top) / scale;
+    const localX = (e.clientX - rect.left) / sx;
+    const localY = (e.clientY - rect.top) / sy;
     const isLeft = localX < EDGE_THRESHOLD;
     const isRight = localX > (el.width - EDGE_THRESHOLD);
     const isTop = localY < EDGE_THRESHOLD;
@@ -111,8 +119,8 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
     }
 
     function onMouseMove(moveEvent) {
-        const dx = (moveEvent.clientX - startX) / scale;
-        const dy = (moveEvent.clientY - startY) / scale;
+        const dx = (moveEvent.clientX - startX) / sx;
+        const dy = (moveEvent.clientY - startY) / sy;
         if (Math.abs(dx) > DRAG_START_PX || Math.abs(dy) > DRAG_START_PX) hasDragged = true;
 
         const freeform = moveEvent.altKey;

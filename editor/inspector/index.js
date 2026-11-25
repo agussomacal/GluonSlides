@@ -22,6 +22,9 @@ import {
     applyProjectData,
     setSelectedElementIndices,
     setSelectedSlideIndices,
+    setEditingGroup,
+    activeElements,
+    findElementPath,
 } from '../../core/state.js';
 import { looksLikeGl } from '../../core/gl/glformat.js';
 import { syncProjectChrome } from '../../core/render.js';
@@ -208,7 +211,10 @@ function buildDrawer() {
 
 // ---------- Inspector -> canvas ----------
 
-/** Selects the slide/element the caret is on, without touching the text. */
+/**
+ * Selects the slide/element the caret is on, without touching the text.
+ * An element inside a group opens that group for editing.
+ */
 function selectOnCanvas(target) {
     if (!state.slides.length) return;
 
@@ -216,19 +222,22 @@ function selectOnCanvas(target) {
     if (slideIdx === -1) slideIdx = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
     const slide = state.slides[slideIdx];
 
-    const elIdx = target.elementId === null || target.elementId === undefined
-        ? -1
-        : slide.elements.findIndex(el => parseIdValue(el.id) === parseIdValue(target.elementId));
+    const elementId = parseIdValue(target.elementId);
+    const path = elementId === null ? [] : (findElementPath(slide, elementId) || []);
+    const groupId = path.length ? path[path.length - 1].id : null;
+    const container = path.length ? path[path.length - 1].children : slide.elements;
+    const elIdx = elementId === null ? -1 : container.findIndex(el => el.id === elementId);
 
     const wanted = elIdx >= 0 ? [elIdx] : [];
     const current = state.selectedElementIndices || [];
-    const unchanged = state.currentSlideIndex === slideIdx
+    const unchanged = state.currentSlideIndex === slideIdx && state.editingGroupId === groupId
         && current.length === wanted.length && current.every((v, i) => v === wanted[i]);
     if (unchanged) return;
 
-    currentTarget = { slideId: slide.id, elementId: elIdx >= 0 ? slide.elements[elIdx].id : null };
+    currentTarget = { slideId: slide.id, elementId: elIdx >= 0 ? container[elIdx].id : null };
     state.currentSlideIndex = slideIdx;
     setSelectedSlideIndices([slideIdx]);
+    setEditingGroup(groupId);
     setSelectedElementIndices(wanted, elIdx >= 0 ? elIdx : null);
 
     isNavigating = true;
@@ -306,8 +315,9 @@ function refreshFromState({ force = false, jump = false } = {}) {
 function followSelection() {
     const slide = state.slides[state.currentSlideIndex];
     if (!slide) return;
-    const el = state.selectedElementIndex !== null ? slide.elements[state.selectedElementIndex] : null;
-    currentTarget = { slideId: slide.id, elementId: el ? el.id : null };
+    const el = state.selectedElementIndex !== null ? activeElements()[state.selectedElementIndex] : null;
+    const group = state.editingGroupId;
+    currentTarget = { slideId: slide.id, elementId: el ? el.id : group };
 }
 
 // ---------- Public API ----------
@@ -350,7 +360,8 @@ export function initGlInspector() {
         if (e.key !== 'Escape') return;
         if (settingsPopover.isOpen()) {
             settingsPopover.setOpen(false);
-        } else if (isOpen && !isFocused) {
+        } else if (isOpen && !isFocused && state.editingGroupId === null) {
+            // (While editing a group, Esc leaves the group instead.)
             closeGlInspector();
         }
     });

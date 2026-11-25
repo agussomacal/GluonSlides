@@ -15,6 +15,9 @@ import {
     setSelectedSlideIndices,
     allocateElementId,
     allocateSlideId,
+    activeElements,
+    activeGroup,
+    activeGroupPath,
 } from '../core/state.js';
 import { ElementRegistry } from '../core/registry.js';
 import {
@@ -24,10 +27,14 @@ import {
     syncSlideSizeSelect,
     syncGridSizeSelect,
     escapeHtml,
+    buildStaticElement,
 } from '../core/render.js';
 import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } from '../core/geometry.js';
 import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
+import { initMarqueeSelection } from './marquee.js';
+import { createGroupFrame, groupScale } from '../elements/group/group.js';
+import { enterGroup, exitGroup, groupSelection, ungroupSelection, isEditingGroup } from './groupOps.js';
 
 const SLIDE_DRAG_THRESHOLD_PX = 5;
 
@@ -38,7 +45,7 @@ export function renderToolbarButtons() {
     if (!container) return;
     container.querySelectorAll('[data-role="add-element"]').forEach(n => n.remove());
 
-    ElementRegistry.types().forEach(def => {
+    ElementRegistry.types().filter(def => def.toolbar !== false).forEach(def => {
         const btn = document.createElement('button');
         btn.className = 'toolbar-btn';
         btn.setAttribute('data-role', 'add-element');
@@ -51,8 +58,9 @@ export function renderToolbarButtons() {
 // ---------- Element lifecycle ----------
 
 export function addElement(type) {
-    const slide = state.slides[state.currentSlideIndex];
-    if (!slide) return;
+    if (!state.slides[state.currentSlideIndex]) return;
+    const elements = activeElements(); // inside the group being edited, if any
+    const inGroup = isEditingGroup();
 
     const def = ElementRegistry.get(type);
     if (!def) {
@@ -60,46 +68,53 @@ export function addElement(type) {
         return;
     }
 
-    const stagger = slide.elements.length * 30;
+    const stagger = elements.length * 30;
+    const offset = inGroup ? 20 : 200;
     const el = {
         ...def.defaults({}),
         id: allocateElementId(), // stable, monotonic, never reused
-        x: 200 + stagger,
-        y: 200 + stagger,
+        x: offset + stagger,
+        y: offset + stagger,
     };
 
-    slide.elements.push(el);
-    setSelectedElementIndices([slide.elements.length - 1], slide.elements.length - 1);
+    elements.push(el);
+    setSelectedElementIndices([elements.length - 1], elements.length - 1);
     setSelectedSlideIndices([state.currentSlideIndex]);
     markDirty();
     renderEditor();
 }
 
 function updateProp(propName, value) {
-    const slide = state.slides[state.currentSlideIndex];
+    const elements = activeElements();
     const indices = getSelectedElementIndices();
-    if (indices.length === 0 || !slide) return;
+    if (indices.length === 0) return;
 
-    const numericProps = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth'];
-    const parsedVal = numericProps.includes(propName) ? Number(value) : value;
+    // Numeric if any selected element's type declares it numeric (its
+    // .gl spec), or it is one of the common geometry/border props.
+    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth'];
+    const isNumeric = commonNumeric.includes(propName) || indices.some(idx => {
+        const def = elements[idx] && ElementRegistry.get(elements[idx].type);
+        return !!(def && def.gl && Array.isArray(def.gl.numericProps) && def.gl.numericProps.includes(propName));
+    });
+    const parsedVal = isNumeric ? Number(value) : value;
 
     const primaryIdx = (state.selectedElementIndex !== null && indices.includes(state.selectedElementIndex))
         ? state.selectedElementIndex
         : indices[0];
-    const primaryEl = slide.elements[primaryIdx];
+    const primaryEl = elements[primaryIdx];
     const prevVal = primaryEl ? primaryEl[propName] : undefined;
 
     if (propName === 'x' || propName === 'y') {
         const delta = Number(parsedVal) - Number(prevVal);
         indices.forEach(idx => {
-            if (slide.elements[idx]) {
-                slide.elements[idx][propName] = Number(slide.elements[idx][propName]) + delta;
+            if (elements[idx]) {
+                elements[idx][propName] = Number(elements[idx][propName]) + delta;
             }
         });
     } else {
         indices.forEach(idx => {
-            if (slide.elements[idx]) {
-                slide.elements[idx][propName] = parsedVal;
+            if (elements[idx]) {
+                elements[idx][propName] = parsedVal;
             }
         });
     }
@@ -108,12 +123,38 @@ function updateProp(propName, value) {
     renderCanvas();
     updateThumbnailLive();
 }
-window.updateProp = updateProp;
+
+// ---------- Properties panel events ----------
+// Controls in the panel HTML carry data-prop="<property>"; buttons that
+// run element-specific code carry data-element-action="<action>" (with
+// an optional data-arg) and are dispatched through the element's
+// `actions` (see core/registry.js). No inline handlers, no globals.
+
+const propertiesPanel = document.getElementById('properties-body');
+
+function onPropertyControl(e) {
+    const control = e.target;
+    if (!control.dataset || !control.dataset.prop) return;
+    // Dropdowns apply on change; text/number/color inputs live while typing.
+    const wanted = control.tagName === 'SELECT' ? 'change' : 'input';
+    if (e.type === wanted) updateProp(control.dataset.prop, control.value);
+}
+propertiesPanel.addEventListener('input', onPropertyControl);
+propertiesPanel.addEventListener('change', onPropertyControl);
+
+propertiesPanel.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-element-action]');
+    if (!btn) return;
+    const elIndex = state.selectedElementIndex;
+    const el = elIndex !== null ? activeElements()[elIndex] : null;
+    if (!el) return;
+    ElementRegistry.callAction(el.type, btn.dataset.elementAction, elIndex, btn.dataset.arg);
+});
 
 export function moveSelectedElementsByArrow(key, altKey = false) {
-    const slide = state.slides[state.currentSlideIndex];
+    const elements = activeElements();
     const indices = getSelectedElementIndices();
-    if (!slide || indices.length === 0) return false;
+    if (indices.length === 0) return false;
 
     const { stepX, stepY } = gridSteps();
     const baseStepX = altKey ? 1 : (state.gridSize > 0 ? stepX : 10);
@@ -128,7 +169,7 @@ export function moveSelectedElementsByArrow(key, altKey = false) {
     else return false;
 
     indices.forEach(idx => {
-        const el = slide.elements[idx];
+        const el = elements[idx];
         if (!el) return;
         let nextX = el.x + dx;
         let nextY = el.y + dy;
@@ -148,12 +189,14 @@ export function moveSelectedElementsByArrow(key, altKey = false) {
 }
 
 export function deleteSelectedElements(showFlash = false) {
-    const slide = state.slides[state.currentSlideIndex];
+    const elements = activeElements();
     const indices = getSelectedElementIndices();
-    if (!slide || indices.length === 0) return false;
+    if (indices.length === 0) return false;
 
     const toRemove = new Set(indices);
-    slide.elements = slide.elements.filter((_, idx) => !toRemove.has(idx));
+    // In place, so a group's children array keeps its identity.
+    const kept = elements.filter((_, idx) => !toRemove.has(idx));
+    elements.splice(0, elements.length, ...kept);
     setSelectedElementIndices([], null);
     markDirty();
     renderEditor();
@@ -166,19 +209,7 @@ export function deleteSelectedElements(showFlash = false) {
 // ---------- Thumbnails ----------
 
 function buildThumbElement(el) {
-    const thumbEl = document.createElement('div');
-    const def = ElementRegistry.get(el.type);
-    thumbEl.className = `thumb-element ${def ? def.className : 'element-shape'}`;
-    thumbEl.style.left = `${el.x}px`;
-    thumbEl.style.top = `${el.y}px`;
-    thumbEl.style.width = `${el.width}px`;
-    thumbEl.style.height = `${el.height}px`;
-    applyCommonBoxStyles(thumbEl, el);
-
-    if (def) {
-        def.renderDom(thumbEl, el, { context: 'thumb', elIndex: -1 });
-    }
-    return thumbEl;
+    return buildStaticElement(el, 'thumb-element');
 }
 
 export function updateThumbnailLive() {
@@ -242,10 +273,43 @@ function renderCanvas() {
     const slide = state.slides[state.currentSlideIndex];
     if (!slide) return;
 
+    // Elements along the path to the edited group are drawn as open
+    // shells; the edited group's children are interactive; everything
+    // else is drawn static and dimmed.
+    renderLevel(canvas, slide.elements, activeGroupPath(), 0);
+}
+
+/** The DOM container holding the interactive elements (canvas or group frame). */
+export function activeContainer() {
+    return document.querySelector('.group-entered > .group-frame') || document.getElementById('slide-canvas');
+}
+
+function renderLevel(container, elements, path, depth) {
+    if (depth === path.length) {
+        renderInteractiveElements(container, elements);
+        return;
+    }
+    const open = path[depth];
+    elements.forEach(el => {
+        if (el !== open) {
+            container.appendChild(buildStaticElement(el, 'canvas-element outside-group'));
+            return;
+        }
+        const shell = document.createElement('div');
+        shell.className = 'canvas-element element-group group-entered';
+        applyCommonBoxStyles(shell, el);
+        const frame = createGroupFrame(el);
+        shell.appendChild(frame);
+        container.appendChild(shell);
+        renderLevel(frame, el.children, path, depth + 1);
+    });
+}
+
+function renderInteractiveElements(container, elements) {
     const selectedSet = new Set(getSelectedElementIndices());
     const renderedItems = [];
 
-    slide.elements.forEach((el, elIndex) => {
+    elements.forEach((el, elIndex) => {
         const def = ElementRegistry.get(el.type);
         const domEl = document.createElement('div');
         domEl.className = `canvas-element ${def ? def.className : 'element-shape'}`;
@@ -267,8 +331,31 @@ function renderCanvas() {
             updateResizeCursor(domEl, el, e);
         };
 
+        const dragCallbacks = {
+            onGeometryChanged() {
+                if (el.type === 'group') {
+                    // Rescale the contents live while the group is resized.
+                    const frame = container.querySelector(`:scope > [data-element-id="${el.id}"] > .group-frame`);
+                    const { sx, sy } = groupScale(el);
+                    if (frame) frame.style.transform = `scale(${sx}, ${sy})`;
+                }
+                const xInput = document.getElementById('prop-x');
+                const yInput = document.getElementById('prop-y');
+                if (xInput) xInput.value = Math.round(el.x);
+                if (yInput) yInput.value = Math.round(el.y);
+            },
+            onFinish(hasDragged, isResizing) {
+                if (hasDragged) markDirty();
+                renderPropertiesPanel();
+                if (hasDragged) {
+                    renderEditor();
+                }
+            },
+        };
+
         domEl.onmousedown = (e) => {
             if (domEl.classList.contains('editing-mode')) return;
+            if (e.button !== 0) return;
             e.stopPropagation();
 
             const multiToggle = e.ctrlKey || e.metaKey;
@@ -291,23 +378,9 @@ function renderCanvas() {
                 setSelectedElementIndices([elIndex], elIndex);
                 renderCanvas();
                 renderPropertiesPanel();
-                const freshDom = canvas.children[elIndex];
+                const freshDom = activeContainer().querySelector(`:scope > [data-element-id="${el.id}"]`);
                 if (!freshDom) return;
-                startDragOrResize(freshDom, el, e, {
-                    onGeometryChanged() {
-                        const xInput = document.getElementById('prop-x');
-                        const yInput = document.getElementById('prop-y');
-                        if (xInput) xInput.value = Math.round(el.x);
-                        if (yInput) yInput.value = Math.round(el.y);
-                    },
-                    onFinish(hasDragged, isResizing) {
-                        if (hasDragged) markDirty();
-                        renderPropertiesPanel();
-                        if (hasDragged && !isResizing) {
-                            renderEditor();
-                        }
-                    },
-                });
+                startDragOrResize(freshDom, el, e, dragCallbacks);
                 return;
             }
 
@@ -316,30 +389,23 @@ function renderCanvas() {
                 .filter(item => getSelectedElementIndices().includes(item.elIndex))
                 .map(item => ({ el: item.el, domEl: item.domEl }));
 
-            startDragOrResize(domEl, el, e, {
-                onGeometryChanged() {
-                    const xInput = document.getElementById('prop-x');
-                    const yInput = document.getElementById('prop-y');
-                    if (xInput) xInput.value = Math.round(el.x);
-                    if (yInput) yInput.value = Math.round(el.y);
-                },
-                onFinish(hasDragged, isResizing) {
-                    if (hasDragged) markDirty();
-                    renderPropertiesPanel();
-                    if (hasDragged && !isResizing) {
-                        renderEditor();
-                    }
-                },
-            }, groupItems);
+            startDragOrResize(domEl, el, e, dragCallbacks, groupItems);
         };
 
-        canvas.appendChild(domEl);
+        container.appendChild(domEl);
     });
 }
 
 // Canvas background click clears element selection so slide is active.
+// While editing a group, clicking outside it leaves the group.
 document.getElementById('slide-canvas').addEventListener('click', (e) => {
-    if (e.target.id === 'slide-canvas') {
+    const inEnteredGroup = e.target.closest('.group-entered');
+    if (isEditingGroup() && !inEnteredGroup) {
+        exitGroup();
+        renderEditor();
+        return;
+    }
+    if (e.target.id === 'slide-canvas' || (inEnteredGroup && !e.target.closest('[data-element-id]'))) {
         setSelectedElementIndices([], null);
         setSelectedSlideIndices([state.currentSlideIndex]);
         renderCanvas();
@@ -352,10 +418,8 @@ document.getElementById('slide-canvas').addEventListener('click', (e) => {
 window.addEventListener('click', (e) => {
     const editingEl = document.querySelector('.canvas-element.editing-mode');
     if (editingEl && !editingEl.contains(e.target)) {
-        const slide = state.slides[state.currentSlideIndex];
-        if (slide && state.selectedElementIndex !== null && slide.elements[state.selectedElementIndex]) {
-            saveAndExitTextEditing(editingEl, slide.elements[state.selectedElementIndex]);
-        }
+        const el = state.selectedElementIndex !== null ? activeElements()[state.selectedElementIndex] : null;
+        if (el) saveAndExitTextEditing(editingEl, el);
     }
 });
 
@@ -375,16 +439,23 @@ document.addEventListener('slide-thumbnail-changed', () => {
 function renderPropertiesPanel() {
     const panelBody = document.getElementById('properties-body');
     const slide = state.slides[state.currentSlideIndex];
+    const elements = activeElements();
     const selectedIndices = getSelectedElementIndices();
+    const group = activeGroup();
+    const groupBanner = group ? `
+        <div class="group-banner">
+            <span>Editing group <strong>#${group.id}</strong> — positions are relative to the group.</span>
+            <button class="btn btn-secondary" data-action="exit-group">Done (Esc)</button>
+        </div>` : '';
 
     if (selectedIndices.length === 0 || !slide) {
-        panelBody.innerHTML = `<div class="no-selection">Select an object on the canvas to inspect and customize its properties.</div>`;
+        panelBody.innerHTML = groupBanner + `<div class="no-selection">Select an object on the canvas to inspect and customize its properties. Drag on empty space to select several.</div>`;
         return;
     }
 
     if (selectedIndices.length > 1) {
-        const firstEl = slide.elements[selectedIndices[0]];
-        panelBody.innerHTML = `
+        const firstEl = elements[selectedIndices[0]];
+        panelBody.innerHTML = groupBanner + `
             <div class="prop-group">
                 <label>Selection</label>
                 <input type="text" class="prop-control prop-readonly" value="${selectedIndices.length} objects selected" disabled>
@@ -392,19 +463,20 @@ function renderPropertiesPanel() {
             <p class="prop-hint">
                 Drag or use <strong>Arrow keys</strong> to move all ${selectedIndices.length} objects together, <strong>Ctrl+X / Ctrl+C / Ctrl+V</strong> to cut/copy/paste, or <strong>Delete</strong> to remove.
             </p>
+            <button class="btn btn-secondary" data-action="group-selection" style="width: 100%;">🗂️ Group (Ctrl+G)</button>
             <div class="prop-divider"></div>
             <div class="prop-group">
                 <label>Background Color (All Selected)</label>
-                <input type="color" class="prop-control prop-color" value="${firstEl.bg === 'transparent' ? '#ffffff' : firstEl.bg}" oninput="updateProp('bg', this.value)">
+                <input type="color" class="prop-control prop-color" value="${firstEl.bg === 'transparent' ? '#ffffff' : firstEl.bg}" data-prop="bg">
             </div>
             <div class="prop-row">
                 <div class="prop-group">
                     <label>Border Color</label>
-                    <input type="color" class="prop-control prop-color" value="${firstEl.borderCol === 'transparent' ? '#000000' : firstEl.borderCol}" oninput="updateProp('borderCol', this.value)">
+                    <input type="color" class="prop-control prop-color" value="${firstEl.borderCol === 'transparent' ? '#000000' : firstEl.borderCol}" data-prop="borderCol">
                 </div>
                 <div class="prop-group">
                     <label>Border Width</label>
-                    <input type="number" class="prop-control" min="0" max="20" value="${firstEl.borderWidth}" oninput="updateProp('borderWidth', this.value)">
+                    <input type="number" class="prop-control" min="0" max="20" value="${firstEl.borderWidth}" data-prop="borderWidth">
                 </div>
             </div>
         `;
@@ -412,11 +484,11 @@ function renderPropertiesPanel() {
     }
 
     const activeIdx = selectedIndices[0];
-    const el = slide.elements[activeIdx];
+    const el = elements[activeIdx];
     const def = ElementRegistry.get(el.type);
     const typeLabel = def ? def.label.replace(/^Add\s+/i, '') : el.type;
 
-    let html = `
+    let html = groupBanner + `
         <div class="prop-group">
             <label>Object Type</label>
             <input type="text" class="prop-control prop-readonly" value="${escapeHtml(typeLabel)}" disabled>
@@ -424,21 +496,21 @@ function renderPropertiesPanel() {
         <div class="prop-row">
             <div class="prop-group">
                 <label>X Position</label>
-                <input type="number" id="prop-x" class="prop-control" value="${Math.round(el.x)}" oninput="updateProp('x', this.value)">
+                <input type="number" id="prop-x" class="prop-control" value="${Math.round(el.x)}" data-prop="x">
             </div>
             <div class="prop-group">
                 <label>Y Position</label>
-                <input type="number" id="prop-y" class="prop-control" value="${Math.round(el.y)}" oninput="updateProp('y', this.value)">
+                <input type="number" id="prop-y" class="prop-control" value="${Math.round(el.y)}" data-prop="y">
             </div>
         </div>
         <div class="prop-row">
             <div class="prop-group">
                 <label>Width</label>
-                <input type="number" class="prop-control" value="${Math.round(el.width)}" oninput="updateProp('width', this.value)">
+                <input type="number" class="prop-control" value="${Math.round(el.width)}" data-prop="width">
             </div>
             <div class="prop-group">
                 <label>Height</label>
-                <input type="number" class="prop-control" value="${Math.round(el.height)}" oninput="updateProp('height', this.value)">
+                <input type="number" class="prop-control" value="${Math.round(el.height)}" data-prop="height">
             </div>
         </div>
     `;
@@ -451,21 +523,21 @@ function renderPropertiesPanel() {
         <div class="prop-divider"></div>
         <div class="prop-group">
             <label>Background Color</label>
-            <input type="color" class="prop-control prop-color" value="${el.bg === 'transparent' ? '#ffffff' : el.bg}" oninput="updateProp('bg', this.value)">
+            <input type="color" class="prop-control prop-color" value="${el.bg === 'transparent' ? '#ffffff' : el.bg}" data-prop="bg">
         </div>
         <div class="prop-row">
             <div class="prop-group">
                 <label>Border Color</label>
-                <input type="color" class="prop-control prop-color" value="${el.borderCol === 'transparent' ? '#000000' : el.borderCol}" oninput="updateProp('borderCol', this.value)">
+                <input type="color" class="prop-control prop-color" value="${el.borderCol === 'transparent' ? '#000000' : el.borderCol}" data-prop="borderCol">
             </div>
             <div class="prop-group">
                 <label>Border Width (px)</label>
-                <input type="number" class="prop-control" min="0" max="20" value="${el.borderWidth}" oninput="updateProp('borderWidth', this.value)">
+                <input type="number" class="prop-control" min="0" max="20" value="${el.borderWidth}" data-prop="borderWidth">
             </div>
         </div>
         <div class="prop-group">
             <label>Border Style</label>
-            <select class="prop-control" onchange="updateProp('borderStyle', this.value)">
+            <select class="prop-control" data-prop="borderStyle">
                 <option value="solid" ${el.borderStyle === 'solid' ? 'selected' : ''}>Solid</option>
                 <option value="dashed" ${el.borderStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
                 <option value="dotted" ${el.borderStyle === 'dotted' ? 'selected' : ''}>Dotted</option>
@@ -476,6 +548,58 @@ function renderPropertiesPanel() {
 
     panelBody.innerHTML = html;
 }
+
+// ---------- Groups ----------
+
+document.addEventListener('enter-group', (e) => {
+    enterGroup(e.detail.id);
+    renderEditor();
+});
+
+/** Ctrl+G / button: group the selection. */
+export function groupSelected() {
+    if (!groupSelection()) return false;
+    renderEditor();
+    return true;
+}
+
+/** Ctrl+Shift+G / button: ungroup selected groups. */
+export function ungroupSelected() {
+    if (!ungroupSelection()) return false;
+    renderEditor();
+    return true;
+}
+
+/** Enters the selected group (properties-panel button). */
+export function enterSelectedGroup() {
+    const el = activeElements()[state.selectedElementIndex];
+    if (!el || el.type !== 'group') return false;
+    enterGroup(el.id);
+    renderEditor();
+    return true;
+}
+
+/** Esc / "Done": leave the group being edited. */
+export function leaveGroup() {
+    if (!exitGroup()) return false;
+    renderEditor();
+    return true;
+}
+
+// Drag on empty canvas space to select every element the box touches.
+initMarqueeSelection({
+    workspace: document.getElementById('workspace-area'),
+    canvas: document.getElementById('slide-canvas'),
+    getContainer: activeContainer,
+    onSelect(indices) {
+        const primary = indices.length ? indices[indices.length - 1] : null;
+        setSelectedElementIndices(indices, primary);
+        setSelectedSlideIndices([state.currentSlideIndex]);
+        renderCanvas();
+        renderPropertiesPanel();
+        updateSlideThumbSelectionUI();
+    },
+});
 
 // ---------- Thumbnails, Slide selection & Drag reorder ----------
 
@@ -738,6 +862,7 @@ export function addSlide() {
 
 export function selectSlide(index) {
     if (index < 0 || index >= state.slides.length) return;
+    state.editingGroupId = null;
     state.currentSlideIndex = index;
     setSelectedSlideIndices([index]);
     setSelectedElementIndices([], null);

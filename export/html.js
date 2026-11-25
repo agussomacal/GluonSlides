@@ -6,8 +6,7 @@
 // ============================================================
 
 import { state } from '../core/state.js';
-import { ElementRegistry } from '../core/registry.js';
-import { escapeHtml, textElementSharedStyle } from '../core/render.js';
+import { escapeHtml, exportElementMarkup } from '../core/render.js';
 
 export async function getExportHtmlString() {
     let katexCss = '';
@@ -40,20 +39,7 @@ export async function getExportHtmlString() {
         slidesMarkup += `<div class="slide ${idx === 0 ? 'active' : ''}" id="slide-${idx}" style="${slideStyle}">`;
 
         s.elements.forEach(el => {
-            const def = ElementRegistry.get(el.type);
-            const geo = `position: absolute; left:${el.x}px; top:${el.y}px;`
-                + `width:${el.width}px; height:${el.height}px;`
-                + `background-color:${el.bg};`
-                + `border: ${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
-                + `box-sizing: border-box;`;
-
-            if (!def) {
-                slidesMarkup += `<div class="el" style="${geo}"></div>`;
-            } else if (el.type === 'text') {
-                slidesMarkup += `<div class="el ${def.className} align-${el.textAlign || 'center'}" style="${geo} ${textElementSharedStyle(el)}">${def.exportInner(el)}</div>`;
-            } else {
-                slidesMarkup += `<div class="el" style="${geo}">${def.exportInner(el)}</div>`;
-            }
+            slidesMarkup += exportElementMarkup(el);
         });
 
         slidesMarkup += `</div>`;

@@ -115,6 +115,20 @@ function normalizeUniqueIds(project) {
         return id;
     };
 
+    const fixElements = (elements) => {
+        for (const el of (elements || [])) {
+            const rawElId = Number(el.id);
+            let elId = Number.isInteger(rawElId) && rawElId > 0 ? rawElId : null;
+            if (elId === null || seenElementIds.has(elId)) {
+                elId = allocFreshId();
+            }
+            el.id = elId;
+            seenElementIds.add(elId);
+            if (elId >= maxId) maxId = elId + 1;
+            if (Array.isArray(el.children)) fixElements(el.children);
+        }
+    };
+
     for (const slide of (project.slides || [])) {
         const rawSlideId = Number(slide.id);
         let slideId = Number.isInteger(rawSlideId) && rawSlideId > 0 ? rawSlideId : null;
@@ -124,17 +138,7 @@ function normalizeUniqueIds(project) {
         slide.id = slideId;
         seenSlideIds.add(slideId);
         if (slideId >= maxId) maxId = slideId + 1;
-
-        for (const el of (slide.elements || [])) {
-            const rawElId = Number(el.id);
-            let elId = Number.isInteger(rawElId) && rawElId > 0 ? rawElId : null;
-            if (elId === null || seenElementIds.has(elId)) {
-                elId = allocFreshId();
-            }
-            el.id = elId;
-            seenElementIds.add(elId);
-            if (elId >= maxId) maxId = elId + 1;
-        }
+        fixElements(slide.elements);
     }
 
     project.nextId = maxId;
@@ -145,10 +149,7 @@ function normalizeUniqueIds(project) {
 export function serializeGl(project) {
     const working = {
         ...project,
-        slides: (project.slides || []).map(s => ({
-            ...s,
-            elements: (s.elements || []).map(el => ({...el})),
-        })),
+        slides: structuredClone(project.slides || []),
     };
     normalizeUniqueIds(working);
 
@@ -175,16 +176,30 @@ export function serializeGl(project) {
         const title = slide.title ? ` {${encodeBraceArg(slide.title)}}` : '';
         lines.push('');
         lines.push(`.slide${title} id:${encodeParamValue(slide.id ?? '')}`);
-        (slide.elements || []).forEach(el => {
-            lines.push(serializeElementDirective(el));
-            const body = serializeElementBody(el);
-            if (body !== null) {
-                lines.push(body);
-            }
-        });
+        lines.push(...serializeGlElements(slide.elements));
     });
 
     return lines.join('\n') + '\n';
+}
+
+/**
+ * Serializes a list of elements (directive line + indented body each)
+ * to an array of lines. Used for slides and, recursively, by group
+ * elements for their children.
+ */
+export function serializeGlElements(elements) {
+    const lines = [];
+    (elements || []).forEach(el => {
+        lines.push(serializeElementDirective(el));
+        const body = serializeElementBody(el);
+        if (body !== null) lines.push(body);
+    });
+    return lines;
+}
+
+/** Indents every non-empty line one level (for nested blocks). */
+export function indentGlBlock(lines) {
+    return lines.join('\n').split('\n').map(l => (l === '' ? '' : BODY_INDENT + l)).join('\n');
 }
 
 function serializeElementDirective(el) {
@@ -242,75 +257,34 @@ export function parseGl(text) {
         nextId: 1,
         slides: [],
     };
-
     let currentSlide = null;
-    let currentElement = null;
-    let bodyLines = null;
-
     const rawLines = normalizeGlText(text).split('\n');
 
-    for (let i = 0; i < rawLines.length; i++) {
-        const line = rawLines[i].replace(/\s+$/, '');
-        const trimmedStart = line.replace(/^[\s\p{Cf}]+/u, '');
-
-        if (!currentElement && trimmedStart.startsWith('#')) {
-            continue;
+    parseBlock(rawLines, 0, ({ kind, subtype, braceArg, params, lineNo }) => {
+        if (kind === 'project') {
+            applyProjectParams(project, braceArg.value, params);
+            currentSlide = null;
+            return null;
         }
-
-        const dirMatch = trimmedStart.match(DIRECTIVE_RE);
-        if (dirMatch) {
-            flushBody(currentElement, bodyLines);
-            currentElement = null;
-            bodyLines = null;
-
-            const kind = dirMatch[1];
-            const subtype = dirMatch[2];
-            const rest = trimmedStart.slice(dirMatch[0].length);
-            const braceArg = extractBraceArg(rest);
-            const params = parseParams(rest.slice(braceArg.rawLength));
-
-            if (kind === 'project') {
-                applyProjectParams(project, braceArg.value, params);
-                currentSlide = null;
-            } else if (kind === 'slide') {
-                const parsedId = params.id !== undefined && params.id !== ''
-                    ? (Number.isFinite(Number(params.id)) ? Number(params.id) : params.id)
-                    : project.slides.length + 1;
-                currentSlide = {
-                    id: parsedId,
-                    title: braceArg.value || `Slide ${project.slides.length + 1}`,
-                    elements: [],
-                };
-                project.slides.push(currentSlide);
-            } else if (kind === 'element') {
-                if (!currentSlide) {
-                    throw new Error(`Line ${i + 1}: .element.${subtype ?? '?'} appears before any .slide`);
-                }
-                if (!subtype) {
-                    throw new Error(`Line ${i + 1}: Missing element subtype on .element directive.`);
-                }
-                currentElement = buildElement(subtype, params);
-                currentSlide.elements.push(currentElement);
-                bodyLines = [];
-            }
-            continue;
+        if (kind === 'slide') {
+            const parsedId = params.id !== undefined && params.id !== ''
+                ? (Number.isFinite(Number(params.id)) ? Number(params.id) : params.id)
+                : project.slides.length + 1;
+            currentSlide = {
+                id: parsedId,
+                title: braceArg.value || `Slide ${project.slides.length + 1}`,
+                elements: [],
+            };
+            project.slides.push(currentSlide);
+            return null;
         }
-
-        if (line.trim() === '') {
-            if (currentElement && bodyLines !== null && hasMoreBodyLines(rawLines, i + 1)) {
-                bodyLines.push('');
-            }
-            continue;
+        if (!currentSlide) {
+            throw new Error(`Line ${lineNo}: .element.${subtype ?? '?'} appears before any .slide`);
         }
-
-        if (!currentElement) {
-            throw new Error(`Line ${i + 1}: Unexpected content before any element: "${line.slice(0, 60)}"`);
-        }
-        if (bodyLines === null) bodyLines = [];
-        bodyLines.push(unindentBodyLine(line));
-    }
-
-    flushBody(currentElement, bodyLines);
+        const el = buildElementFromDirective(subtype, params, lineNo);
+        currentSlide.elements.push(el);
+        return el;
+    });
 
     if (project.slides.length === 0) {
         const preview = rawLines
@@ -325,31 +299,109 @@ export function parseGl(text) {
     return project;
 }
 
+/**
+ * Parses a block that may only contain .element directives (a group's
+ * body, already unindented one level). `lineOffset` keeps error line
+ * numbers relative to the whole file.
+ */
+export function parseGlElements(text, lineOffset = 0) {
+    const elements = [];
+    parseBlock(String(text ?? '').split('\n'), lineOffset, ({ kind, subtype, params, lineNo }) => {
+        if (kind !== 'element') {
+            throw new Error(`Line ${lineNo}: .${kind} is not allowed inside an element body.`);
+        }
+        const el = buildElementFromDirective(subtype, params, lineNo);
+        elements.push(el);
+        return el;
+    });
+    return elements;
+}
+
+function buildElementFromDirective(subtype, params, lineNo) {
+    if (!subtype) {
+        throw new Error(`Line ${lineNo}: Missing element subtype on .element directive.`);
+    }
+    return buildElement(subtype, params);
+}
+
+/** Directive match for a line, but only at column 0 (indented = body). */
+function matchTopLevelDirective(line) {
+    if (/^[ \t]/.test(line)) return null;
+    return line.replace(/^\p{Cf}+/u, '').match(DIRECTIVE_RE);
+}
+
+/**
+ * Shared line loop: column-0 directives go to `onDirective`, which
+ * returns the element that owns the following indented body lines
+ * (or null). Body lines are unindented one level and handed to the
+ * element's parseBody / body property when the block ends.
+ */
+function parseBlock(rawLines, lineOffset, onDirective) {
+    let currentElement = null;
+    let bodyLines = null;
+    let bodyStartLine = 0;
+
+    for (let i = 0; i < rawLines.length; i++) {
+        const lineNo = i + 1 + lineOffset;
+        const line = rawLines[i].replace(/\s+$/, '');
+        const trimmedStart = line.replace(/^[\s\p{Cf}]+/u, '');
+
+        if (!currentElement && trimmedStart.startsWith('#')) continue;
+
+        const dirMatch = matchTopLevelDirective(line);
+        if (dirMatch) {
+            flushBody(currentElement, bodyLines, bodyStartLine);
+            const rest = line.replace(/^\p{Cf}+/u, '').slice(dirMatch[0].length);
+            const braceArg = extractBraceArg(rest);
+            const params = parseParams(rest.slice(braceArg.rawLength));
+            currentElement = onDirective({ kind: dirMatch[1], subtype: dirMatch[2], braceArg, params, lineNo });
+            bodyLines = currentElement ? [] : null;
+            bodyStartLine = lineNo; // body lines start after this one
+            continue;
+        }
+
+        if (line.trim() === '') {
+            if (currentElement && bodyLines !== null && hasMoreBodyLines(rawLines, i + 1)) {
+                bodyLines.push('');
+            }
+            continue;
+        }
+
+        if (!currentElement) {
+            throw new Error(`Line ${lineNo}: Unexpected content before any element: "${line.slice(0, 60)}"`);
+        }
+        bodyLines.push(unindentBodyLine(line));
+    }
+
+    flushBody(currentElement, bodyLines, bodyStartLine);
+}
+
 function hasMoreBodyLines(rawLines, startIndex) {
     for (let j = startIndex; j < rawLines.length; j++) {
         const candidate = rawLines[j].replace(/\s+$/, '');
-        const trimmed = candidate.replace(/^[\s\p{Cf}]+/u, '');
-        if (trimmed === '') continue;
-        if (DIRECTIVE_RE.test(trimmed)) return false;
-        return true;
+        if (candidate.trim() === '') continue;
+        return !matchTopLevelDirective(candidate);
     }
     return false;
 }
 
-function flushBody(element, bodyLines) {
+function flushBody(element, bodyLines, bodyStartLine = 0) {
     if (!element || !bodyLines) return;
-    while (bodyLines.length && bodyLines[0] === '') bodyLines.shift();
+    let leading = 0;
+    while (bodyLines.length && bodyLines[0] === '') {
+        bodyLines.shift();
+        leading++;
+    }
     while (bodyLines.length && bodyLines[bodyLines.length - 1] === '') bodyLines.pop();
 
     const spec = getElementGlSpec(element.type);
     const joined = bodyLines.join('\n');
 
     if (spec.parseBody) {
-        spec.parseBody(joined, element);
+        spec.parseBody(joined, element, { lineOffset: bodyStartLine + leading });
     } else if (spec.body) {
         element[spec.body] = joined;
     }
-    element._hadBody = bodyLines.length > 0;
 }
 
 function extractBraceArg(rest) {

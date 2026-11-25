@@ -4,8 +4,7 @@
 // ============================================================
 
 import {state, pyApi} from '../core/state.js';
-import {ElementRegistry} from '../core/registry.js';
-import {textElementSharedStyle, renderMarkdownAndKatexToString} from '../core/render.js';
+import {exportElementMarkup} from '../core/render.js';
 import {getExportHtmlString} from './html.js';
 
 // ---------- Raster fallback helpers ----------
@@ -68,20 +67,7 @@ function slideMarkupForPdf(s) {
 
     let markup = `<div class="slide" style="${slideStyle}">`;
     s.elements.forEach(el => {
-        const def = ElementRegistry.get(el.type);
-        const geo = `position: absolute; left:${el.x}px; top:${el.y}px;`
-            + `width:${el.width}px; height:${el.height}px;`
-            + `background-color:${el.bg};`
-            + `border: ${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
-            + `box-sizing: border-box;`;
-
-        if (!def) {
-            markup += `<div class="el" style="${geo}"></div>`;
-        } else if (el.type === 'text') {
-            markup += `<div class="el ${def.className} align-${el.textAlign || 'center'}" style="${geo} ${textElementSharedStyle(el)}">${def.exportInner(el)}</div>`;
-        } else {
-            markup += `<div class="el" style="${geo}">${def.exportInner(el)}</div>`;
-        }
+        markup += exportElementMarkup(el);
     });
     markup += `</div>`;
     return markup;

@@ -141,7 +141,7 @@ const TextElement = {
             <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 4px;"></div>
             <div class="prop-group">
                 <label>Font Family</label>
-                <select class="prop-control" onchange="updateProp('fontFamily', this.value)">
+                <select class="prop-control" data-prop="fontFamily">
                     <option value="sans-serif" ${el.fontFamily === 'sans-serif' ? 'selected' : ''}>Sans-Serif</option>
                     <option value="serif" ${el.fontFamily === 'serif' ? 'selected' : ''}>Serif</option>
                     <option value="monospace" ${el.fontFamily === 'monospace' ? 'selected' : ''}>Monospace</option>
@@ -150,17 +150,17 @@ const TextElement = {
             <div class="prop-row">
                 <div class="prop-group">
                     <label>Font Size (px)</label>
-                    <input type="number" class="prop-control" value="${el.fontSize}" oninput="updateProp('fontSize', this.value)">
+                    <input type="number" class="prop-control" value="${el.fontSize}" data-prop="fontSize">
                 </div>
                 <div class="prop-group">
                     <label>Text Color</label>
-                    <input type="color" class="prop-control prop-color" value="${el.fontColor}" style="height: 34px; padding: 2px;" oninput="updateProp('fontColor', this.value)">
+                    <input type="color" class="prop-control prop-color" value="${el.fontColor}" style="height: 34px; padding: 2px;" data-prop="fontColor">
                 </div>
             </div>
             <div class="prop-row">
                 <div class="prop-group">
                     <label>H-Alignment</label>
-                    <select class="prop-control" onchange="updateProp('textAlign', this.value)">
+                    <select class="prop-control" data-prop="textAlign">
                         <option value="left" ${(el.textAlign || 'center') === 'left' ? 'selected' : ''}>Left</option>
                         <option value="center" ${(el.textAlign || 'center') === 'center' ? 'selected' : ''}>Center</option>
                         <option value="right" ${(el.textAlign || 'center') === 'right' ? 'selected' : ''}>Right</option>
@@ -168,7 +168,7 @@ const TextElement = {
                 </div>
                 <div class="prop-group">
                     <label>V-Alignment</label>
-                    <select class="prop-control" onchange="updateProp('verticalAlign', this.value)">
+                    <select class="prop-control" data-prop="verticalAlign">
                         <option value="top" ${(el.verticalAlign || 'center') === 'top' ? 'selected' : ''}>Top</option>
                         <option value="center" ${(el.verticalAlign || 'center') === 'center' ? 'selected' : ''}>Center</option>
                         <option value="bottom" ${(el.verticalAlign || 'center') === 'bottom' ? 'selected' : ''}>Bottom</option>

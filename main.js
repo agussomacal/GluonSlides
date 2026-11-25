@@ -17,7 +17,9 @@ import { initKeyboardShortcuts } from './core/clipboard.js';
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
 
-import { renderEditor, renameCurrentSlide } from './editor/editor.js';
+import {
+    renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
+} from './editor/editor.js';
 import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
 import {
@@ -46,6 +48,10 @@ const clickActions = {
     'export-html': projectExportHtml,
     'export-pdf': projectExportPdf,
     'go-home': goToHome,
+    'group-selection': groupSelected,
+    'ungroup': ungroupSelected,
+    'enter-group': enterSelectedGroup,
+    'exit-group': leaveGroup,
 };
 
 const valueActions = {

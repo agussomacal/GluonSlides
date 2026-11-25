@@ -6,7 +6,8 @@
 
 import {serializeGl, parseGl, looksLikeGl, GL_FORMAT_VERSION} from './gl/glformat.js';
 
-export const AUTOSAVE_INTERVAL_MS = 5000;
+export const AUTOSAVE_INTERVAL_MS = 5000;   // safety-net interval
+export const AUTOSAVE_DEBOUNCE_MS = 800;    // save this long after the last change
 export const PROJECT_SCHEMA_VERSION = GL_FORMAT_VERSION;
 export const MAX_HISTORY_ENTRIES = 100;
 
@@ -23,6 +24,7 @@ export const state = {
     selectedSlideIndices: [0],
     selectedElementIndex: null,
     selectedElementIndices: [],
+    editingGroupId: null,   // group entered by double-click (UI only)
     slideWidth: 1920,
     slideHeight: 1080,
     gridSize: 20,
@@ -89,7 +91,7 @@ export function ensureIds() {
     const isId = v => Number.isInteger(v) && v > 0;
     state.slides.forEach(s => {
         if (isId(s.id)) maxSeen = Math.max(maxSeen, s.id);
-        (s.elements || []).forEach(el => {
+        forEachElementDeep(s.elements || [], el => {
             if (isId(el.id)) maxSeen = Math.max(maxSeen, el.id);
         });
     });
@@ -101,32 +103,106 @@ export function ensureIds() {
         if (!isId(s.id) || seenSlides.has(s.id)) s.id = allocateId();
         seenSlides.add(s.id);
         s.elements = s.elements || [];
-        s.elements.forEach(el => {
+        forEachElementDeep(s.elements, el => {
             if (!isId(el.id) || seenElements.has(el.id)) el.id = allocateId();
             seenElements.add(el.id);
         });
     });
 }
 
+/** Gives `el` (and, for groups, every descendant) fresh IDs. */
+export function reassignIdsDeep(el) {
+    forEachElementDeep([el], e => { e.id = allocateId(); });
+    return el;
+}
+
+// ---------- Element tree (groups) ----------
+
+/** Calls fn(el, parentGroup) for every element, descending into groups. */
+export function forEachElementDeep(elements, fn, parent = null) {
+    (elements || []).forEach(el => {
+        fn(el, parent);
+        if (Array.isArray(el.children)) forEachElementDeep(el.children, fn, el);
+    });
+}
+
+/**
+ * Chain of groups from the slide down to the element with `id`
+ * (excluding the element itself), or null if not found.
+ * [] means the element is top-level.
+ */
+export function findElementPath(slide, id) {
+    const walk = (elements, path) => {
+        for (const el of elements || []) {
+            if (el.id === id) return path;
+            if (Array.isArray(el.children)) {
+                const found = walk(el.children, [...path, el]);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+    return slide ? walk(slide.elements, []) : null;
+}
+
 export function currentSlide() {
     return state.slides[state.currentSlideIndex] || null;
 }
 
-export function getSelectedElementIndices() {
+/**
+ * The group the user has entered (double-clicked into), or null.
+ * Transient UI state: never saved, cleared when it no longer exists.
+ */
+export function activeGroup() {
+    if (state.editingGroupId === null) return null;
     const slide = currentSlide();
-    if (!slide) return [];
+    let found = null;
+    forEachElementDeep(slide ? slide.elements : [], el => {
+        if (el.id === state.editingGroupId && el.type === 'group') found = el;
+    });
+    if (!found) state.editingGroupId = null;
+    return found;
+}
+
+/** Groups from the slide down to the active group ([] at slide level). */
+export function activeGroupPath() {
+    const group = activeGroup();
+    if (!group) return [];
+    return [...findElementPath(currentSlide(), group.id), group];
+}
+
+/**
+ * The element list that selection, dragging, arrow keys, delete,
+ * copy/paste and the properties panel act on: the active group's
+ * children, or the current slide's elements.
+ */
+export function activeElements() {
+    const group = activeGroup();
+    if (group) return group.children;
+    const slide = currentSlide();
+    return slide ? slide.elements : [];
+}
+
+/** Enters a group (id) or leaves group editing (null). Clears selection. */
+export function setEditingGroup(id) {
+    state.editingGroupId = id;
+    state.selectedElementIndices = [];
+    state.selectedElementIndex = null;
+}
+
+export function getSelectedElementIndices() {
+    const elements = activeElements();
     const valid = (state.selectedElementIndices || [])
-        .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < slide.elements.length);
+        .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < elements.length);
     if (valid.length > 0) return [...new Set(valid)].sort((a, b) => a - b);
-    if (state.selectedElementIndex !== null && slide.elements[state.selectedElementIndex]) {
+    if (state.selectedElementIndex !== null && elements[state.selectedElementIndex]) {
         return [state.selectedElementIndex];
     }
     return [];
 }
 
 export function setSelectedElementIndices(indices, primaryIndex = null) {
-    const slide = currentSlide();
-    const maxLen = slide ? slide.elements.length : 0;
+    const maxLen = activeElements().length;
     const cleaned = [...new Set(
         (indices || []).filter(idx => Number.isInteger(idx) && idx >= 0 && idx < maxLen)
     )].sort((a, b) => a - b);
@@ -159,13 +235,12 @@ export function setSelectedSlideIndices(indices) {
 }
 
 export function selectedElement() {
-    const slide = currentSlide();
     const indices = getSelectedElementIndices();
-    if (!slide || indices.length === 0) return null;
+    if (indices.length === 0) return null;
     const idx = (state.selectedElementIndex !== null && indices.includes(state.selectedElementIndex))
         ? state.selectedElementIndex
         : indices[indices.length - 1];
-    return slide.elements[idx] || null;
+    return activeElements()[idx] || null;
 }
 
 // ---------- Undo / Redo history ----------
@@ -235,8 +310,8 @@ function applyHistoryEntry(entry) {
                 .filter(i => Number.isInteger(i) && i >= 0 && i < state.slides.length);
             state.selectedSlideIndices = validSlides.length > 0 ? [...new Set(validSlides)].sort((a, b) => a - b) : [clampedSlideIdx];
 
-            const slide = state.slides[clampedSlideIdx];
-            const elCount = slide && Array.isArray(slide.elements) ? slide.elements.length : 0;
+            activeGroup(); // drops editingGroupId if the group no longer exists
+            const elCount = activeElements().length;
             const validEls = (entry.selectedElementIndices || [])
                 .filter(i => Number.isInteger(i) && i >= 0 && i < elCount);
             state.selectedElementIndices = [...new Set(validEls)].sort((a, b) => a - b);
@@ -322,6 +397,13 @@ export function resetMacros() {
 export function markDirty() {
     state.isDirty = true;
     recordUndoCheckpoint();
+    scheduleAutosave();
+}
+
+let autosaveTimer = null;
+function scheduleAutosave() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autoSaveTick, AUTOSAVE_DEBOUNCE_MS);
 }
 
 export function currentSnapshot() {
@@ -424,6 +506,7 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     state.selectedSlideIndices = state.slides.length > 0 ? [state.currentSlideIndex] : [];
     state.selectedElementIndex = null;
     state.selectedElementIndices = [];
+    if (resetSelection) state.editingGroupId = null;
 }
 
 /**

@@ -14,8 +14,9 @@ import {
     setSelectedSlideIndices,
     undo,
     redo,
-    allocateElementId,
     allocateSlideId,
+    activeElements,
+    reassignIdsDeep,
 } from './state.js';
 import {
     renderEditor,
@@ -24,6 +25,9 @@ import {
     extendSlideSelectionByArrow,
     navigateSlideByArrow,
     moveSelectedElementsByArrow,
+    groupSelected,
+    ungroupSelected,
+    leaveGroup,
 } from '../editor/editor.js';
 import { syncProjectChrome } from './render.js';
 
@@ -48,7 +52,7 @@ function copySelectionToClipboard() {
 
     if (selectedElIndices.length > 0 && slide) {
         const copiedEls = selectedElIndices
-            .map(idx => slide.elements[idx])
+            .map(idx => activeElements()[idx])
             .filter(Boolean)
             .map(el => JSON.parse(JSON.stringify(el)));
         if (copiedEls.length > 0) {
@@ -82,6 +86,20 @@ export function initKeyboardShortcuts() {
 
         const slide = state.slides[state.currentSlideIndex];
         const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+        // Ctrl/Cmd + G — group selection; Ctrl/Cmd + Shift + G — ungroup
+        if (hasCtrlOrCmd && !e.altKey && e.key.toLowerCase() === 'g') {
+            e.preventDefault();
+            if (e.shiftKey) ungroupSelected();
+            else groupSelected();
+            return;
+        }
+
+        // Escape — leave the group being edited
+        if (e.key === 'Escape' && leaveGroup()) {
+            e.preventDefault();
+            return;
+        }
 
         // 0a. Ctrl/Cmd + Shift + Z (or Ctrl/Cmd + Y) — Redo
         if (hasCtrlOrCmd && !e.altKey && ((e.shiftKey && e.key.toLowerCase() === 'z') || (!e.shiftKey && e.key.toLowerCase() === 'y'))) {
@@ -183,11 +201,11 @@ export function initKeyboardShortcuts() {
                     const newEl = JSON.parse(JSON.stringify(templateEl));
                     // Paste mints a fresh ID: copy keeps the original's identity,
                     // paste creates a distinct element so IDs stay unique.
-                    newEl.id = allocateElementId();
+                    reassignIdsDeep(newEl);
                     newEl.x += PASTE_OFFSET_PX;
                     newEl.y += PASTE_OFFSET_PX;
-                    slide.elements.push(newEl);
-                    pastedIndices.push(slide.elements.length - 1);
+                    activeElements().push(newEl);
+                    pastedIndices.push(activeElements().length - 1);
                 });
                 setSelectedElementIndices(pastedIndices, pastedIndices[pastedIndices.length - 1]);
                 markDirty();
@@ -206,10 +224,7 @@ export function initKeyboardShortcuts() {
                     newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
                     // Pasted slides carry their elements with their original
                     // IDs; those are remapped below to stay unique.
-                    newSlide.elements = (newSlide.elements || []).map(el => ({
-                        ...el,
-                        id: allocateElementId(),
-                    }));
+                    newSlide.elements = (newSlide.elements || []).map(el => reassignIdsDeep(el));
                     const targetIdx = insertAfter + 1 + offset;
                     state.slides.splice(targetIdx, 0, newSlide);
                     pastedSlideIndices.push(targetIdx);
