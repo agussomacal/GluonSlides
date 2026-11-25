@@ -68,6 +68,10 @@ export const state = {
     projectFolder: null,
     projectName: '',
 
+    // Master slides (core/masters.js); the one being edited (UI only).
+    masters: [],
+    editingMasterIndex: null,
+
     isDirty: false,
     lastSnapshot: '',
     recents: [],
@@ -133,7 +137,8 @@ export const allocateSlideId = allocateId;
 export function ensureIds() {
     let maxSeen = 0;
     const isId = v => Number.isInteger(v) && v > 0;
-    state.slides.forEach(s => {
+    const all = [...(state.masters || []), ...state.slides]; // shared ID space
+    all.forEach(s => {
         if (isId(s.id)) maxSeen = Math.max(maxSeen, s.id);
         forEachElementDeep(s.elements || [], el => {
             if (isId(el.id)) maxSeen = Math.max(maxSeen, el.id);
@@ -143,7 +148,7 @@ export function ensureIds() {
 
     const seenSlides = new Set();
     const seenElements = new Set();
-    state.slides.forEach(s => {
+    all.forEach(s => {
         if (!isId(s.id) || seenSlides.has(s.id)) s.id = allocateId();
         seenSlides.add(s.id);
         s.elements = s.elements || [];
@@ -189,7 +194,13 @@ export function findElementPath(slide, id) {
     return slide ? walk(slide.elements, []) : null;
 }
 
+/** The slide being edited: a slide, or the master slide being edited. */
 export function currentSlide() {
+    if (state.editingMasterIndex !== null && state.editingMasterIndex !== undefined) {
+        const m = (state.masters || [])[state.editingMasterIndex];
+        if (m) return m;
+        state.editingMasterIndex = null;
+    }
     return state.slides[state.currentSlideIndex] || null;
 }
 
@@ -478,6 +489,7 @@ export function currentSnapshot() {
         palette: state.palette,
         author: state.author,
         date: state.date,
+        masters: state.masters,
         slides: state.slides,
     });
 }
@@ -500,6 +512,7 @@ export function serializeProject() {
         citestyle: state.citestyle,
         author: state.author,
         date: state.date,
+        masters: state.masters,
         slides: state.slides,
     });
 }
@@ -567,6 +580,7 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : fallback);
 
     state.slides = Array.isArray(data.slides) ? data.slides : [];
+    state.masters = Array.isArray(data.masters) ? data.masters : [];
     state.slideWidth = num(data.slideWidth, DEFAULT_SLIDE_WIDTH);
     state.slideHeight = num(data.slideHeight, DEFAULT_SLIDE_HEIGHT);
     state.gridSize = num(data.gridSize, DEFAULT_GRID_SIZE);
@@ -589,6 +603,7 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     state.selectedElementIndex = null;
     state.selectedElementIndices = [];
     if (resetSelection) state.editingGroupId = null;
+    if (resetSelection || !state.masters[state.editingMasterIndex]) state.editingMasterIndex = null;
 }
 
 /**

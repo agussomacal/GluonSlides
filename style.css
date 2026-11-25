@@ -1709,3 +1709,20 @@ select.toolbar-select option:checked {
 .thumb-container.in-collapsed-section:not(.active) {
     display: none;
 }
+
+/* ---------- Master slides (core/masters.js) ---------- */
+
+/* Master elements on a slide: drawn, not editable (clicks go through). */
+.canvas-element.master-element {
+    pointer-events: none;
+}
+
+/* Editing a master: a coloured frame around the canvas. */
+.slide-canvas.editing-master {
+    outline: calc(6px * var(--ui-unit, 1)) solid #0d9488;
+}
+
+.group-banner.master-banner {
+    border-color: #0d9488;
+    background: rgba(13, 148, 136, 0.15);
+}

@@ -76,7 +76,8 @@ function lineContext(cm, lineNo, text) {
     }
     if (text.match(/^\.macro\./)) return { params: ['id', 'name', 'step', ...elementProps('macro')], keys };
     if (text.startsWith('.project')) return { params: PROJECT_PARAMS, keys };
-    if (text.startsWith('.slide')) return { params: ['id'], keys };
+    if (text.startsWith('.slide')) return { params: ['id', 'master'], keys };
+    if (text.startsWith('.master')) return { params: ['id'], keys };
     if (text.startsWith('.define')) return { params: ['width', 'height'], keys };
     if ((m = text.match(/^\.defaults\.([\w-]+)/))) return { params: STYLE_KEYS[m[1]] || [], keys };
     if ((m = text.match(/^\.style\.([\w-]+)/))) return { params: STYLE_KEYS[m[1]] || [], keys };
@@ -102,6 +103,7 @@ function directiveCandidates() {
     const list = [
         { text: '.slide {', displayText: '.slide {Title} id:' },
         { text: '.section {', displayText: '.section {Name}  (the following slides)' },
+        { text: '.master {', displayText: '.master {Name} id:  (drawn under every slide)' },
         { text: '.notes', displayText: '.notes  (speaker notes, indented below)' },
         { text: '.define {', displayText: '.define {name} width: height:' },
         { text: '.import {', displayText: '.import {macros.gl}' },

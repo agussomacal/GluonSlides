@@ -17,6 +17,7 @@ import {
     allocateSlideId,
     activeElements,
     reassignIdsDeep,
+    currentSlide,
 } from './state.js';
 import {
     renderEditor,
@@ -28,6 +29,7 @@ import {
     groupSelected,
     ungroupSelected,
     leaveGroup,
+    leaveMaster,
 } from '../editor/editor.js';
 import { syncProjectChrome } from './render.js';
 
@@ -47,7 +49,7 @@ function syncUiAfterHistoryChange() {
 }
 
 function copySelectionToClipboard() {
-    const slide = state.slides[state.currentSlideIndex];
+    const slide = currentSlide();
     const selectedElIndices = getSelectedElementIndices();
 
     if (selectedElIndices.length > 0 && slide) {
@@ -63,7 +65,7 @@ function copySelectionToClipboard() {
         return null;
     }
 
-    const selectedSlideIdxList = getSelectedSlideIndices();
+    const selectedSlideIdxList = state.editingMasterIndex !== null ? [] : getSelectedSlideIndices();
     if (selectedSlideIdxList.length > 0) {
         const copiedSlides = selectedSlideIdxList
             .map(idx => state.slides[idx])
@@ -84,8 +86,11 @@ export function initKeyboardShortcuts() {
         const activeEl = document.activeElement;
         if (isTypingTarget(activeEl)) return;
 
-        const slide = state.slides[state.currentSlideIndex];
+        const slide = currentSlide();
         const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
+        // Editing a master slide: no slide-level shortcuts (navigate,
+        // delete or paste slides); Esc leaves the master.
+        const onMaster = state.editingMasterIndex !== null;
 
         // Ctrl/Cmd + G — group selection; Ctrl/Cmd + Shift + G — ungroup
         if (hasCtrlOrCmd && !e.altKey && e.key.toLowerCase() === 'g') {
@@ -96,7 +101,7 @@ export function initKeyboardShortcuts() {
         }
 
         // Escape — leave the group being edited
-        if (e.key === 'Escape' && leaveGroup()) {
+        if (e.key === 'Escape' && (leaveGroup() || leaveMaster())) {
             e.preventDefault();
             return;
         }
@@ -121,6 +126,7 @@ export function initKeyboardShortcuts() {
 
         // 0c. Shift + ArrowUp / ArrowDown — extend multi-selection across slides
         if (e.shiftKey && !hasCtrlOrCmd && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            if (onMaster) return;
             const delta = e.key === 'ArrowUp' ? -1 : 1;
             if (extendSlideSelectionByArrow(delta)) {
                 e.preventDefault();
@@ -136,7 +142,7 @@ export function initKeyboardShortcuts() {
                 }
                 return;
             }
-            if (!e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            if (!onMaster && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
                 const delta = (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 1;
                 if (navigateSlideByArrow(delta)) {
                     e.preventDefault();
@@ -153,7 +159,7 @@ export function initKeyboardShortcuts() {
                 }
                 return;
             }
-            if (deleteSelectedSlides()) {
+            if (!onMaster && deleteSelectedSlides()) {
                 e.preventDefault();
             }
             return;
@@ -215,7 +221,7 @@ export function initKeyboardShortcuts() {
                 return;
             }
 
-            if (Array.isArray(state.slideClipboard) && state.slideClipboard.length > 0) {
+            if (!onMaster && Array.isArray(state.slideClipboard) && state.slideClipboard.length > 0) {
                 const insertAfter = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
                 const pastedSlideIndices = [];
                 state.slideClipboard.forEach((templateSlide, offset) => {

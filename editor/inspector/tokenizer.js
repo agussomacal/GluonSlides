@@ -6,8 +6,8 @@
 // inline/display math) while preserving original whitespace/tabs.
 // ============================================================
 
-const STRUCTURAL_DIRECTIVES = new Set(['project', 'section', 'slide', 'notes', 'function', 'var', 'import', 'define', 'defaults', 'palette', 'style']);
-const DIRECTIVE_HEAD_RE = /^\.(project|section|slide|notes|element|macro|function|var|import|define|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const STRUCTURAL_DIRECTIVES = new Set(['project', 'section', 'master', 'slide', 'notes', 'function', 'var', 'import', 'define', 'defaults', 'palette', 'style']);
+const DIRECTIVE_HEAD_RE = /^\.(project|section|master|slide|notes|element|macro|function|var|import|define|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 const OVERRIDE_HEAD_RE = /^::[A-Za-z][\w-]*/;   // ::name inside a .macro.* instance
 // Lines after these directives are an element body (text, points, children).
 const BODY_DIRECTIVE_RE = /^\.(element|macro|define)[.\s{]|^\.(define|notes)$/;

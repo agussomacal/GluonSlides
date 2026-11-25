@@ -211,6 +211,22 @@ They mix with normal text and Markdown (`**\slidenumber**`, `Page \slidenumber o
 	\presentationtitle · \sectiontitle · \slidenumber / \totalslides
 ```
 
+### Master slides
+
+A **master slide** holds what every slide shows: a background, a logo, a footer with `\slidenumber`... With no object selected, the slide panel has **Master slide**: *Create a master slide* the first time, then a choice of master (or *None*, e.g. for the title slide), **✎ Edit** and **＋** (a new master). Editing a master happens on the canvas, like a slide (a teal frame and a banner show it; **Esc** or *Done* returns). On slides, master elements are drawn underneath and cannot be selected; fields show each slide's own values.
+
+```
+.master {Default} id:40
+.element.text id:41 x:1680 y:990 width:200 height:60 fontSize:24 textAlign:right
+	\slidenumber / \totalslides
+
+.slide {Title} id:1 master:none
+.slide {Results} id:2
+.slide {Appendix} id:3 master:Plain
+```
+
+Slides use the first master unless they say `master:none` or `master:Name`.
+
 ### Presenting, builds and speaker notes
 
 **▶ Present** (top right of the toolbar, or **Shift+F5**) starts the slide show from the current slide; **F5** starts from the first one. It shows exactly what the HTML export shows, full screen. **Esc** returns to the editor on the slide where you stopped.

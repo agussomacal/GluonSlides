@@ -9,6 +9,7 @@ import {getExportHtmlString} from './html.js';
 import {exportFontCss} from '../core/fonts.js';
 import {elementStep, slideStepCount} from '../core/steps.js';
 import {expandSlides} from '../core/bibPages.js';
+import {masterFor} from '../core/masters.js';
 import {withSlideContext, invalidateNumbering} from '../core/fields.js';
 
 // ---------- Raster fallback helpers ----------
@@ -71,6 +72,8 @@ function slideMarkupForPdf(s, step = Infinity) {
         + `box-shadow: 0 25px 50px rgba(0,0,0,0.5); border-radius: 4px; overflow: hidden;`;
 
     let markup = `<div class="slide" style="${slideStyle}">`;
+    const master = masterFor(s);
+    if (master) master.elements.forEach(el => { markup += exportElementMarkup(el); });
     s.elements.forEach(el => {
         if (elementStep(el) <= step) markup += exportElementMarkup(el);
     });

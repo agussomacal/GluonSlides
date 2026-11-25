@@ -68,13 +68,14 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 | `presenting` | Build steps (field, badge, saving), speaker notes, Present mode (keys, steps, black screen, go to slide, Esc back on the right slide, F5/Shift+F5), the exported viewer, printing and the PDF (one page per step, also in the image-based fallback); the presenter view: two screens, S to switch, both windows following each other, Black only for the audience, timer, the audience page (`present/audience.html`), and S in the exported HTML |
 | `citations` | BibTeX accents and names, `\cite` / `\citet` / `\citep` with page notes in both styles, the reference list, unknown keys (highlight, ⚠ count, dialog, export warning), `\cite{` autocomplete on the canvas and in the inspector, long reference lists continuing on extra slides (canvas badge, export, PDF, presenting) and `\printbibliography[from-to]` |
 | `fields` | Fields (`\slidenumber`, `\sectiontitle`, `\tableofcontents`...) per slide on the canvas, thumbnails and exports, numbering with continuation pages, sections (`.section`, Section field, sidebar headers and folding), Fields ▾, Project settings → Presentation, `\` autocomplete on the canvas and in the inspector |
+| `masters` | Master slides: creating and editing one on the canvas, drawn under every slide (canvas, thumbnails, export), fields with each slide's values, `master:none` and several masters, rename/delete, the `.gl` format, undo, slide shortcuts off while editing one |
 | `file-format` | The `.gl` files in `fixtures/` (and your local `Slides/` projects, if present) parse, keep their content and round-trip; friendly errors |
 
 ### Fixtures
 
 `tests/e2e/fixtures/` holds test projects:
 
-- `everything.gl` uses every feature of the format (palette, defaults, styles, a macro definition, groups, paths, overrides, escaped body lines, speaker notes, build steps, sections, author and date).
+- `everything.gl` uses every feature of the format (palette, defaults, styles, a macro definition, groups, paths, overrides, escaped body lines, speaker notes, build steps, sections, author and date, a master slide).
 - `legacy-unindented.gl` is in the format older versions saved (text bodies not indented).
 
 If a change to the format makes `file-format` fail, either the change broke reading old files or the fixture needs updating on purpose.

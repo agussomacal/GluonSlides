@@ -14,7 +14,7 @@ const NOTES_TYPE = '__slide_notes__';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
 /** Header values written only when set: shown by the \author and \date fields. */
 export const PROJECT_TEXT_PARAMS = ['author', 'date'];
-const DIRECTIVE_RE = /^\.(project|section|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const DIRECTIVE_RE = /^\.(project|section|master|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -158,7 +158,8 @@ function normalizeUniqueIds(project) {
         }
     };
 
-    for (const slide of (project.slides || [])) {
+    // Masters and slides share the ID space.
+    for (const slide of [...(project.masters || []), ...(project.slides || [])]) {
         const rawSlideId = Number(slide.id);
         let slideId = Number.isInteger(rawSlideId) && rawSlideId > 0 ? rawSlideId : null;
         if (slideId === null || seenSlideIds.has(slideId)) {
@@ -179,6 +180,7 @@ export function serializeGl(project) {
     const working = {
         ...project,
         slides: structuredClone(project.slides || []),
+        masters: structuredClone(project.masters || []),
     };
     normalizeUniqueIds(working);
 
@@ -227,6 +229,13 @@ export function serializeGl(project) {
         lines.push(...serializeGlDefine(def));
     });
 
+    // Master slides: drawn under the slides (core/masters.js).
+    (working.masters || []).forEach(m => {
+        lines.push('');
+        lines.push(`.master {${encodeBraceArg(m.name)}} id:${encodeParamValue(m.id ?? '')}`);
+        lines.push(...serializeGlElements(m.elements));
+    });
+
     let section = '';
     (working.slides || []).forEach(slide => {
         const title = slide.title ? ` {${encodeBraceArg(slide.title)}}` : '';
@@ -238,7 +247,8 @@ export function serializeGl(project) {
             lines.push(section ? `.section {${encodeBraceArg(section)}}` : '.section');
         }
         lines.push('');
-        lines.push(`.slide${title} id:${encodeParamValue(slide.id ?? '')}`);
+        const master = slide.master ? ` master:${encodeParamValue(slide.master)}` : '';
+        lines.push(`.slide${title} id:${encodeParamValue(slide.id ?? '')}${master}`);
         // Speaker notes: an indented block right after the .slide line.
         if (typeof slide.notes === 'string' && slide.notes.trim() !== '') {
             lines.push('.notes');
@@ -348,6 +358,7 @@ export function parseGl(text) {
         isDarkMode: false,
         nextId: 1,
         slides: [],
+        masters: [],
     };
     let currentSlide = null;
     let section = ''; // set by .section, applies to the following slides
@@ -402,6 +413,16 @@ export function parseGl(text) {
             currentSlide = null;
             return null;
         }
+        if (kind === 'master') {
+            const parsedId = Number(params.id);
+            currentSlide = {
+                id: Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null,
+                name: braceArg.value || `Master ${project.masters.length + 1}`,
+                elements: [],
+            };
+            project.masters.push(currentSlide);
+            return null;
+        }
         if (kind === 'slide') {
             const parsedId = params.id !== undefined && params.id !== ''
                 ? (Number.isFinite(Number(params.id)) ? Number(params.id) : params.id)
@@ -412,6 +433,7 @@ export function parseGl(text) {
                 elements: [],
             };
             if (section) currentSlide.section = section;
+            if (params.master) currentSlide.master = params.master;
             project.slides.push(currentSlide);
             return null;
         }

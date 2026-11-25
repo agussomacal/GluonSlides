@@ -19,7 +19,12 @@ import {
     activeGroup,
     activeGroupPath,
     setEditingGroup,
+    currentSlide,
 } from '../core/state.js';
+import {
+    masters, masterFor, isEditingMaster, editedMaster, slidesUsing,
+    createMaster, renameMaster, deleteMaster, setSlideMaster,
+} from '../core/masters.js';
 import { ElementRegistry } from '../core/registry.js';
 import {
     applyCommonBoxStyles,
@@ -62,7 +67,7 @@ export function renderToolbarButtons() {
 
 /** Adds an element of `type`, optionally using one of its toolbar variants. */
 export function addElement(type, variantId = null) {
-    if (!state.slides[state.currentSlideIndex]) return;
+    if (!currentSlide()) return;
     const def = ElementRegistry.get(type);
     if (!def) {
         console.error(`No element registered for type '${type}'`);
@@ -285,6 +290,7 @@ function slideSection(slide) {
                    value="${escapeHtml(slide.section || '')}" placeholder="none — e.g. Introduction" spellcheck="false">
             <datalist id="slide-section-names">${names.map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
         </div>
+        ${slideMasterField(slide)}
         <div class="prop-group">
             <label for="slide-notes">Speaker notes</label>
             <textarea id="slide-notes" class="prop-control slide-notes" rows="8" data-slide-prop="notes"
@@ -294,6 +300,104 @@ function slideSection(slide) {
             ? `This slide builds up in ${steps} steps (set an object's <strong>Appears at step</strong>).`
             : 'To reveal objects one click at a time, select one and set <strong>Appears at step</strong>.'}</p>`;
 }
+
+// ---------- Master slides ----------
+
+/** Slide panel: which master the slide shows, and editing it. */
+function slideMasterField(slide) {
+    const list = masters();
+    if (!list.length) {
+        return `
+        <div class="prop-group">
+            <label>Master slide</label>
+            <button class="btn btn-secondary" data-action="edit-master" style="width: 100%;" title="Elements on the master appear on every slide: background, logo, footer, slide number">▦ Create a master slide</button>
+        </div>`;
+    }
+    const current = slide.master === 'none' ? 'none' : (masterFor(slide) || list[0]).name;
+    const options = list.map((m, i) => `<option value="${escapeHtml(m.name)}" ${m.name === current ? 'selected' : ''}>${escapeHtml(m.name)}${i === 0 ? ' (default)' : ''}</option>`).join('')
+        + `<option value="none" ${current === 'none' ? 'selected' : ''}>None</option>`;
+    return `
+        <div class="prop-group">
+            <label for="slide-master">Master slide</label>
+            <div class="prop-inline">
+                <select id="slide-master" class="prop-control" data-slide-prop="master">${options}</select>
+                <button class="btn btn-secondary" data-action="edit-master" title="Edit this master (it appears on every slide using it)" ${current === 'none' ? 'disabled' : ''}>✎ Edit</button>
+                <button class="btn btn-secondary" data-action="new-master" title="New master slide">＋</button>
+            </div>
+        </div>`;
+}
+
+function masterBanner() {
+    const m = editedMaster();
+    const n = slidesUsing(m);
+    return `
+        <div class="group-banner master-banner">
+            <span>Editing master <strong>${escapeHtml(m.name)}</strong> — shown on <strong>${n} slide${n === 1 ? '' : 's'}</strong>. Fields like <code>\\slidenumber</code> show each slide's value.</span>
+            <button class="btn btn-secondary" data-action="exit-master">Done (Esc)</button>
+        </div>`;
+}
+
+/** Panel while editing a master with nothing selected. */
+function masterSection() {
+    const m = editedMaster();
+    return `
+        <div class="prop-divider"></div>
+        <div class="prop-group">
+            <label for="master-name">Master name</label>
+            <input type="text" id="master-name" class="prop-control" data-master-prop="name" value="${escapeHtml(m.name)}" spellcheck="false">
+            <div class="prop-error" id="master-error"></div>
+        </div>
+        <p class="prop-hint">Add a background, logo or footer here (Fields ▾ has slide numbers and footers). Slides choose their master in the panel (with no object selected); the first master is the default.</p>
+        <button class="btn btn-secondary" data-action="delete-master" style="width: 100%;">🗑 Delete this master</button>`;
+}
+
+/** Edits the master of the current slide (creating the first one if needed). */
+export function editMaster() {
+    const slide = state.slides[state.currentSlideIndex];
+    if (!masters().length) createMaster();
+    const m = masterFor(slide) || masters()[0];
+    setEditingGroup(null);
+    state.editingMasterIndex = masters().indexOf(m);
+    setSelectedElementIndices([], null);
+    markDirty();
+    renderEditor();
+    return true;
+}
+
+/** A new master, used by the current slide, opened for editing. */
+export function newMaster() {
+    const idx = createMaster();
+    const slide = state.slides[state.currentSlideIndex];
+    setSlideMaster(slide, masters()[idx].name);
+    setEditingGroup(null);
+    state.editingMasterIndex = idx;
+    setSelectedElementIndices([], null);
+    markDirty();
+    renderEditor();
+    return true;
+}
+
+/** Leaves master editing (Esc / Done). Returns false when not editing one. */
+export function leaveMaster() {
+    if (!isEditingMaster()) return false;
+    setEditingGroup(null);
+    state.editingMasterIndex = null;
+    setSelectedElementIndices([], null);
+    renderEditor();
+    return true;
+}
+
+export function deleteEditedMaster() {
+    if (!isEditingMaster()) return false;
+    deleteMaster(state.editingMasterIndex);
+    state.editingMasterIndex = null;
+    setSelectedElementIndices([], null);
+    markDirty();
+    renderEditor();
+    flashSaveIndicator('Master deleted ✓');
+    return true;
+}
+
 
 /** "Make macro" field shown under any selection. */
 function makeMacroSection() {
@@ -372,7 +476,7 @@ propertiesPanel.addEventListener('input', onPropertyControl);
 propertiesPanel.addEventListener('input', (e) => {
     const key = e.target.dataset && e.target.dataset.slideProp;
     const slide = state.slides[state.currentSlideIndex];
-    if (!key || !slide) return;
+    if (!key || !slide || key === 'master') return;
     if (key === 'section') {
         setSectionFrom(state.currentSlideIndex, e.target.value.trim());
         markDirty();
@@ -403,6 +507,23 @@ propertiesPanel.addEventListener('keydown', (e) => {
     }
 });
 propertiesPanel.addEventListener('change', onPropertyControl);
+// Master slides: renaming the master, choosing a slide's master.
+propertiesPanel.addEventListener('change', (e) => {
+    if (e.target.dataset && e.target.dataset.masterProp === 'name') {
+        if (renameMaster(state.editingMasterIndex, e.target.value)) {
+            markDirty();
+            renderEditor();
+        } else {
+            const err = document.getElementById('master-error');
+            if (err) err.textContent = 'Master names must be unique (and not "none").';
+        }
+    }
+    if (e.target.dataset && e.target.dataset.slideProp === 'master') {
+        setSlideMaster(state.slides[state.currentSlideIndex], e.target.value);
+        markDirty();
+        renderEditor();
+    }
+});
 
 propertiesPanel.addEventListener('click', (e) => {
     const reset = e.target.closest('[data-reset-prop]');
@@ -484,15 +605,23 @@ function buildThumbElement(el) {
     return buildStaticElement(el, 'thumb-element');
 }
 
+/** What a slide's thumbnail draws: its master's elements, then its own. */
+function thumbElementsOf(slide) {
+    const master = masterFor(slide);
+    return [...(master ? master.elements : []), ...(slide ? slide.elements : [])];
+}
+
 export function updateThumbnailLive() {
+    if (isEditingMaster()) return; // the slides' thumbnails update when leaving the master
     const activeContainer = document.querySelectorAll('.thumb-container')[state.currentSlideIndex];
     if (!activeContainer) return;
     const scaler = activeContainer.querySelector('.thumb-canvas-scaler');
     if (!scaler) return;
 
     scaler.innerHTML = '';
-    state.slides[state.currentSlideIndex].elements.forEach(el => {
-        scaler.appendChild(buildThumbElement(el));
+    const slide = state.slides[state.currentSlideIndex];
+    withSlideContext(contextForSlide(state.currentSlideIndex), () => {
+        thumbElementsOf(slide).forEach(el => scaler.appendChild(buildThumbElement(el)));
     });
 }
 
@@ -542,8 +671,19 @@ function renderCanvas() {
         canvas.style.backgroundImage = 'none';
     }
 
-    const slide = state.slides[state.currentSlideIndex];
+    const slide = currentSlide(); // a slide, or the master being edited
+    canvas.classList.toggle('editing-master', isEditingMaster());
     if (!slide) return;
+
+    // The slide's master underneath: drawn, not editable here.
+    const master = !isEditingMaster() && masterFor(slide);
+    if (master) {
+        master.elements.forEach(el => {
+            const node = buildStaticElement(el, 'canvas-element master-element');
+            node.dataset.masterElement = String(el.id);
+            canvas.appendChild(node);
+        });
+    }
 
     // Elements along the path to the edited group are drawn as open
     // shells; the edited group's children are interactive; everything
@@ -846,15 +986,16 @@ function macroChildInfo(group, el) {
 
 function renderPropertiesPanel() {
     const panelBody = document.getElementById('properties-body');
-    const slide = state.slides[state.currentSlideIndex];
+    const slide = currentSlide();
     const elements = activeElements();
     const selectedIndices = getSelectedElementIndices();
     const group = activeGroup();
-    const groupBanner = group ? editingBanner(group) : '';
+    const groupBanner = (isEditingMaster() ? masterBanner() : '') + (group ? editingBanner(group) : '');
 
     if (selectedIndices.length === 0 || !slide) {
+        const below = group ? '' : isEditingMaster() ? masterSection() : slide ? slideSection(slide) : '';
         panelBody.innerHTML = groupBanner + `<div class="no-selection">Select an object on the canvas to inspect and customize its properties. Drag on empty space to select several.</div>`
-            + (slide && !group ? slideSection(slide) : '');
+            + below;
         return;
     }
 
@@ -1282,7 +1423,7 @@ export function renderEditor() {
         scaler.className = 'thumb-canvas-scaler';
 
         // Fields (\slidenumber ...) show this slide's values.
-        withSlideContext(contextForSlide(idx), () => slide.elements.forEach(el => {
+        withSlideContext(contextForSlide(idx), () => thumbElementsOf(slide).forEach(el => {
             scaler.appendChild(buildThumbElement(el));
         }));
 
@@ -1366,6 +1507,7 @@ export function addSlide() {
 export function selectSlide(index) {
     if (index < 0 || index >= state.slides.length) return;
     setEditingGroup(null);
+    state.editingMasterIndex = null;
     state.currentSlideIndex = index;
     setSelectedSlideIndices([index]);
     setSelectedElementIndices([], null);

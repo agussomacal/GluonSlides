@@ -11,6 +11,7 @@ import { escapeHtml, exportElementMarkup } from '../core/render.js';
 import { exportFontCss } from '../core/fonts.js';
 import { elementStep, slideStepCount } from '../core/steps.js';
 import { expandSlides } from '../core/bibPages.js';
+import { masterFor } from '../core/masters.js';
 import { withSlideContext, invalidateNumbering } from '../core/fields.js';
 
 const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/';
@@ -32,6 +33,9 @@ function slideMarkup(slide, idx, source = idx) {
         + `box-shadow: 0 25px 50px rgba(0,0,0,0.5); border-radius: 4px; overflow: hidden;`;
     // data-source: the slide in the project (continuation pages share it).
     let markup = `<div class="slide ${idx === 0 ? 'active' : ''}" id="slide-${idx}" data-source="${source}" data-steps="${slideStepCount(slide)}" style="${style}">`;
+    // The master underneath (always visible: master elements have no steps).
+    const master = masterFor(slide);
+    if (master) master.elements.forEach(el => { markup += exportElementMarkup(el); });
     (slide.elements || []).forEach(el => {
         const html = exportElementMarkup(el);
         const n = elementStep(el);

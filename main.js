@@ -26,6 +26,7 @@ import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
     makeMacroFromPanel, detachSelectedMacros, editSelectedDefinition, resetSelectedOverride,
     resetSelectedInstance, gotoSelectedDefinition, styleFromSelected, manageStyles,
+    editMaster, newMaster, leaveMaster, deleteEditedMaster,
 } from './editor/editor.js';
 import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
@@ -71,6 +72,10 @@ const clickActions = {
     'reset-instance': resetSelectedInstance,
     'style-from-element': styleFromSelected,
     'manage-styles': manageStyles,
+    'edit-master': editMaster,
+    'new-master': newMaster,
+    'exit-master': leaveMaster,
+    'delete-master': deleteEditedMaster,
 };
 
 const valueActions = {

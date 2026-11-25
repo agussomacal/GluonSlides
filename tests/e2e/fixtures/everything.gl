@@ -1,6 +1,6 @@
 # Test project using every feature of the .gl format (see tests/README.md).
 .import {macros.gl}
-.project {Everything} version:2 width:1920 height:1080 grid:20 darkmode:no citestyle:numeric nextid:40 author:"Ada Lovelace" date:today
+.project {Everything} version:2 width:1920 height:1080 grid:20 darkmode:no citestyle:numeric nextid:52 author:"Ada Lovelace" date:today
 .palette primary:#1d4ed8 accent:#f59e0b dark:#0f172a light:#f1f5f9
 .defaults.path stroke:@dark strokeWidth:4
 .defaults.text fontFamily:"EB Garamond" fontSize:32
@@ -12,7 +12,11 @@
 	.element.text name:label x:0 y:30 width:100 height:40 fontSize:20
 		New
 
-.slide {Title} id:1
+.master {Footer} id:50
+.element.text id:51 x:1680 y:990 width:200 height:60 fontSize:24
+	\slidenumber / \totalslides
+
+.slide {Title} id:1 master:none
 .notes
 	Speaker notes: start with the **result**.
 	.a notes line starting with a dot
