@@ -21,7 +21,17 @@ body.dark-mode {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+}
+
+/* The UI font is set once and inherited. (Setting it on `*` would also
+   override the font chosen for text on slides, whose Markdown content
+   is nested elements.) Form controls don't inherit fonts by default. */
+body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+button, input, select, textarea {
+    font-family: inherit;
 }
 
 body {
