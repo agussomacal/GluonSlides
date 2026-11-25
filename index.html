@@ -87,8 +87,10 @@
     <div class="modal" style="width: 500px;">
         <h2>Bibliography</h2>
         <p>Standard BibTeX entries, saved as <code>bibliography.bib</code> in the project folder. Cite with
-            <code>\cite{key}</code>; use <code>\fullcite{key}</code> for the full reference
-            and <code>\printbibliography</code> for the list of cited works.</p>
+            <code>\cite{key}</code> (<code>\citet{key}</code> for "Smith (2020)", <code>\cite[p.~5]{key}</code> for a page);
+            use <code>\fullcite{key}</code> for the full reference and <code>\printbibliography</code> for the list of cited works.
+            Typing <code>\cite{</code> suggests the keys.</p>
+        <div class="bib-missing" id="bib-missing" hidden></div>
         <div class="prop-group">
             <label>bibliography.bib</label>
             <textarea id="bib-textarea" class="prop-control" rows="10"
@@ -146,6 +148,7 @@
             <div class="export-pair-row">
                 <button class="sidebar-btn bib-btn" data-action="open-bib" style="flex: 3;">
                     <span>📚</span> Bibliography (.bib)
+                    <span class="bib-warning" id="bib-warning" hidden></span>
                 </button>
                 <select id="citestyle-select" class="toolbar-select" data-change="change-citestyle"
                         style="flex: 1; min-width: 0;" title="Citation style">

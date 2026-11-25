@@ -121,7 +121,8 @@ export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null, 
         cm.on('inputRead', (ed, change) => {
             if (change.origin !== '+input' || ed.state.completionActive) return;
             const ch = change.text[change.text.length - 1].slice(-1);
-            if (/[\w.:#-]/.test(ch) || ch === ' ') showHints(ed);
+            // "{" and "," too: \cite{ suggests bibliography keys.
+            if (/[\w.:#{,-]/.test(ch) || ch === ' ') showHints(ed);
         });
     }
 

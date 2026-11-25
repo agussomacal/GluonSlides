@@ -101,3 +101,11 @@
     width: fit-content;
     margin: 0 auto;
 }
+/* A citation whose key is not in bibliography.bib (core/citations.js). */
+.cite-missing {
+    color: #b91c1c;
+    background: rgba(254, 202, 202, 0.6);
+    border-radius: 3px;
+    padding: 0 0.2em;
+    font-weight: 600;
+}

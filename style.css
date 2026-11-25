@@ -1572,3 +1572,77 @@ select.toolbar-select option:checked {
     color: #94a3b8;
     font-size: 15px;
 }
+
+/* ---------- Bibliography: cited keys missing from the .bib ---------- */
+
+.bib-warning {
+    margin-left: auto;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: #b45309;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.bib-missing {
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #b45309;
+    background: rgba(180, 83, 9, 0.12);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.bib-missing code {
+    font-size: 12px;
+}
+
+/* \cite{ suggestions on the canvas (editor/citeAutocomplete.js) */
+.cite-menu {
+    position: fixed;
+    z-index: 9000;
+    width: 370px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+    font: 13px system-ui, sans-serif;
+    color: #e2e8f0;
+}
+
+.cite-menu-item {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 5px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.cite-menu-item.active,
+.cite-menu-item:hover {
+    background: #1d4ed8;
+    color: #ffffff;
+}
+
+.cite-menu-key {
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+}
+
+.cite-menu-label {
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cite-menu-item.active .cite-menu-label {
+    color: #dbeafe;
+}

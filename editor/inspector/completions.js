@@ -15,6 +15,7 @@ import { state } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { STYLE_KEYS, styleNames } from '../../core/defaults.js';
 import { palette } from '../../core/colors.js';
+import { citationCandidates, OPEN_CITE_RE } from '../../core/citations.js';
 
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
 
@@ -131,6 +132,18 @@ export function glHints(cm) {
         if (!list.length) return null;
         return { list, from: { line: cur.line, ch: fromCh }, to: cur };
     };
+
+    // \cite{… in body text: bibliography keys.
+    const cite = before.match(OPEN_CITE_RE);
+    if (cite && indent.length > 0) {
+        const typed = cite[1];
+        const after = lineText.slice(cur.ch);
+        const close = /^\s*[},]/.test(after) ? '' : '}';
+        const list = citationCandidates(typed)
+            .filter(c => c.key !== typed || close)
+            .map(c => ({ text: c.key + close, displayText: `${c.key}  —  ${c.label}` }));
+        return result(list, cur.ch - typed.length);
+    }
 
     // Directive at the start of a line.
     if (/^\.[\w.-]*$/.test(text)) {

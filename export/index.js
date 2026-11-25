@@ -7,11 +7,19 @@ import { state, pyApi } from '../core/state.js';
 import { getExportHtmlString } from './html.js';
 import { exportProjectPdf } from './pdf.js';
 import { fontExportWarning } from '../core/fonts.js';
+import { missingCitationKeys } from '../core/citations.js';
 
-/** Tells the user about fonts that were left out / may not be shareable. */
+/**
+ * Tells the user about fonts that were left out / may not be shareable,
+ * and citations whose keys are not in the bibliography.
+ */
 function warnAboutFonts() {
-    const warning = fontExportWarning();
-    if (warning) alert(`Fonts in this export:\n\n${warning}`);
+    const parts = [];
+    const fonts = fontExportWarning();
+    if (fonts) parts.push(`Fonts in this export:\n\n${fonts}`);
+    const missing = missingCitationKeys();
+    if (missing.length) parts.push(`Citations not found in bibliography.bib (shown as [? key]):\n${missing.join(', ')}`);
+    if (parts.length) alert(parts.join('\n\n'));
 }
 
 export async function projectExportHtml() {

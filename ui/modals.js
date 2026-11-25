@@ -5,6 +5,8 @@
 
 import { state, pyApi, whenApiReady } from '../core/state.js';
 import { createProject, setMacros, setBibliography } from './project.js';
+import { missingCitationKeys } from '../core/citations.js';
+import { escapeHtml } from '../core/render.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -85,8 +87,32 @@ export async function saveMacros() {
 export function openBibModal() {
     $('bib-textarea').value = state.rawBib || '';
     $('bib-error').textContent = '';
+    updateMissingCitations();
     showModal('bib-modal');
 }
+
+/**
+ * Cited keys that are not in the bibliography: a count on the sidebar
+ * button and the list in the dialog. Runs after every editor render.
+ */
+export function updateMissingCitations() {
+    const missing = missingCitationKeys();
+    const badge = $('bib-warning');
+    if (badge) {
+        badge.hidden = missing.length === 0;
+        badge.textContent = `⚠ ${missing.length}`;
+        badge.title = missing.length ? `Cited but not in bibliography.bib: ${missing.join(', ')}` : '';
+    }
+    const box = $('bib-missing');
+    if (box) {
+        box.hidden = missing.length === 0;
+        box.innerHTML = missing.length
+            ? `⚠ Cited in the slides but not defined here: ${missing.map(k => `<code>${escapeHtml(k)}</code>`).join(', ')}`
+            : '';
+    }
+}
+document.addEventListener('editor-rendered', updateMissingCitations);
+document.addEventListener('bibliography-changed', updateMissingCitations);
 
 export async function saveBib() {
     try {

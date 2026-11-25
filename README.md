@@ -160,11 +160,20 @@ Editing on the canvas:
 
 **📚 Bibliography (.bib)** in the sidebar opens the project's BibTeX entries, which are saved as `bibliography.bib` in the project folder (you can also edit that file directly, or drop in one exported from Zotero, JabRef, etc.). In any text element:
 
-- `\cite{key}` (or `\cite{key1,key2}`) inserts an inline citation;
-- `\fullcite{key}` inserts the full reference;
-- `\printbibliography` inserts the list of every work cited in the presentation, in order of first citation.
+| Command | Numeric | Author–year |
+|---|---|---|
+| `\cite{key}`, `\citep{key}`, `\parencite{key}` | [1] | (Smith, 2020) |
+| `\citet{key}`, `\textcite{key}` | Smith [1] | Smith (2020) |
+| `\cite{a,b}` | [1, 2] | (Smith, 2020; Doe & Lee, 2019) |
+| `\cite[p.~5]{key}` | [1, p. 5] | (Smith, 2020, p. 5) |
+| `\fullcite{key}` | the full reference | |
+| `\printbibliography` | the list of every cited work, in order of first citation | |
 
-The selector next to the button switches the citation style between numeric (`[1]`) and author–year (`(Smith, 2020)`); it is stored in the project header as `citestyle:numeric` or `citestyle:authoryear`. Unknown keys show as `[?]`. Citations are resolved only when drawing and exporting: the `.gl` file keeps the `\cite{…}` markers as you typed them.
+The selector next to the button switches the style between numeric and author–year; it is stored in the project header as `citestyle:numeric` or `citestyle:authoryear`. References are formatted from the BibTeX fields (authors as "Gödel, K.", year, title, journal or book, volume(number), pages), with LaTeX accents and symbols decoded (`G{\"o}del` → Gödel, `--` → –). Citations are resolved only when drawing and exporting: the `.gl` file keeps the commands as you typed them.
+
+**Autocomplete:** typing `\cite{` (or any of the commands above, or a comma inside one) lists the bibliography entries, both in a text box on the canvas and in the `.gl` inspector. Typing filters by key, author or title; Enter or Tab inserts the key and the closing brace.
+
+**Missing keys:** a key that is not in the bibliography shows as a red `[? key]`, the Bibliography button shows a ⚠ count, the dialog lists the keys, and exports warn about them.
 
 ```
 .element.text id:5 x:100 y:200 width:1200 height:100

@@ -35,6 +35,7 @@ import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
 import { slideStepCount } from '../core/steps.js';
 import { initMarqueeSelection } from './marquee.js';
+import './citeAutocomplete.js'; // \cite{ suggestions while typing on the canvas
 import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
 import { makeMacroFromSelection, detachSelected, resetSelectedInstances } from './macroOps.js';
