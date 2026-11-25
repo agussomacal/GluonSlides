@@ -13,6 +13,7 @@ import {
     bindMarkDirtyAndRender, changeGridSize, changeSlideSizePreset, syncProjectChrome,
 } from './core/render.js';
 import { initKeyboardShortcuts } from './core/clipboard.js';
+import { initStyledSelects } from './ui/selectMenu.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
@@ -88,6 +89,7 @@ document.addEventListener('change', runValueAction('change'));
 // ---------- Startup ----------
 
 initGlInspector();
+initStyledSelects();
 bindMarkDirtyAndRender(renderEditor);
 syncProjectChrome();
 startAutosave();
