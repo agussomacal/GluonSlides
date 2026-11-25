@@ -20,7 +20,7 @@ from unittest import mock
 
 from PIL import Image
 
-from backend import figures, fonts, pdf_export, project_io, snap_env, user_settings
+from backend import figures, fonts, pdf_export, presentation, project_io, snap_env, user_settings
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -229,6 +229,97 @@ class SnapEnvTest(unittest.TestCase):
         env = {"GTK_PATH": "/usr/lib/gtk-3.0", "HOME": "/home/me"}
         snap_env.sanitize_snap_environment(env)
         self.assertEqual(env, {"GTK_PATH": "/usr/lib/gtk-3.0", "HOME": "/home/me"})
+
+
+class PresentationTest(unittest.TestCase):
+    """The audience window of the presenter view (pywebview is faked)."""
+
+    class FakeWindow:
+        def __init__(self, x=0, y=0, width=1200, height=750, url="http://127.0.0.1:5000/index.html"):
+            self.x, self.y, self.width, self.height, self.url = x, y, width, height, url
+            self.js = []
+            self.destroyed = False
+            self.events = mock.Mock()
+            self.events.closed = []
+
+        def get_current_url(self):
+            return self.url
+
+        def evaluate_js(self, code):
+            self.js.append(code)
+
+        def destroy(self):
+            self.destroyed = True
+
+    class Screen:
+        def __init__(self, x, y, width, height):
+            self.x, self.y, self.width, self.height = x, y, width, height
+
+    def setUp(self):
+        self.main = self.FakeWindow()
+        self.created = []
+
+        def create_window(title, url, **kwargs):
+            win = self.FakeWindow(url=url)
+            win.kwargs = kwargs
+            win.events.closed = mock.MagicMock()
+            self.created.append(win)
+            return win
+
+        fake = mock.Mock(windows=[self.main], screens=[self.Screen(0, 0, 1920, 1080)], create_window=create_window)
+        patcher = mock.patch.object(presentation, "webview", fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.webview = fake
+        self.pres = presentation.Presentation()
+
+    def test_one_screen_opens_a_normal_window(self):
+        res = self.pres.open("<html>deck</html>", js_api=None)
+        self.assertTrue(res["success"])
+        self.assertFalse(res["fullscreen"])
+        win = self.created[0]
+        self.assertEqual(win.url, "http://127.0.0.1:5000/present/audience.html")
+        self.assertNotIn("fullscreen", win.kwargs)
+        self.assertEqual(self.pres.html, "<html>deck</html>")
+
+    def test_second_screen_gets_the_audience_full_screen(self):
+        projector = self.Screen(1920, 0, 1280, 720)
+        self.webview.screens = [self.Screen(0, 0, 1920, 1080), projector]
+        res = self.pres.open("x", js_api=None)
+        self.assertTrue(res["fullscreen"])
+        self.assertIs(self.created[0].kwargs["screen"], projector)
+        self.assertTrue(self.created[0].kwargs["fullscreen"])
+        self.assertEqual(self.pres.screen_count()["count"], 2)
+
+    def test_audience_screen_is_the_one_without_the_app(self):
+        laptop = self.Screen(1280, 0, 1920, 1080)
+        self.webview.screens = [self.Screen(0, 0, 1280, 720), laptop]
+        self.main.x = 0  # app window on the first screen
+        self.pres.open("x", js_api=None)
+        self.assertIs(self.created[0].kwargs["screen"], laptop)
+
+    def test_messages_both_ways(self):
+        self.pres.open("x", js_api=None)
+        self.pres.control({"type": "gluon-control", "action": "goto", "slide": 2, "step": 1})
+        self.assertIn('"slide": 2', self.created[0].js[-1])
+        self.assertIn("gluonAudience", self.created[0].js[-1])
+        self.pres.event({"type": "gluon-position", "slide": 3})
+        self.assertIn("gluon-remote", self.main.js[-1])
+        self.assertIn('"slide": 3', self.main.js[-1])
+
+    def test_close_and_reopen(self):
+        self.pres.open("x", js_api=None)
+        self.pres.close()
+        self.assertTrue(self.created[0].destroyed)
+        self.assertFalse(self.pres.control({"action": "next"})["success"])
+        self.pres.open("y", js_api=None)
+        self.assertEqual(len(self.created), 2)
+
+    def test_user_closing_the_audience_window_tells_the_app(self):
+        self.pres.open("x", js_api=None)
+        self.pres._on_closed()
+        self.assertIn("gluon-audience-closed", self.main.js[-1])
+        self.assertIsNone(self.pres.window)
 
 
 if __name__ == "__main__":

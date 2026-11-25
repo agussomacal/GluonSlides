@@ -5,15 +5,26 @@
 //
 //   ▶ Present (toolbar) / Shift+F5   from the current slide
 //   F5                               from the first slide
+//   S (while presenting)             presenter view
 //   Esc                              back to the editor, on the slide
 //                                    the talk was at
+//
+// Presenter view: this window shows the presenter view (notes, next
+// slide, timer) and a second window (backend/presentation.py, page
+// present/audience.html) shows the slides: full screen on the other
+// screen when there are two. With two screens Present starts in the
+// presenter view directly. Messages between the two:
+//   presenter frame --gluon-control--> here --api.audience_control--> audience
+//   audience --api.audience_event--> 'gluon-remote' event here --> presenter frame
 // ============================================================
 
-import { state } from '../core/state.js';
+import { state, pyApi } from '../core/state.js';
 import { getExportHtmlString } from '../export/html.js';
 import { selectSlide } from '../editor/editor.js';
 
 let overlay = null;
+let mode = null;            // 'audience' | 'presenter'
+let audienceOpen = false;
 let lastPosition = null;
 let enteredFullscreen = false;
 
@@ -21,8 +32,47 @@ export function isPresenting() {
     return overlay !== null;
 }
 
-/** Starts the slide show; `fromStart` begins at the first slide. */
-export async function startPresentation({ fromStart = false } = {}) {
+function frame() {
+    return overlay && overlay.querySelector('.present-frame');
+}
+
+function requestFullscreen() {
+    enteredFullscreen = false;
+    if (overlay.requestFullscreen) {
+        overlay.requestFullscreen().then(() => { enteredFullscreen = true; }, () => { /* window-sized overlay */ });
+    }
+}
+
+async function showFrame(html) {
+    if (!overlay) return;
+    const f = document.createElement('iframe');
+    f.className = 'present-frame';
+    f.title = mode === 'presenter' ? 'Presenter view' : 'Presentation';
+    f.setAttribute('allow', 'fullscreen');
+    f.srcdoc = html;
+    f.addEventListener('load', () => f.contentWindow && f.contentWindow.focus());
+    overlay.replaceChildren(f);
+}
+
+/** Two or more screens: the audience gets its own window right away. */
+async function hasSecondScreen() {
+    const api = pyApi();
+    if (!api || typeof api.screen_count !== 'function') return false;
+    try {
+        const res = await api.screen_count();
+        return Boolean(res && res.count > 1);
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Starts the slide show.
+ *   fromStart  begin at the first slide (else the current one)
+ *   presenter  true/false forces the presenter view; undefined: only
+ *              when a second screen is connected
+ */
+export async function startPresentation({ fromStart = false, presenter } = {}) {
     if (overlay || !state.slides.length) return;
     // A text box being typed in saves on blur.
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
@@ -34,29 +84,39 @@ export async function startPresentation({ fromStart = false } = {}) {
     overlay.id = 'present-overlay';
     overlay.innerHTML = '<div class="present-loading">Preparing the presentation…</div>';
     document.body.appendChild(overlay);
-
     // Full screen must be asked for during the click/key press itself.
-    enteredFullscreen = false;
-    if (overlay.requestFullscreen) {
-        overlay.requestFullscreen().then(() => { enteredFullscreen = true; }, () => { /* stays a window-sized overlay */ });
-    }
+    requestFullscreen();
 
-    let html;
     try {
-        html = await getExportHtmlString({ startSlide, localAssets: true });
+        const usePresenter = presenter !== undefined ? presenter : await hasSecondScreen();
+        if (usePresenter) await openPresenterView(startSlide, 1);
+        else {
+            mode = 'audience';
+            await showFrame(await getExportHtmlString({ startSlide, localAssets: true }));
+        }
     } catch (e) {
         stopPresentation();
         alert(`Could not start the presentation: ${e.message}`);
-        return;
     }
-    if (!overlay) return; // closed while preparing
+}
 
-    const frame = document.createElement('iframe');
-    frame.className = 'present-frame';
-    frame.title = 'Presentation';
-    frame.srcdoc = html;
-    frame.addEventListener('load', () => frame.contentWindow && frame.contentWindow.focus());
-    overlay.replaceChildren(frame);
+/** Switches to (or starts) the presenter view with an audience window. */
+async function openPresenterView(slide, step) {
+    mode = 'presenter';
+    lastPosition = { slide, step };
+    const api = pyApi();
+    if (api && typeof api.open_audience_window === 'function') {
+        // The audience never gets the notes.
+        const audienceHtml = await getExportHtmlString({ startSlide: slide, startStep: step, localAssets: true, notes: false });
+        const res = await api.open_audience_window(audienceHtml);
+        audienceOpen = Boolean(res && res.success);
+    }
+    if (!overlay) return; // ended meanwhile
+    await showFrame(await getExportHtmlString({ startSlide: slide, startStep: step, localAssets: true, mode: 'presenter' }));
+    if (!audienceOpen) {
+        // Rehearsal: no audience window (e.g. in a browser), the presenter view alone.
+        frame()?.addEventListener('load', () => frame()?.contentWindow.postMessage({ type: 'gluon-audience-closed', text: 'Rehearsal: no audience window' }, '*'), { once: true });
+    }
 }
 
 /** Leaves the slide show and shows the slide it ended on. */
@@ -64,15 +124,48 @@ export function stopPresentation() {
     if (!overlay) return;
     overlay.remove();
     overlay = null;
+    mode = null;
+    if (audienceOpen) {
+        audienceOpen = false;
+        const api = pyApi();
+        if (api && api.close_audience_window) api.close_audience_window();
+    }
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     if (lastPosition && lastPosition.slide !== state.currentSlideIndex) selectSlide(lastPosition.slide);
 }
 
+// ---------- Messages ----------
+
+/** From the frame in this window (slides or presenter view). */
 window.addEventListener('message', (e) => {
-    const frame = overlay && overlay.querySelector('.present-frame');
-    if (!frame || e.source !== frame.contentWindow || !e.data) return;
-    if (e.data.type === 'gluon-position') lastPosition = { slide: e.data.slide, step: e.data.step };
-    else if (e.data.type === 'gluon-exit') stopPresentation();
+    const f = frame();
+    if (!f || e.source !== f.contentWindow || !e.data) return;
+    const m = e.data;
+    if (m.type === 'gluon-position') {
+        lastPosition = { slide: m.slide, step: m.step };
+    } else if (m.type === 'gluon-control') {
+        // Presenter view moved: the audience window follows.
+        if (m.action === 'goto') lastPosition = { slide: m.slide, step: m.step };
+        const api = pyApi();
+        if (audienceOpen && api && api.audience_control) api.audience_control(m);
+    } else if (m.type === 'gluon-exit') {
+        stopPresentation();
+    } else if (m.type === 'gluon-presenter-request' && mode === 'audience') {
+        openPresenterView(Number(m.slide) || 0, Number(m.step) || 1);
+    }
+});
+
+/** From the audience window, through Python (backend/presentation.py). */
+window.addEventListener('gluon-remote', (e) => {
+    const m = e.detail || {};
+    if (!overlay) return;
+    if (m.type === 'gluon-exit') { stopPresentation(); return; }
+    if (m.type === 'gluon-audience-closed') audienceOpen = false;
+    if (m.type === 'gluon-position') lastPosition = { slide: m.slide, step: m.step };
+    if (m.type === 'gluon-position' || m.type === 'gluon-audience-closed') {
+        const f = frame();
+        if (f && f.contentWindow) f.contentWindow.postMessage(m, '*');
+    }
 });
 
 // Esc in full screen is taken by the browser: leaving full screen ends the show.

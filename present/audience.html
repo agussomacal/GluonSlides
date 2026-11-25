@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<!--
+  The audience window of the presenter view (backend/presentation.py).
+  Shows the presentation the app hands over (pywebview.api.get_audience_html)
+  in a frame, passes navigation from the app to it (window.gluonAudience)
+  and reports its position and key presses back (audience_event).
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GluonSlides — Audience</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #000000; overflow: hidden; }
+        iframe { border: 0; width: 100%; height: 100%; display: block; }
+        .waiting { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+                   color: #64748b; font: 15px system-ui, sans-serif; }
+    </style>
+</head>
+<body>
+<div class="waiting" id="waiting">Waiting for the presentation…</div>
+<iframe id="slides" title="Presentation" allow="fullscreen"></iframe>
+<script>
+    const frame = document.getElementById('slides');
+
+    function bridge() {
+        const api = window.pywebview && window.pywebview.api;
+        return api && typeof api.get_audience_html === 'function' ? api : null;
+    }
+
+    function whenBridge() {
+        return new Promise((resolve) => {
+            const poll = () => (bridge() ? resolve(bridge()) : setTimeout(poll, 100));
+            window.addEventListener('pywebviewready', () => bridge() && resolve(bridge()), { once: true });
+            poll();
+        });
+    }
+
+    async function load() {
+        const api = await whenBridge();
+        const res = await api.get_audience_html();
+        if (res && res.html) {
+            frame.srcdoc = res.html;
+            document.getElementById('waiting').remove();
+        }
+    }
+
+    // App -> slides
+    window.gluonAudience = (msg) => frame.contentWindow && frame.contentWindow.postMessage(msg, '*');
+    window.gluonAudienceReload = load;
+
+    // Slides -> app
+    window.addEventListener('message', (e) => {
+        if (e.source !== frame.contentWindow || !e.data) return;
+        const api = bridge();
+        if (api) api.audience_event(e.data);
+    });
+    frame.addEventListener('load', () => frame.contentWindow && frame.contentWindow.focus());
+
+    load();
+</script>
+</body>
+</html>

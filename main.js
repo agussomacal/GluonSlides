@@ -57,6 +57,7 @@ const clickActions = {
     'export-html': projectExportHtml,
     'export-pdf': projectExportPdf,
     'present': () => startPresentation(),
+    'present-presenter': () => startPresentation({ presenter: true }),
     'go-home': goToHome,
     'group-selection': groupSelected,
     'ungroup': ungroupSelected,

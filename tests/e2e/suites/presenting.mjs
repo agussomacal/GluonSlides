@@ -141,6 +141,150 @@ const printHidden = await viewer.$$eval('.slide', ns => ns.filter(n => getComput
 check('export: printing (PDF) shows every slide and step', printHidden === 0, String(printHidden));
 await viewer.close();
 
+// ---------- Presenter view in the app, with an audience window ----------
+// The fake bridge plays backend/presentation.py: the "audience window" is
+// an iframe on the page; control/event messages go through it as Python would.
+await app(async () => {
+    const audience = { calls: [] };
+    window.__audience = audience;
+    const remote = (detail) => window.dispatchEvent(new CustomEvent('gluon-remote', { detail }));
+    Object.assign(window.pywebview = window.pywebview || {}, {});
+    window.pywebview.api = Object.assign(window.pywebview.api || {}, {
+        screen_count: () => Promise.resolve({ success: true, count: 2 }),
+        open_audience_window: (html) => {
+            audience.calls.push('open');
+            const f = document.createElement('iframe');
+            f.id = 'fake-audience';
+            f.style.cssText = 'position:fixed;left:0;top:0;width:480px;height:270px;z-index:20000';
+            f.srcdoc = html;
+            document.body.appendChild(f);
+            window.addEventListener('message', (e) => { if (e.source === f.contentWindow) remote(e.data); });
+            return Promise.resolve({ success: true, fullscreen: true });
+        },
+        audience_control: (m) => {
+            audience.calls.push('control');
+            document.getElementById('fake-audience')?.contentWindow.postMessage(m, '*');
+            return Promise.resolve({ success: true });
+        },
+        close_audience_window: () => {
+            audience.calls.push('close');
+            document.getElementById('fake-audience')?.remove();
+            return Promise.resolve({ success: true });
+        },
+    });
+    (await import('/editor/editor.js')).selectSlide(0);
+});
+await page.click('[data-action="present"]'); // two screens: presenter view directly
+await page.waitForSelector('#fake-audience');
+const pv = await (await page.waitForSelector('.present-frame')).contentFrame();
+await pv.waitForFunction(() => window.GluonViewer && window.GluonViewer.mode === 'presenter');
+const aud = await (await page.$('#fake-audience')).contentFrame();
+await aud.waitForFunction(() => window.GluonViewer);
+const apos = () => aud.evaluate(() => window.GluonViewer.position());
+const ppos = () => pv.evaluate(() => window.GluonViewer.position());
+check('two screens: Present opens the presenter view + audience window', (await pv.evaluate(() => window.GluonViewer.mode)) === 'presenter');
+check('presenter view shows the notes', (await pv.textContent('.gp-notes-text')) === 'Mention the red box.');
+check('the audience never gets the notes', !(await aud.evaluate(() => document.getElementById('gluon-notes').textContent.includes('red box'))));
+check('next pane shows the next step', await pv.$eval('[data-stage="next"] .gp-copy', n => [...n.querySelectorAll('[data-step]')].filter(x => x.classList.contains('step-hidden')).map(x => x.dataset.step).join(',')) === '3');
+check('position and step shown', (await pv.textContent('.gp-pos')).includes('Slide 1 / 2 · step 1 / 3'));
+await pv.focus('body');
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(200);
+check('→ in the presenter view moves the audience', (await apos()).step === 2 && (await ppos()).step === 2, JSON.stringify(await apos()));
+// (the overlay is in the full-screen layer, above the fake window: click via the DOM)
+await aud.evaluate(() => document.querySelector('.slide.active').dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 })));
+await page.waitForTimeout(200);
+check('a click in the audience window moves the presenter view', (await ppos()).step === 3 && (await apos()).step === 3, JSON.stringify(await ppos()));
+await pv.click('[data-gp="black"]');
+await page.waitForTimeout(200);
+check('Black: the audience goes black, the presenter still sees the slide', await aud.evaluate(() => document.querySelector('.gluon-blank').classList.contains('black'))
+    && await pv.$eval('[data-stage="current"]', n => n.classList.contains('blanked')));
+await pv.focus('body');
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(200);
+check('next key un-blanks first', !(await aud.evaluate(() => document.querySelector('.gluon-blank').classList.contains('black'))) && (await apos()).step === 3);
+const t1 = await pv.textContent('.gp-timer');
+await page.keyboard.press('t');
+check('T pauses the timer', await pv.$eval('.gp-timer', n => n.classList.contains('paused')), t1);
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(200);
+check('both on slide 2', (await apos()).slide === 1 && (await ppos()).slide === 1);
+check('last slide: next pane says the end', (await pv.textContent('[data-stage="next"]')).includes('End of presentation'));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+check('Esc closes both and the editor shows slide 2', !(await page.$('#present-overlay')) && !(await page.$('#fake-audience'))
+    && (await getState()).current === 1 && (await app(() => window.__audience.calls.includes('close'))));
+
+// S during a one-screen show switches to the presenter view
+await app(() => { window.pywebview.api.screen_count = () => Promise.resolve({ success: true, count: 1 }); });
+await page.click('[data-action="present"]');
+const one = await (await page.waitForSelector('.present-frame')).contentFrame();
+await one.waitForFunction(() => window.GluonViewer);
+check('one screen: Present shows the slides', (await one.evaluate(() => window.GluonViewer.mode)) === 'audience' && !(await page.$('#fake-audience')));
+await page.keyboard.press('s');
+await page.waitForSelector('#fake-audience');
+await page.waitForFunction(() => {
+    const f = document.querySelector('.present-frame');
+    return f && f.contentWindow.GluonViewer && f.contentWindow.GluonViewer.mode === 'presenter';
+});
+const sw = await (await page.$('.present-frame')).contentFrame();
+check('S switches to the presenter view at the same slide', (await sw.evaluate(() => window.GluonViewer.position())).slide === 1);
+await sw.click('[data-gp="exit"]');
+await page.waitForTimeout(200);
+check('End button closes the presentation', !(await page.$('#present-overlay')) && !(await page.$('#fake-audience')));
+
+// ---------- present/audience.html (the audience window page) ----------
+const shell = await browser.newPage({ viewport: { width: 800, height: 450 } });
+shell.on('pageerror', e => errors.push('audience: ' + e.message));
+const deck = await app(async () => (await import('/export/html.js')).getExportHtmlString({ localAssets: true, notes: false }));
+await shell.addInitScript((html) => {
+    window.__events = [];
+    setTimeout(() => {
+        window.pywebview = { api: {
+            get_audience_html: () => Promise.resolve({ success: true, html }),
+            audience_event: (m) => { window.__events.push(m); return Promise.resolve({ success: true }); },
+        } };
+        window.dispatchEvent(new CustomEvent('pywebviewready'));
+    }, 300);
+}, deck);
+await shell.goto(`${BASE_URL}/present/audience.html`);
+const shellFrame = await (await shell.waitForSelector('iframe')).contentFrame();
+await shellFrame.waitForFunction(() => window.GluonViewer, null, { timeout: 5000 });
+check('audience page loads the presentation once the bridge is ready', !(await shell.$('#waiting')));
+await shell.evaluate(() => window.gluonAudience({ type: 'gluon-control', action: 'goto', slide: 1, step: 1 }));
+await shell.waitForTimeout(100);
+check('audience page: the app moves it (gluonAudience)', (await shellFrame.evaluate(() => window.GluonViewer.position())).slide === 1);
+check('audience page: reports its position back', (await shell.evaluate(() => window.__events.some(m => m.type === 'gluon-position' && m.slide === 1))));
+await shellFrame.focus('body');
+await shell.keyboard.press('Escape');
+await shell.waitForTimeout(100);
+check('audience page: Esc is reported (ends the show)', await shell.evaluate(() => window.__events.some(m => m.type === 'gluon-exit')));
+await shell.close();
+
+// ---------- Exported HTML: S opens the presenter view in a new window ----------
+const { writeFileSync, mkdirSync } = await import('node:fs');
+const { OUT_DIR } = await import('../helpers.mjs');
+mkdirSync(OUT_DIR, { recursive: true });
+const file = `${OUT_DIR}/presenting-export.html`;
+writeFileSync(file, html);
+const ctx = await browser.newContext({ viewport: { width: 1000, height: 600 } });
+const audPage = await ctx.newPage();
+audPage.on('pageerror', e => errors.push('export audience: ' + e.message));
+await audPage.goto(`file://${file}`);
+await audPage.waitForFunction(() => window.GluonViewer);
+const [popup] = await Promise.all([ctx.waitForEvent('page'), audPage.keyboard.press('s')]);
+popup.on('pageerror', e => errors.push('export presenter: ' + e.message));
+await popup.waitForFunction(() => window.GluonViewer && window.GluonViewer.mode === 'presenter');
+check('export: S opens the presenter view in a new window', true);
+check('export: presenter window shows the notes', (await popup.textContent('.gp-notes-text')) === 'Mention the red box.');
+await popup.keyboard.press('ArrowRight');
+await popup.waitForTimeout(200);
+check('export: presenter window moves the slides window', (await audPage.evaluate(() => window.GluonViewer.position())).step === 2);
+await audPage.keyboard.press('ArrowRight');
+await audPage.waitForTimeout(200);
+check('export: the slides window moves the presenter window', (await popup.evaluate(() => window.GluonViewer.position())).step === 3);
+await ctx.close();
+
 console.log(out.join('\n'));
 console.log('--- errors ---\n' + (errors.join('\n') || '(none)'));
 await browser.close();

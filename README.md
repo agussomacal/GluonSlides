@@ -11,7 +11,7 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 - 📝 **Markdown + LaTeX in every text box** — write `**bold**`, lists, and inline or display math (`$E = mc^2$`, `$$\int f(x)\,dx$$`) rendered with marked.js and KaTeX.
 - ⚙️ **LaTeX macros** — define `\newcommand` macros once in a per-project `macros.tex` file (editable from a built-in dialog) and use them in any text element.
 - 📚 **Bibliography (`.bib`)** — keep BibTeX entries in a per-project `bibliography.bib`, cite them with `\cite{key}` in any text box, and print the reference list with `\printbibliography`, in numeric or author–year style.
-- ▶️ **Present from the app** — full-screen slide show with builds (objects that appear one click at a time), black screen, go-to-slide, and speaker notes stored with each slide.
+- ▶️ **Present from the app** — full-screen slide show with builds (objects that appear one click at a time), a presenter view (notes, next slide, timer) with the audience on a second screen, black screen and go-to-slide.
 - 📤 **Export to HTML and PDF** — one click produces an interactive HTML viewer (keyboard navigation) or a pixel-perfect, vector PDF via headless Chromium. Math renders perfectly in both.
 - 🔤 **Gluon format (`.gl`)** — a Quarkdown-like syntax stores your slides as plain text, with a built-in source editor (syntax highlighting) right inside the app.
 - 🧩 **Plugin-style elements** — new element types are a single self-registering file. No core changes required.
@@ -184,11 +184,17 @@ The selector next to the button switches the citation style between numeric (`[1
 | Home / End | first / last slide |
 | a number, then Enter | go to that slide |
 | B or . / W or , | black / white screen (any key returns) |
+| S | presenter view |
 | F | full screen (in the exported HTML) |
+| T / R, + / − | presenter view: pause / reset the timer, notes size |
 
 **Builds:** select an object and set **Appears at step** in the properties panel: at step 2 it appears on the first click, at step 3 on the second, and so on (like Beamer's `\pause`). A purple badge on the canvas shows the step. Going back to a previous slide shows it complete. PDF exports show every object.
 
 **Speaker notes:** with nothing selected, the properties panel shows the current slide's notes.
+
+**Presenter view** (**🗒 Presenter view** in the toolbar, or **S** while presenting): this window shows the current slide, the next step, your notes, a timer (**T** pauses, **R** resets) and the clock, and a second window shows the slides to the audience. With two screens connected, **Present** starts in the presenter view by itself and puts the audience window full screen on the other screen. With one screen the audience window opens normally: drag it to the projector and press **F**. (On Wayland apps can't place their windows, so you may have to drag it there as well.) Without an audience window the presenter view works as a rehearsal mode. Navigating in either window moves both; **Black** blanks only the audience's screen.
+
+The exported HTML has the presenter view too: open it in a browser and press **S** (allow the pop-up). The exported file contains the speaker notes, so remove them before sharing it if they are private.
 
 ```
 .slide {Results} id:3

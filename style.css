@@ -1535,9 +1535,13 @@ select.toolbar-select option:checked {
 
 /* ---------- Present mode (ui/present.js) ---------- */
 
-.present-btn {
-    order: 99;            /* after the add-element buttons */
+.presenter-btn {
+    order: 98;            /* after the add-element buttons */
     margin-left: auto;
+}
+
+.present-btn {
+    order: 99;
     background: #2563eb;
     border-color: #1d4ed8;
     color: #ffffff;

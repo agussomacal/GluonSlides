@@ -10,6 +10,7 @@ import webbrowser
 import webview
 
 from . import dialogs, figures, fonts, pdf_export, project_io, user_settings
+from .presentation import Presentation
 
 
 
@@ -23,6 +24,10 @@ FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
 
 class Api:
+    def __init__(self):
+        # Leading underscore: pywebview does not expose it to JS.
+        self._presentation = Presentation()
+
     # --- per-user settings -------------------------------------------------
 
     def get_inspector_settings(self):
@@ -165,3 +170,28 @@ class Api:
             return {"success": False, "error": "Only http(s) links can be opened."}
         webbrowser.open(url)
         return {"success": True}
+
+    # --- presenter view: the audience window ------------------------------
+
+    def screen_count(self):
+        """How many screens are connected (2+: the audience gets its own)."""
+        return self._presentation.screen_count()
+
+    def open_audience_window(self, html):
+        """Show `html` (the exported presentation) in the audience window."""
+        return self._presentation.open(html, self)
+
+    def get_audience_html(self):
+        """Called by present/audience.html to get the presentation."""
+        return {"success": True, "html": self._presentation.html}
+
+    def close_audience_window(self):
+        return self._presentation.close()
+
+    def audience_control(self, message):
+        """App -> audience window: navigation."""
+        return self._presentation.control(message)
+
+    def audience_event(self, message):
+        """Audience window -> app: position and key presses."""
+        return self._presentation.event(message)
