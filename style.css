@@ -1504,3 +1504,67 @@ select.toolbar-select option:checked {
 .canvas-element.element-shape[style*="border-style: dashed"] {
     background-color: rgba(255, 255, 255, 0.03);
 }
+/* ---------- Builds and speaker notes ---------- */
+
+/* Step badge: the element appears at this step while presenting. */
+.canvas-element[data-step]::after {
+    content: attr(data-step);
+    position: absolute;
+    top: calc(4px * var(--ui-unit, 1));
+    left: calc(4px * var(--ui-unit, 1));
+    min-width: calc(20px * var(--ui-unit, 1));
+    height: calc(20px * var(--ui-unit, 1));
+    padding: 0 calc(5px * var(--ui-unit, 1));
+    box-sizing: border-box;
+    border-radius: calc(10px * var(--ui-unit, 1));
+    background: #7c3aed;
+    color: #ffffff;
+    font: 600 calc(12px * var(--ui-unit, 1)) / calc(20px * var(--ui-unit, 1)) system-ui, sans-serif;
+    text-align: center;
+    pointer-events: none;
+    z-index: 5;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.slide-notes {
+    resize: vertical;
+    min-height: 120px;
+    font-family: inherit;
+    line-height: 1.45;
+}
+
+/* ---------- Present mode (ui/present.js) ---------- */
+
+.present-btn {
+    order: 99;            /* after the add-element buttons */
+    margin-left: auto;
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #ffffff;
+}
+
+.present-btn:hover {
+    background: #1d4ed8;
+}
+
+#present-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: #000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#present-overlay .present-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
+.present-loading {
+    color: #94a3b8;
+    font-size: 15px;
+}

@@ -70,9 +70,9 @@ function lineContext(cm, lineNo, text) {
     const keys = new Set([...text.matchAll(/(?:^|\s)([A-Za-z]\w*):/g)].map(m => m[1]));
     let m;
     if ((m = text.match(/^\.element\.([\w-]+)/))) {
-        return { params: ['id', 'name', ...(STYLE_KEYS[m[1]] ? ['style'] : []), ...elementProps(m[1])], keys, type: m[1] };
+        return { params: ['id', 'name', ...(STYLE_KEYS[m[1]] ? ['style'] : []), 'step', ...elementProps(m[1])], keys, type: m[1] };
     }
-    if (text.match(/^\.macro\./)) return { params: ['id', 'name', ...elementProps('macro')], keys };
+    if (text.match(/^\.macro\./)) return { params: ['id', 'name', 'step', ...elementProps('macro')], keys };
     if (text.startsWith('.project')) return { params: PROJECT_PARAMS, keys };
     if (text.startsWith('.slide')) return { params: ['id'], keys };
     if (text.startsWith('.define')) return { params: ['width', 'height'], keys };
@@ -99,6 +99,7 @@ function documentColors(cm) {
 function directiveCandidates() {
     const list = [
         { text: '.slide {', displayText: '.slide {Title} id:' },
+        { text: '.notes', displayText: '.notes  (speaker notes, indented below)' },
         { text: '.define {', displayText: '.define {name} width: height:' },
         { text: '.import {', displayText: '.import {macros.gl}' },
         { text: '.project {', displayText: '.project {Name} ...' },

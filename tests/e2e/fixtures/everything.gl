@@ -13,14 +13,17 @@
 		New
 
 .slide {Title} id:1
+.notes
+	Speaker notes: start with the **result**.
+	.a notes line starting with a dot
 .element.text id:2 style:title x:100 y:80 width:1200 height:120
 	Results with **Markdown** and math $E = mc^2$
 	.a line starting with a dot (escaped in the file)
 
 	# a heading after a blank line
 .element.shape id:3 style:card x:100 y:300 width:400 height:300 radius:24
-.element.shape id:4 x:600 y:300 width:300 height:300 kind:ellipse lockAspect:yes bg:@accent/40
-.element.path id:5 x:100 y:700 width:800 height:200 curve:smooth end:arrow
+.element.shape id:4 step:2 x:600 y:300 width:300 height:300 kind:ellipse lockAspect:yes bg:@accent/40
+.element.path id:5 step:3 x:100 y:700 width:800 height:200 curve:smooth end:arrow
 	0 1
 	0.5 0
 	1 0.6

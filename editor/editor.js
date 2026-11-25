@@ -33,6 +33,7 @@ import {
 import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } from '../core/geometry.js';
 import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
+import { slideStepCount } from '../core/steps.js';
 import { initMarqueeSelection } from './marquee.js';
 import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
@@ -107,7 +108,7 @@ function updateProp(propName, value) {
 
     // Numeric if any selected element's type declares it numeric (its
     // .gl spec), or it is one of the common geometry/border props.
-    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth'];
+    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth', 'step'];
     const isNumeric = commonNumeric.includes(propName) || indices.some(idx => {
         const def = elements[idx] && ElementRegistry.get(elements[idx].type);
         return !!(def && def.gl && Array.isArray(def.gl.numericProps) && def.gl.numericProps.includes(propName));
@@ -139,9 +140,10 @@ function updateProp(propName, value) {
         });
     } else {
         indices.forEach(idx => {
-            if (elements[idx]) {
-                elements[idx][propName] = parsedVal;
-            }
+            if (!elements[idx]) return;
+            // Step 1 (or empty) = visible from the start: not stored.
+            if (propName === 'step' && !(parsedVal > 1)) delete elements[idx].step;
+            else elements[idx][propName] = propName === 'step' ? Math.round(parsedVal) : parsedVal;
         });
     }
 
@@ -259,6 +261,30 @@ export function manageStyles() {
     return true;
 }
 
+/** Builds: the click at which the element appears while presenting. */
+function stepSection(el) {
+    return `
+        <div class="prop-group">
+            <label title="While presenting, the element appears after this many clicks on its slide (1 = shown from the start)">Appears at step</label>
+            <input type="number" class="prop-control" min="1" step="1" value="${Number(el.step) > 1 ? Math.round(el.step) : 1}" data-prop="step">
+        </div>`;
+}
+
+/** Shown when nothing is selected: the current slide's speaker notes. */
+function slideSection(slide) {
+    const steps = slideStepCount(slide);
+    return `
+        <div class="prop-divider"></div>
+        <div class="prop-group">
+            <label for="slide-notes">Speaker notes</label>
+            <textarea id="slide-notes" class="prop-control slide-notes" rows="8" data-slide-prop="notes"
+                      placeholder="Only you see these, in the presenter view.">${escapeHtml(slide.notes || '')}</textarea>
+        </div>
+        <p class="prop-hint">${steps > 1
+            ? `This slide builds up in ${steps} steps (set an object's <strong>Appears at step</strong>).`
+            : 'To reveal objects one click at a time, select one and set <strong>Appears at step</strong>.'}</p>`;
+}
+
 /** "Make macro" field shown under any selection. */
 function makeMacroSection() {
     return `
@@ -332,6 +358,15 @@ function onPropertyControl(e) {
     }
 }
 propertiesPanel.addEventListener('input', onPropertyControl);
+// Slide-level fields (speaker notes) while nothing is selected.
+propertiesPanel.addEventListener('input', (e) => {
+    const key = e.target.dataset && e.target.dataset.slideProp;
+    const slide = state.slides[state.currentSlideIndex];
+    if (!key || !slide) return;
+    if (e.target.value.trim() === '') delete slide[key];
+    else slide[key] = e.target.value;
+    markDirty();
+});
 propertiesPanel.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.id === 'make-macro-name') {
         e.preventDefault();
@@ -589,6 +624,9 @@ function appendHandles(container, domEl, el, def, elIndex) {
 
 function renderInteractiveElements(container, elements) {
     const selectedSet = new Set(getSelectedElementIndices());
+    // Canvas units per screen pixel, so UI marks (step badges) keep their size.
+    const rect = container.getBoundingClientRect();
+    container.style.setProperty('--ui-unit', String((container.offsetWidth || 1) / (rect.width || 1)));
     const renderedItems = [];
 
     elements.forEach((el, elIndex) => {
@@ -599,6 +637,7 @@ function renderInteractiveElements(container, elements) {
         if (selectedSet.has(elIndex)) {
             domEl.classList.add('selected');
         }
+        if (Number(el.step) > 1 && !activeGroup()) domEl.dataset.step = String(Math.round(el.step));
 
         // Drawn with defaults/style filled in and colors resolved;
         // geometry edits use `el`.
@@ -785,7 +824,8 @@ function renderPropertiesPanel() {
     const groupBanner = group ? editingBanner(group) : '';
 
     if (selectedIndices.length === 0 || !slide) {
-        panelBody.innerHTML = groupBanner + `<div class="no-selection">Select an object on the canvas to inspect and customize its properties. Drag on empty space to select several.</div>`;
+        panelBody.innerHTML = groupBanner + `<div class="no-selection">Select an object on the canvas to inspect and customize its properties. Drag on empty space to select several.</div>`
+            + (slide && !group ? slideSection(slide) : '');
         return;
     }
 
@@ -834,6 +874,7 @@ function renderPropertiesPanel() {
             <input type="text" class="prop-control prop-readonly" value="${escapeHtml(typeLabel)}" disabled>
         </div>
         ${styleSection(rawEl)}
+        ${group ? '' : stepSection(rawEl)}
         <div class="prop-row">
             <div class="prop-group">
                 <label>X Position</label>

@@ -63,6 +63,9 @@ check('group children', s2[0].type === 'group' && s2[0].children.length === 2 &&
 check('macro instance with overrides + extra', s2[2].type === 'macro' && s2[2].ref === 'badge'
     && JSON.stringify(s2[2].overrides) === JSON.stringify([{ target: 'label', props: {}, body: 'Hot' }, { target: 'dot', props: { bg: '@primary/80' } }])
     && s2[2].extras.length === 1);
+check('speaker notes', p.slides[0].notes === 'Speaker notes: start with the **result**.\n.a notes line starting with a dot' && p.slides[1].notes === undefined, JSON.stringify(p.slides[0].notes));
+check('build steps', s1[0].step === undefined && s1[2].step === 2 && s1[3].step === 3);
+check('notes and steps written back', all.saved.includes('.slide {Title} id:1\n.notes\n\tSpeaker notes') && all.saved.includes('id:4 step:2 x:600'));
 check('escaped dot written back escaped', all.saved.includes('\t\\.a line starting with a dot'));
 
 // Old files: unindented bodies are read as bodies

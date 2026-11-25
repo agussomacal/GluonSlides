@@ -9,8 +9,10 @@ import {ElementRegistry} from '../registry.js';
 export const GL_FORMAT_VERSION = 2;
 
 const BODY_INDENT = '\t';
+// Holder returned for a .notes block so parseBlock hands it the body.
+const NOTES_TYPE = '__slide_notes__';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
-const DIRECTIVE_RE = /^\.(project|slide|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const DIRECTIVE_RE = /^\.(project|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -225,6 +227,11 @@ export function serializeGl(project) {
         const title = slide.title ? ` {${encodeBraceArg(slide.title)}}` : '';
         lines.push('');
         lines.push(`.slide${title} id:${encodeParamValue(slide.id ?? '')}`);
+        // Speaker notes: an indented block right after the .slide line.
+        if (typeof slide.notes === 'string' && slide.notes.trim() !== '') {
+            lines.push('.notes');
+            lines.push(slide.notes.replace(/\s+$/, '').split('\n').map(indentBodyLine).join('\n'));
+        }
         lines.push(...serializeGlElements(slide.elements));
     });
 
@@ -276,10 +283,12 @@ function serializeElementDirective(el) {
     if (el.id !== undefined && el.id !== null) head.push(`id:${encodeParamValue(el.id)}`);
     if (el.name) head.push(`name:${encodeParamValue(el.name)}`);
     if (el.style) head.push(`style:${encodeParamValue(el.style)}`);
+    // Builds: the click at which the element appears (1 = from the start).
+    if (Number(el.step) > 1) head.push(`step:${Math.round(Number(el.step))}`);
 
     if (!spec.registered) {
         const raw = Object.keys(el)
-            .filter(k => !['type', 'id', 'name', 'style'].includes(k) && el[k] !== undefined && el[k] !== null)
+            .filter(k => !['type', 'id', 'name', 'style', 'step'].includes(k) && el[k] !== undefined && el[k] !== null)
             .filter(k => !(typeof el[k] === 'string' && el[k].startsWith('data:')))
             .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`);
         return `.element.${el.type} ${[...head, ...raw].join(' ')}`.trimEnd();
@@ -386,6 +395,10 @@ export function parseGl(text) {
             };
             project.slides.push(currentSlide);
             return null;
+        }
+        if (kind === 'notes') {
+            if (!currentSlide) throw new Error(`Line ${lineNo}: .notes must follow a .slide line`);
+            return { type: NOTES_TYPE, slide: currentSlide };
         }
         if (!currentSlide) {
             throw new Error(`Line ${lineNo}: .${kind}.${subtype ?? '?'} appears before any .slide`);
@@ -558,6 +571,11 @@ function hasMoreBodyLines(rawLines, startIndex) {
 
 function flushBody(element, bodyLines, bodyStartLine = 0) {
     if (!element || !bodyLines) return;
+    if (element.type === NOTES_TYPE) {
+        const notes = bodyLines.join('\n').replace(/^\n+|\s+$/g, '');
+        if (notes) element.slide.notes = notes;
+        return;
+    }
     let leading = 0;
     while (bodyLines.length && bodyLines[0] === '') {
         bodyLines.shift();
@@ -612,9 +630,11 @@ function buildElement(type, params) {
     const el = {type, id: Number.isFinite(rawId) ? rawId : null};
     if (params.name) el.name = params.name;
     if (params.style) el.style = params.style;
+    const step = Math.round(Number(params.step));
+    if (step > 1) el.step = step;
     const spec = getElementGlSpec(type);
 
-    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => k !== 'id');
+    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step'].includes(k));
     keysToRead.forEach(key => {
         if (params[key] === undefined) return;
         const raw = params[key];

@@ -6,6 +6,7 @@
 //   editor/editor.js      slide editor (canvas, thumbnails, properties)
 //   editor/inspector/     .gl source inspector
 //   export/               HTML / PDF export
+//   ui/present.js         Present mode (present/viewer.js is the slide show)
 // ============================================================
 
 import { startAutosave, flushPendingSave, whenApiReady } from './core/state.js';
@@ -28,6 +29,7 @@ import {
 } from './editor/editor.js';
 import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
+import { startPresentation } from './ui/present.js';
 import {
     initRecents, openProjectFromFile, goToHome, toggleDarkMode, changeCitestyle,
 } from './ui/project.js';
@@ -54,6 +56,7 @@ const clickActions = {
     'toggle-dark-mode': toggleDarkMode,
     'export-html': projectExportHtml,
     'export-pdf': projectExportPdf,
+    'present': () => startPresentation(),
     'go-home': goToHome,
     'group-selection': groupSelected,
     'ungroup': ungroupSelected,

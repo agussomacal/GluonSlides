@@ -11,6 +11,7 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 - 📝 **Markdown + LaTeX in every text box** — write `**bold**`, lists, and inline or display math (`$E = mc^2$`, `$$\int f(x)\,dx$$`) rendered with marked.js and KaTeX.
 - ⚙️ **LaTeX macros** — define `\newcommand` macros once in a per-project `macros.tex` file (editable from a built-in dialog) and use them in any text element.
 - 📚 **Bibliography (`.bib`)** — keep BibTeX entries in a per-project `bibliography.bib`, cite them with `\cite{key}` in any text box, and print the reference list with `\printbibliography`, in numeric or author–year style.
+- ▶️ **Present from the app** — full-screen slide show with builds (objects that appear one click at a time), black screen, go-to-slide, and speaker notes stored with each slide.
 - 📤 **Export to HTML and PDF** — one click produces an interactive HTML viewer (keyboard navigation) or a pixel-perfect, vector PDF via headless Chromium. Math renders perfectly in both.
 - 🔤 **Gluon format (`.gl`)** — a Quarkdown-like syntax stores your slides as plain text, with a built-in source editor (syntax highlighting) right inside the app.
 - 🧩 **Plugin-style elements** — new element types are a single self-registering file. No core changes required.
@@ -171,6 +172,35 @@ The selector next to the button switches the citation style between numeric (`[1
 .element.text id:6 x:100 y:800 width:1200 height:200 fontSize:20
 	\printbibliography
 ```
+
+### Presenting, builds and speaker notes
+
+**▶ Present** (top right of the toolbar, or **Shift+F5**) starts the slide show from the current slide; **F5** starts from the first one. It shows exactly what the HTML export shows, full screen. **Esc** returns to the editor on the slide where you stopped.
+
+| Keys | |
+|---|---|
+| → ↓ Space PageDown Enter, click | next step or slide |
+| ← ↑ PageUp Backspace, right-click | back |
+| Home / End | first / last slide |
+| a number, then Enter | go to that slide |
+| B or . / W or , | black / white screen (any key returns) |
+| F | full screen (in the exported HTML) |
+
+**Builds:** select an object and set **Appears at step** in the properties panel: at step 2 it appears on the first click, at step 3 on the second, and so on (like Beamer's `\pause`). A purple badge on the canvas shows the step. Going back to a previous slide shows it complete. PDF exports show every object.
+
+**Speaker notes:** with nothing selected, the properties panel shows the current slide's notes.
+
+```
+.slide {Results} id:3
+.notes
+	Start with the headline number.
+	Then reveal the plot.
+.element.text id:4 x:100 y:80 width:1200 height:120
+	Accuracy went from 71% to **93%**
+.element.figure id:5 step:2 x:100 y:250 width:900 height:600 filePath:figures/plot.png
+```
+
+`.notes` (indented text after the `.slide` line) holds the notes; `step:N` on an element is the step at which it appears (step 1, the default, is not written).
 
 ## Integrated source editor
 

@@ -65,13 +65,14 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 | `project-defaults` | Project defaults: inheritance, the settings dialog, overriding and ↺, converting old projects, undo, export, macros |
 | `panel-labels` | Labels stay on one line, so fields never move when a value becomes overridden |
 | `styles-colors` | Named styles and theme colors: the color picker, opacity, editing/renaming/removing colors, styles from elements, cascade, file format, export |
+| `presenting` | Build steps (field, badge, saving), speaker notes, Present mode (keys, steps, black screen, go to slide, Esc back on the right slide, F5/Shift+F5), the exported viewer and that printing shows every step |
 | `file-format` | The `.gl` files in `fixtures/` (and your local `Slides/` projects, if present) parse, keep their content and round-trip; friendly errors |
 
 ### Fixtures
 
 `tests/e2e/fixtures/` holds test projects:
 
-- `everything.gl` uses every feature of the format (palette, defaults, styles, a macro definition, groups, paths, overrides, escaped body lines).
+- `everything.gl` uses every feature of the format (palette, defaults, styles, a macro definition, groups, paths, overrides, escaped body lines, speaker notes, build steps).
 - `legacy-unindented.gl` is in the format older versions saved (text bodies not indented).
 
 If a change to the format makes `file-format` fail, either the change broke reading old files or the fixture needs updating on purpose.
