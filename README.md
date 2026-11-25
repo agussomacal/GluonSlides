@@ -10,6 +10,7 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 - 📐 **Freeform layout** — absolutely positioned elements on a canvas (1920×1080 by default, other presets available), with a configurable alignment grid.
 - 📝 **Markdown + LaTeX in every text box** — write `**bold**`, lists, and inline or display math (`$E = mc^2$`, `$$\int f(x)\,dx$$`) rendered with marked.js and KaTeX.
 - ⚙️ **LaTeX macros** — define `\newcommand` macros once in a per-project `macros.tex` file (editable from a built-in dialog) and use them in any text element.
+- 📚 **Bibliography (`.bib`)** — keep BibTeX entries in a per-project `bibliography.bib`, cite them with `\cite{key}` in any text box, and print the reference list with `\printbibliography`, in numeric or author–year style.
 - 📤 **Export to HTML and PDF** — one click produces an interactive HTML viewer (keyboard navigation) or a pixel-perfect, vector PDF via headless Chromium. Math renders perfectly in both.
 - 🔤 **Gluon format (`.gl`)** — a Quarkdown-like syntax stores your slides as plain text, with a built-in source editor (syntax highlighting) right inside the app.
 - 🧩 **Plugin-style elements** — new element types are a single self-registering file. No core changes required.
@@ -153,6 +154,23 @@ Editing on the canvas:
 - Elements inside a definition have a `name` instead of an id. In an instance, `::name key:value` overrides properties of that element, an indented body replaces its text, and `hidden:yes` hides it. Overrides come first, then any extra elements that only this instance has.
 - Overrides whose element no longer exists in the definition are flagged (⚠) instead of silently dropped; a missing macro shows a placeholder.
 - **Detach** turns an instance into an ordinary group with the overrides applied; **Reset all overrides** returns it to the definition.
+
+### Bibliography (`.bib`)
+
+**📚 Bibliography (.bib)** in the sidebar opens the project's BibTeX entries, which are saved as `bibliography.bib` in the project folder (you can also edit that file directly, or drop in one exported from Zotero, JabRef, etc.). In any text element:
+
+- `\cite{key}` (or `\cite{key1,key2}`) inserts an inline citation;
+- `\fullcite{key}` inserts the full reference;
+- `\printbibliography` inserts the list of every work cited in the presentation, in order of first citation.
+
+The selector next to the button switches the citation style between numeric (`[1]`) and author–year (`(Smith, 2020)`); it is stored in the project header as `citestyle:numeric` or `citestyle:authoryear`. Unknown keys show as `[?]`. Citations are resolved only when drawing and exporting: the `.gl` file keeps the `\cite{…}` markers as you typed them.
+
+```
+.element.text id:5 x:100 y:200 width:1200 height:100
+	Earlier results \cite{einstein1905} were confirmed later \cite{knuth1984,lamport1994}.
+.element.text id:6 x:100 y:800 width:1200 height:200 fontSize:20
+	\printbibliography
+```
 
 ## Integrated source editor
 

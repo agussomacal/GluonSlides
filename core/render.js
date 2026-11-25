@@ -28,7 +28,7 @@ function sanitizeHtml(html) {
 
 export function renderMarkdownAndKatex(element, rawText) {
     // Citations are resolved at render time only — the stored content
-    // keeps the raw \cite{...} / [@key] markers for round-trip fidelity.
+    // keeps the raw \cite{...} markers for round-trip fidelity.
     let processed;
     try {
         processed = resolveCitations(rawText);
