@@ -156,7 +156,8 @@ export function exportElementMarkup(el) {
         + `width:${el.width}px; height:${el.height}px;`
         + `background-color:${el.bg};`
         + `border: ${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
-        + `box-sizing: border-box;`;
+        + `box-sizing: border-box;`
+        + (def && typeof def.exportStyle === 'function' ? def.exportStyle(el) : '');
 
     if (!def) return `<div class="el" style="${geo}"></div>`;
     if (el.type === 'text') {

@@ -43,6 +43,10 @@ The rules are simple:
 
 Because the format is deterministic (fixed property order, stable IDs, no timestamps), the file plays nicely with `git diff`, and every position change in the GUI translates into a tiny, reviewable edit. You can also hand-edit the file and reopen it — the parser reports friendly, actionable errors.
 
+### Shapes
+
+The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot. They are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.
+
 ### Groups
 
 Select several elements (drag a box on empty canvas space, or Ctrl+click) and press **Ctrl+G**. A group keeps its children in its own coordinate frame, so resizing the group scales everything inside it (positions, sizes, fonts, borders) while only the group's line changes in the file:
@@ -122,7 +126,7 @@ Elements are plugins registered in a central registry (`core/registry.js`). To a
    import './shape2/shape2.js';
    ```
 
-That's it. The toolbar button appears automatically (the toolbar is generated from the registry), geometry/selection/drag/resize/undo come for free from the editor core, and the element persists to `.gl` with the properties you whitelisted.
+That's it. The toolbar entry appears automatically: the toolbar is generated from the registry and grouped by each element's `category` (`text`, `shapes`, `lines`, `media`, …); a category with several entries, or an element with several `variants` (presets), becomes a dropdown, geometry/selection/drag/resize/undo come for free from the editor core, and the element persists to `.gl` with the properties you whitelisted.
 
 To give the element editable fields in the properties panel, return controls from `properties()` that name the property they edit; no event handlers needed. For buttons that run element code, add an `actions` object:
 

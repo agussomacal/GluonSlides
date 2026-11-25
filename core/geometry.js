@@ -5,8 +5,7 @@
 import { state } from './state.js';
 
 const EDGE_THRESHOLD = 12;   // px inside the element that acts as resize handle
-const MIN_WIDTH = 50;
-const MIN_HEIGHT = 40;
+const MIN_SIZE = 8;          // smallest width/height a resize can produce
 const DRAG_START_PX = 2;     // movement before a click counts as a drag
 
 export function snapToGridPoint(val, step) {
@@ -36,6 +35,20 @@ function computeScale(domEl, el) {
     };
 }
 
+/**
+ * Which edges a local point is on. The edge zone shrinks on small
+ * elements (e.g. dots) so their middle still moves instead of resizing.
+ */
+function edgeHits(el, localX, localY) {
+    const t = Math.min(EDGE_THRESHOLD, el.width / 4, el.height / 4);
+    return {
+        isLeft: localX < t,
+        isRight: localX > el.width - t,
+        isTop: localY < t,
+        isBottom: localY > el.height - t,
+    };
+}
+
 /** Cursor feedback while hovering near edges of an element. */
 export function updateResizeCursor(domEl, el, mouseEvent) {
     const rect = domEl.getBoundingClientRect();
@@ -43,10 +56,7 @@ export function updateResizeCursor(domEl, el, mouseEvent) {
     const localX = (mouseEvent.clientX - rect.left) / sx;
     const localY = (mouseEvent.clientY - rect.top) / sy;
 
-    const isLeft = localX < EDGE_THRESHOLD;
-    const isRight = localX > (el.width - EDGE_THRESHOLD);
-    const isTop = localY < EDGE_THRESHOLD;
-    const isBottom = localY > (el.height - EDGE_THRESHOLD);
+    const { isLeft, isRight, isTop, isBottom } = edgeHits(el, localX, localY);
 
     if (isTop && isLeft) domEl.style.cursor = 'nwse-resize';
     else if (isTop && isRight) domEl.style.cursor = 'nesw-resize';
@@ -73,10 +83,7 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
     const rect = domEl.getBoundingClientRect();
     const localX = (e.clientX - rect.left) / sx;
     const localY = (e.clientY - rect.top) / sy;
-    const isLeft = localX < EDGE_THRESHOLD;
-    const isRight = localX > (el.width - EDGE_THRESHOLD);
-    const isTop = localY < EDGE_THRESHOLD;
-    const isBottom = localY > (el.height - EDGE_THRESHOLD);
+    const { isLeft, isRight, isTop, isBottom } = edgeHits(el, localX, localY);
     const isResizing = isLeft || isRight || isTop || isBottom;
 
     const activeGroup = (!isResizing && Array.isArray(groupItems) && groupItems.length > 1)
@@ -134,20 +141,35 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
             }
             callbacks.onGeometryChanged();
         } else if (isResizing) {
-            let newW = orig.w, newH = orig.h, newX = orig.x, newY = orig.y;
+            let newW = orig.w;
+            let newH = orig.h;
+            if (isRight) newW = orig.w + dx;
+            if (isLeft) newW = orig.w - dx;
+            if (isBottom) newH = orig.h + dy;
+            if (isTop) newH = orig.h - dy;
+            newW = Math.max(MIN_SIZE, newW);
+            newH = Math.max(MIN_SIZE, newH);
 
-            if (isRight) newW = Math.max(MIN_WIDTH, orig.w + dx);
-            if (isBottom) newH = Math.max(MIN_HEIGHT, orig.h + dy);
-            if (isLeft) {
-                const candidate = orig.w - dx;
-                if (candidate > MIN_WIDTH) { newW = candidate; newX = orig.x + dx; }
-            }
-            if (isTop) {
-                const candidate = orig.h - dy;
-                if (candidate > MIN_HEIGHT) { newH = candidate; newY = orig.y + dy; }
+            // Keep proportions for locked elements (circles, dots) or Shift.
+            const keepAspect = el.lockAspect === 'yes' || moveEvent.shiftKey;
+            if (keepAspect && orig.w > 0 && orig.h > 0) {
+                const horizontal = isLeft || isRight;
+                const vertical = isTop || isBottom;
+                let k;
+                if (horizontal && vertical) k = Math.max(newW / orig.w, newH / orig.h);
+                else if (horizontal) k = newW / orig.w;
+                else k = newH / orig.h;
+                k = Math.max(k, MIN_SIZE / Math.min(orig.w, orig.h));
+                newW = Math.round(orig.w * k * 100) / 100;
+                newH = Math.round(orig.h * k * 100) / 100;
             }
 
-            applyGeometry(newX, newY, newW, newH, !freeform);
+            // The opposite edge stays put.
+            const newX = isLeft ? orig.x + orig.w - newW : orig.x;
+            const newY = isTop ? orig.y + orig.h - newH : orig.y;
+
+            // Snapping each side independently would break the ratio.
+            applyGeometry(newX, newY, newW, newH, !freeform && !keepAspect);
             callbacks.onGeometryChanged();
         }
     }

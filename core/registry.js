@@ -13,6 +13,13 @@
 //                   'canvas' | 'thumb'; wire events only for canvas)
 //   exportInner(el) : return inner HTML string for exports
 //   properties(el, elIndex) : type-specific properties-panel HTML
+//   category     : optional toolbar group ('text' | 'shapes' | 'lines' |
+//                  'media' | any new id). Categories with several
+//                  entries become a dropdown (editor/toolbar.js).
+//   variants     : optional [{ id, label, icon, preset }] — toolbar
+//                  entries for this type; preset(scale) returns props
+//                  merged over defaults() (scale = slideWidth / 1920).
+//   exportStyle(el): optional extra CSS for the exported wrapper box
 //   toolbar      : optional; false hides the toolbar "add" button
 //   actions      : optional { name: fn(elIndex, arg) }. A button in
 //                  properties() HTML with data-element-action="name"

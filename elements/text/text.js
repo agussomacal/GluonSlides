@@ -47,6 +47,7 @@ const TextElement = {
     label: 'Add Text Box',
     icon: '📝',
     className: 'element-text',
+    category: 'text',
 
     gl: {
         props: [

@@ -148,6 +148,7 @@ const FigureElement = {
     label: 'Add Figure',
     icon: '🖼️',
     className: 'element-shape',
+    category: 'media',
 
     gl: {
         props: [

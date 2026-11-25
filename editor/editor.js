@@ -33,6 +33,7 @@ import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } fro
 import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
 import { initMarqueeSelection } from './marquee.js';
+import { renderAddElementToolbar } from './toolbar.js';
 import { createGroupFrame, groupScale } from '../elements/group/group.js';
 import { enterGroup, exitGroup, groupSelection, ungroupSelection, isEditingGroup } from './groupOps.js';
 
@@ -42,22 +43,13 @@ const SLIDE_DRAG_THRESHOLD_PX = 5;
 
 export function renderToolbarButtons() {
     const container = document.querySelector('.editor-toolbar');
-    if (!container) return;
-    container.querySelectorAll('[data-role="add-element"]').forEach(n => n.remove());
-
-    ElementRegistry.types().filter(def => def.toolbar !== false).forEach(def => {
-        const btn = document.createElement('button');
-        btn.className = 'toolbar-btn';
-        btn.setAttribute('data-role', 'add-element');
-        btn.onclick = () => addElement(def.type);
-        btn.innerHTML = `<span>${def.icon}</span> ${escapeHtml(def.label)}`;
-        container.appendChild(btn);
-    });
+    if (container) renderAddElementToolbar(container, addElement);
 }
 
 // ---------- Element lifecycle ----------
 
-export function addElement(type) {
+/** Adds an element of `type`, optionally using one of its toolbar variants. */
+export function addElement(type, variantId = null) {
     if (!state.slides[state.currentSlideIndex]) return;
     const elements = activeElements(); // inside the group being edited, if any
     const inGroup = isEditingGroup();
@@ -68,10 +60,18 @@ export function addElement(type) {
         return;
     }
 
+    const variant = variantId && Array.isArray(def.variants)
+        ? def.variants.find(v => v.id === variantId)
+        : null;
+    const preset = variant && typeof variant.preset === 'function'
+        ? variant.preset(state.slideWidth / 1920)
+        : (variant && variant.preset) || {};
+
     const stagger = elements.length * 30;
     const offset = inGroup ? 20 : 200;
     const el = {
         ...def.defaults({}),
+        ...preset,
         id: allocateElementId(), // stable, monotonic, never reused
         x: offset + stagger,
         y: offset + stagger,
@@ -97,6 +97,16 @@ function updateProp(propName, value) {
         return !!(def && def.gl && Array.isArray(def.gl.numericProps) && def.gl.numericProps.includes(propName));
     });
     const parsedVal = isNumeric ? Number(value) : value;
+
+    // Proportion-locked elements: typing a width/height adjusts the other.
+    if (propName === 'width' || propName === 'height') {
+        indices.forEach(idx => {
+            const e = elements[idx];
+            if (!e || e.lockAspect !== 'yes' || !(parsedVal > 0) || !e.width || !e.height) return;
+            if (propName === 'width') e.height = Math.round(e.height * (parsedVal / e.width) * 100) / 100;
+            else e.width = Math.round(e.width * (parsedVal / e.height) * 100) / 100;
+        });
+    }
 
     const primaryIdx = (state.selectedElementIndex !== null && indices.includes(state.selectedElementIndex))
         ? state.selectedElementIndex
@@ -135,9 +145,14 @@ const propertiesPanel = document.getElementById('properties-body');
 function onPropertyControl(e) {
     const control = e.target;
     if (!control.dataset || !control.dataset.prop) return;
-    // Dropdowns apply on change; text/number/color inputs live while typing.
-    const wanted = control.tagName === 'SELECT' ? 'change' : 'input';
-    if (e.type === wanted) updateProp(control.dataset.prop, control.value);
+    // Dropdowns and checkboxes apply on change (then the panel is redrawn,
+    // since they can enable/disable other fields); text/number/color
+    // inputs apply live while typing.
+    const isChoice = control.tagName === 'SELECT' || control.type === 'checkbox';
+    if (e.type !== (isChoice ? 'change' : 'input')) return;
+    const value = control.type === 'checkbox' ? (control.checked ? 'yes' : 'no') : control.value;
+    updateProp(control.dataset.prop, value);
+    if (isChoice) renderPropertiesPanel();
 }
 propertiesPanel.addEventListener('input', onPropertyControl);
 propertiesPanel.addEventListener('change', onPropertyControl);
