@@ -13,6 +13,12 @@ import { escapeHtml, syncProjectChrome, syncThemeToggle } from '../core/render.j
 import { setBibSource, CITATION_STYLES } from '../core/citations.js';
 import { clearFigureCache, hydrateFigures } from '../elements/figure/figure.js';
 import { renderEditor } from '../editor/editor.js';
+import { loadImportedLibraries } from '../core/macros.js';
+
+/** Macro definitions shaped like slides, so their figures load too. */
+function macroSlides() {
+    return Object.values(state.macros || {}).map(m => ({ elements: m.children || [] }));
+}
 
 // ---------- Views ----------
 
@@ -79,7 +85,7 @@ async function saveMacrosFiles() {
     await api.save_text_file(state.projectFolder, 'macros.json', JSON.stringify(state.projectMacros, null, 2));
 }
 
-async function loadMacrosFromDisk() {
+async function loadTexMacrosFromDisk() {
     const api = pyApi();
     const res = api && state.projectFolder
         ? await api.load_text_file(state.projectFolder, 'macros.tex').catch(() => null)
@@ -176,10 +182,11 @@ export async function openProjectByPath(path, content) {
         deserializeProject(content);
 
         await Promise.all([
-            loadMacrosFromDisk(),
+            loadTexMacrosFromDisk(),
             loadBibFromDisk(),
-            hydrateFigures(state.slides, state.projectFolder),
+            loadImportedLibraries(), // element macros from e.g. macros.gl
         ]);
+        await hydrateFigures([...state.slides, ...macroSlides()], state.projectFolder);
 
         addRecent(state.projectName, path);
         enterEditor();

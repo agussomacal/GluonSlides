@@ -4,6 +4,11 @@
 // state: easy to test in isolation.
 // ============================================================
 
+/** `.element.*` or `.macro.*` directive line (already trimmed). */
+function isElementLine(trimmed) {
+    return trimmed.startsWith('.element.') || trimmed.startsWith('.macro.');
+}
+
 export function parseIdValue(raw) {
     if (raw === undefined || raw === null || raw === '') return null;
     const num = Number(raw);
@@ -49,7 +54,7 @@ export function findGlTargetLine(glText, { slideId = null, elementId = null } = 
         }
 
         if (normElementId !== null && inTargetSlide
-            && trimmed.startsWith('.element.') && hasIdParam(trimmed, normElementId)) {
+            && isElementLine(trimmed) && hasIdParam(trimmed, normElementId)) {
             return i;
         }
     }
@@ -71,8 +76,14 @@ export function findTargetAtLine(glText, lineIdx) {
         if (trimmed.startsWith('.slide')) {
             slideId = extractIdFromDirective(trimmed);
             elementId = null;
-        } else if (trimmed.startsWith('.element.')) {
-            elementId = extractIdFromDirective(trimmed);
+        } else if (trimmed.startsWith('.define')) {
+            // Definitions are not on a slide.
+            slideId = null;
+            elementId = null;
+        } else if (isElementLine(trimmed)) {
+            // Elements inside definitions have no id; keep the enclosing one.
+            const id = extractIdFromDirective(trimmed);
+            if (id !== null) elementId = id;
         }
     }
 

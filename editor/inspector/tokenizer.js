@@ -6,8 +6,11 @@
 // inline/display math) while preserving original whitespace/tabs.
 // ============================================================
 
-const STRUCTURAL_DIRECTIVES = new Set(['project', 'slide', 'function', 'var']);
-const DIRECTIVE_HEAD_RE = /^\.(project|slide|element|function|var)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const STRUCTURAL_DIRECTIVES = new Set(['project', 'slide', 'function', 'var', 'import', 'define']);
+const DIRECTIVE_HEAD_RE = /^\.(project|slide|element|macro|function|var|import|define)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const OVERRIDE_HEAD_RE = /^::[A-Za-z][\w-]*/;   // ::name inside a .macro.* instance
+// Lines after these directives are an element body (text, points, children).
+const BODY_DIRECTIVE_RE = /^\.(element|macro|define)[.\s{]|^\.(define)$/;
 
 function tokenizeParamsSegment(segment) {
     const tokens = [];
@@ -69,7 +72,7 @@ function tokenizeDirectiveLine(line) {
     const kind = headMatch[1];
     const headText = headMatch[0];
 
-    if (kind === 'element') {
+    if (kind === 'element' || kind === 'macro') {
         tokens.push({ type: 'directive-element', value: headText });
     } else if (STRUCTURAL_DIRECTIVES.has(kind)) {
         tokens.push({ type: 'directive-struct', value: headText });
@@ -178,8 +181,20 @@ export function scanGlLine(line, inElementBody) {
     if (DIRECTIVE_HEAD_RE.test(trimmedStart)) {
         return {
             tokens: tokenizeGlLine(line, { inElementBody: false }),
-            inElementBody: trimmedStart.startsWith('.element.'),
+            inElementBody: BODY_DIRECTIVE_RE.test(trimmedStart),
         };
+    }
+
+    // ::name key:value — an override inside a macro instance.
+    const override = trimmedStart.match(OVERRIDE_HEAD_RE);
+    if (override) {
+        const indent = line.slice(0, line.length - trimmedStart.length);
+        const tokens = [];
+        if (indent) tokens.push({ type: 'plain', value: indent });
+        tokens.push({ type: 'directive-element', value: override[0] });
+        const rest = trimmedStart.slice(override[0].length);
+        if (rest) tokens.push(...tokenizeParamsSegment(rest));
+        return { tokens, inElementBody: true };
     }
 
     if (line.trim() === '') {

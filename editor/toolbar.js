@@ -15,6 +15,7 @@ const CATEGORIES = [
     { id: 'shapes', label: 'Shapes', icon: '⬛' },
     { id: 'lines', label: 'Lines & curves', icon: '〰️' },
     { id: 'media', label: 'Media', icon: '🖼️' },
+    { id: 'macros', label: 'Macros', icon: '🧩', menu: true }, // always a dropdown
 ];
 
 /** Toolbar entries ({ type, variant, label, icon }) grouped by category id. */
@@ -25,9 +26,11 @@ function entriesByCategory() {
         .forEach(def => {
             // A variant may sit in another category than its type
             // (e.g. closed paths under Shapes).
-            const entries = Array.isArray(def.variants) && def.variants.length
+            // A type that declares variants (even none yet, like an empty
+            // macro library) lists exactly those.
+            const entries = Array.isArray(def.variants)
                 ? def.variants.map(v => ({
-                    type: def.type, variant: v.id, label: v.label, icon: v.icon || def.icon,
+                    type: def.type, variant: v.id, label: v.label, icon: v.icon || def.icon, iconNode: v.iconNode,
                     category: v.category || def.category || def.type,
                 }))
                 : [{
@@ -71,7 +74,8 @@ export function renderAddElementToolbar(container, onAdd) {
     for (const [categoryId, entries] of entriesByCategory()) {
         if (entries.length === 0) continue;
 
-        if (entries.length === 1) {
+        const meta = CATEGORIES.find(c => c.id === categoryId) || { label: categoryId, icon: entries[0].icon };
+        if (entries.length === 1 && !meta.menu) {
             const e = entries[0];
             const btn = document.createElement('button');
             btn.className = 'toolbar-btn';
@@ -83,7 +87,6 @@ export function renderAddElementToolbar(container, onAdd) {
             continue;
         }
 
-        const meta = CATEGORIES.find(c => c.id === categoryId) || { label: categoryId, icon: entries[0].icon };
         const dropdown = document.createElement('div');
         dropdown.className = 'toolbar-dropdown';
         dropdown.dataset.role = 'add-element';
@@ -99,6 +102,14 @@ export function renderAddElementToolbar(container, onAdd) {
                         <span class="toolbar-menu-icon">${e.icon}</span> ${escapeHtml(e.label)}
                     </button>`).join('')}
             </div>`;
+
+        // Variants may draw their own icon (e.g. a macro's thumbnail).
+        dropdown.querySelectorAll('.toolbar-menu [data-index]').forEach(item => {
+            const entry = entries[Number(item.dataset.index)];
+            if (typeof entry.iconNode !== 'function') return;
+            const slot = item.querySelector('.toolbar-menu-icon');
+            slot.replaceChildren(entry.iconNode());
+        });
 
         dropdown.querySelector('.toolbar-btn').addEventListener('click', (ev) => {
             const willOpen = !dropdown.classList.contains('open');

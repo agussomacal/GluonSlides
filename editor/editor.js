@@ -18,6 +18,7 @@ import {
     activeElements,
     activeGroup,
     activeGroupPath,
+    setEditingGroup,
 } from '../core/state.js';
 import { ElementRegistry } from '../core/registry.js';
 import {
@@ -35,6 +36,8 @@ import { beginCitationPass } from '../core/citations.js';
 import { initMarqueeSelection } from './marquee.js';
 import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
+import { makeMacroFromSelection, detachSelected, resetSelectedInstances } from './macroOps.js';
+import { resetWorkingElement } from '../core/macros.js';
 import { createGroupFrame, groupScale } from '../elements/group/group.js';
 import { enterGroup, exitGroup, groupSelection, ungroupSelection, isEditingGroup } from './groupOps.js';
 
@@ -140,6 +143,40 @@ function updateProp(propName, value) {
     updateThumbnailLive();
 }
 
+/** "Make macro" field shown under any selection. */
+function makeMacroSection() {
+    return `
+        <div class="prop-divider"></div>
+        <div class="prop-group">
+            <label>Make Macro</label>
+            <div class="prop-inline">
+                <input type="text" id="make-macro-name" class="prop-control" placeholder="name, e.g. card" spellcheck="false">
+                <button class="btn btn-secondary" data-action="make-macro">🧩 Create</button>
+            </div>
+            <div class="prop-error" id="make-macro-error"></div>
+            <p class="prop-hint">Saves the selection to macros.gl and replaces it with a reusable instance (Macros menu).</p>
+        </div>`;
+}
+
+/** Make-macro button / Enter in its name field. */
+export async function makeMacroFromPanel() {
+    const input = document.getElementById('make-macro-name');
+    const res = await makeMacroFromSelection(input ? input.value : '');
+    if (!res.success) {
+        const err = document.getElementById('make-macro-error');
+        if (err) err.textContent = res.error;
+        return false;
+    }
+    renderEditor();
+    return true;
+}
+
+export function detachSelectedMacros() {
+    if (!detachSelected()) return false;
+    renderEditor();
+    return true;
+}
+
 // ---------- Properties panel events ----------
 // Controls in the panel HTML carry data-prop="<property>"; buttons that
 // run element-specific code carry data-element-action="<action>" (with
@@ -158,9 +195,23 @@ function onPropertyControl(e) {
     if (e.type !== (isChoice ? 'change' : 'input')) return;
     const value = control.type === 'checkbox' ? (control.checked ? 'yes' : 'no') : control.value;
     updateProp(control.dataset.prop, value);
-    if (isChoice) renderPropertiesPanel();
+    if (isChoice) {
+        renderPropertiesPanel();
+    } else {
+        // Inside a macro: refresh "Overridden here" without stealing focus.
+        const info = document.getElementById('macro-child-info');
+        const group = activeGroup();
+        const el = activeElements()[state.selectedElementIndex];
+        if (info && group && el) info.innerHTML = macroChildInfo(group, el);
+    }
 }
 propertiesPanel.addEventListener('input', onPropertyControl);
+propertiesPanel.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'make-macro-name') {
+        e.preventDefault();
+        makeMacroFromPanel();
+    }
+});
 propertiesPanel.addEventListener('change', onPropertyControl);
 
 propertiesPanel.addEventListener('click', (e) => {
@@ -541,17 +592,62 @@ document.addEventListener('slide-thumbnail-changed', () => {
 
 // ---------- Properties panel ----------
 
+/** Banner shown while editing a group or a macro instance/definition. */
+function editingBanner(group) {
+    let text;
+    if (group.type === 'macro' && group._session === 'definition') {
+        text = `Editing macro <strong>${escapeHtml(group.ref)}</strong> — changes apply to <strong>every instance</strong>.`;
+    } else if (group.type === 'macro') {
+        text = `Editing this instance of <strong>${escapeHtml(group.ref)}</strong> — changes are saved as overrides; other instances are unaffected.`;
+    } else {
+        text = `Editing group <strong>#${group.id}</strong> — positions are relative to the group.`;
+    }
+    return `
+        <div class="group-banner${group.type === 'macro' ? ' macro-banner' : ''}">
+            <span>${text}</span>
+            <button class="btn btn-secondary" data-action="exit-group">Done (Esc)</button>
+        </div>`;
+}
+
+/**
+ * While editing a macro: which definition element the selected one is
+ * (its name, used by ::name overrides) and what this instance changes.
+ */
+function macroChildSection(group, el) {
+    if (!group || group.type !== 'macro') return '';
+    return `<div id="macro-child-info">${macroChildInfo(group, el)}</div>`;
+}
+
+function macroChildInfo(group, el) {
+    if (group._session === 'definition') {
+        return `
+            <div class="prop-group">
+                <label>Name in macro (used by ::name overrides)</label>
+                <input type="text" class="prop-control" value="${escapeHtml(el.name || '')}" data-prop="name" spellcheck="false">
+            </div>`;
+    }
+    if (!el._origin) {
+        return `<p class="prop-hint">Extra element — only in this instance.</p>`;
+    }
+    const o = (group.overrides || []).find(x => x.target === el._origin);
+    const changed = o ? [...Object.keys(o.props || {}), ...(o.body !== undefined ? ['text'] : [])] : [];
+    return `
+        <div class="prop-group">
+            <label>From macro, named</label>
+            <input type="text" class="prop-control prop-readonly" disabled value="::${escapeHtml(el._origin)}">
+        </div>
+        ${changed.length ? `
+            <p class="prop-hint">Overridden here: ${changed.map(escapeHtml).join(', ')}</p>
+            <button class="btn btn-secondary" data-action="reset-override" style="width: 100%;">↺ Reset to macro</button>` : ''}`;
+}
+
 function renderPropertiesPanel() {
     const panelBody = document.getElementById('properties-body');
     const slide = state.slides[state.currentSlideIndex];
     const elements = activeElements();
     const selectedIndices = getSelectedElementIndices();
     const group = activeGroup();
-    const groupBanner = group ? `
-        <div class="group-banner">
-            <span>Editing group <strong>#${group.id}</strong> — positions are relative to the group.</span>
-            <button class="btn btn-secondary" data-action="exit-group">Done (Esc)</button>
-        </div>` : '';
+    const groupBanner = group ? editingBanner(group) : '';
 
     if (selectedIndices.length === 0 || !slide) {
         panelBody.innerHTML = groupBanner + `<div class="no-selection">Select an object on the canvas to inspect and customize its properties. Drag on empty space to select several.</div>`;
@@ -584,18 +680,19 @@ function renderPropertiesPanel() {
                     <input type="number" class="prop-control" min="0" max="20" value="${firstEl.borderWidth}" data-prop="borderWidth">
                 </div>
             </div>
-        `;
+        ` + makeMacroSection();
         return;
     }
 
     const activeIdx = selectedIndices[0];
     const el = elements[activeIdx];
+    const sessionInfo = macroChildSection(group, el);
     const def = ElementRegistry.get(el.type);
     const typeLabel = def && typeof def.typeLabel === 'function'
         ? def.typeLabel(el)
         : (def ? def.label.replace(/^Add\s+/i, '') : el.type);
 
-    let html = groupBanner + `
+    let html = groupBanner + sessionInfo + `
         <div class="prop-group">
             <label>Object Type</label>
             <input type="text" class="prop-control prop-readonly" value="${escapeHtml(typeLabel)}" disabled>
@@ -653,13 +750,13 @@ function renderPropertiesPanel() {
         </div>
     `;
 
-    panelBody.innerHTML = html;
+    panelBody.innerHTML = html + makeMacroSection();
 }
 
 // ---------- Groups ----------
 
 document.addEventListener('enter-group', (e) => {
-    enterGroup(e.detail.id);
+    enterGroup(e.detail.id, e.detail.mode || 'instance');
     renderEditor();
 });
 
@@ -680,9 +777,45 @@ export function ungroupSelected() {
 /** Enters the selected group (properties-panel button). */
 export function enterSelectedGroup() {
     const el = activeElements()[state.selectedElementIndex];
-    if (!el || el.type !== 'group') return false;
+    if (!el || (el.type !== 'group' && el.type !== 'macro')) return false;
     enterGroup(el.id);
     renderEditor();
+    return true;
+}
+
+/** Edits the selected instance's macro definition (all instances follow). */
+export function editSelectedDefinition() {
+    const el = activeElements()[state.selectedElementIndex];
+    if (!el || el.type !== 'macro') return false;
+    enterGroup(el.id, 'definition');
+    renderEditor();
+    return true;
+}
+
+/** "Reset to macro": drops this instance's override of the selected element. */
+export function resetSelectedOverride() {
+    const group = activeGroup();
+    const el = activeElements()[state.selectedElementIndex];
+    if (!group || group.type !== 'macro' || !el || !el._origin) return false;
+    resetWorkingElement(group, el._origin);
+    markDirty(); // the sync drops the override
+    renderEditor();
+    return true;
+}
+
+export function resetSelectedInstance() {
+    if (!resetSelectedInstances()) return false;
+    renderEditor();
+    return true;
+}
+
+/** Opens the macro's definition in the .gl inspector. */
+export function gotoSelectedDefinition() {
+    const el = activeElements()[state.selectedElementIndex];
+    const group = activeGroup();
+    const ref = el && el.type === 'macro' ? el.ref : (group && group.type === 'macro' ? group.ref : null);
+    if (!ref) return false;
+    document.dispatchEvent(new CustomEvent('open-macro-definition', { detail: { name: ref } }));
     return true;
 }
 
@@ -978,7 +1111,7 @@ export function addSlide() {
 
 export function selectSlide(index) {
     if (index < 0 || index >= state.slides.length) return;
-    state.editingGroupId = null;
+    setEditingGroup(null);
     state.currentSlideIndex = index;
     setSelectedSlideIndices([index]);
     setSelectedElementIndices([], null);

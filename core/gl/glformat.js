@@ -10,7 +10,7 @@ export const GL_FORMAT_VERSION = 2;
 
 const BODY_INDENT = '\t';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
-const DIRECTIVE_RE = /^\.(project|slide|element)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const DIRECTIVE_RE = /^\.(project|slide|element|import|define|macro)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -29,6 +29,8 @@ function getElementGlSpec(type) {
         ),
         serializeBody: typeof gl?.serializeBody === 'function' ? gl.serializeBody : null,
         parseBody: typeof gl?.parseBody === 'function' ? gl.parseBody : null,
+        // Optional directive name, e.g. 'macro.card' (default 'element.<type>').
+        directive: typeof gl?.directive === 'function' ? gl.directive : null,
     };
 }
 
@@ -84,6 +86,29 @@ function parseParams(line) {
         }
     }
     return params;
+}
+
+/** `key:value key:value` for an object (values encoded as in directives). */
+export function formatGlParams(obj) {
+    return Object.entries(obj)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => `${k}:${encodeParamValue(v)}`)
+        .join(' ');
+}
+
+/** Parses `key:value key:"quoted value"` pairs from a line. */
+export function parseGlParams(line) {
+    return parseParams(line);
+}
+
+/** Indents a multi-line text body one level (escaping lines that start with '.'). */
+export function indentGlBody(text) {
+    return String(text).split('\n').map(indentBodyLine).join('\n');
+}
+
+/** Reverses one level of body indentation (and the '.' escape). */
+export function unindentGlBodyLine(line) {
+    return unindentBodyLine(line);
 }
 
 function indentBodyLine(line) {
@@ -170,7 +195,14 @@ export function serializeGl(project) {
     const header = PROJECT_PARAMS
         .map(k => `${k}:${encodeParamValue(headerParams[k])}`)
         .join(' ');
+    (project.imports || []).forEach(file => lines.push(`.import {${encodeBraceArg(file)}}`));
     lines.push(`.project${headerArgs} ${header}`);
+
+    // Macros defined in the project file itself (others live in imports).
+    (project.macros || []).forEach(def => {
+        lines.push('');
+        lines.push(...serializeGlDefine(def));
+    });
 
     (working.slides || []).forEach(slide => {
         const title = slide.title ? ` {${encodeBraceArg(slide.title)}}` : '';
@@ -197,6 +229,24 @@ export function serializeGlElements(elements) {
     return lines;
 }
 
+/** `.define {name} width:W height:H` + its indented elements, as lines. */
+export function serializeGlDefine(def) {
+    const head = `.define {${encodeBraceArg(def.name)}} width:${encodeParamValue(def.width)} height:${encodeParamValue(def.height)}`;
+    const body = serializeGlElements(def.children || []);
+    return body.length ? [head, indentGlBlock(body)] : [head];
+}
+
+/** A macro library file (e.g. macros.gl): imports + definitions. */
+export function serializeGlLibrary({ imports = [], macros = [] } = {}) {
+    const lines = ['# Gluon macro library — saved by GluonSlides'];
+    imports.forEach(file => lines.push(`.import {${encodeBraceArg(file)}}`));
+    macros.forEach(def => {
+        lines.push('');
+        lines.push(...serializeGlDefine(def));
+    });
+    return lines.join('\n') + '\n';
+}
+
 /** Indents every non-empty line one level (for nested blocks). */
 export function indentGlBlock(lines) {
     return lines.join('\n').split('\n').map(l => (l === '' ? '' : BODY_INDENT + l)).join('\n');
@@ -204,25 +254,28 @@ export function indentGlBlock(lines) {
 
 function serializeElementDirective(el) {
     const spec = getElementGlSpec(el.type);
-    const idVal = (el.id !== undefined && el.id !== null) ? encodeParamValue(el.id) : '';
+    // Elements inside macro definitions have a name but no project id.
+    const head = [];
+    if (el.id !== undefined && el.id !== null) head.push(`id:${encodeParamValue(el.id)}`);
+    if (el.name) head.push(`name:${encodeParamValue(el.name)}`);
 
     if (!spec.registered) {
         const raw = Object.keys(el)
-            .filter(k => k !== 'type' && k !== 'id' && el[k] !== undefined && el[k] !== null)
+            .filter(k => !['type', 'id', 'name'].includes(k) && el[k] !== undefined && el[k] !== null)
             .filter(k => !(typeof el[k] === 'string' && el[k].startsWith('data:')))
-            .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`)
-            .join(' ');
-        return `.element.${el.type} id:${idVal}${raw ? ' ' + raw : ''}`;
+            .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`);
+        return `.element.${el.type} ${[...head, ...raw].join(' ')}`.trimEnd();
     }
 
-    const parts = [`id:${idVal}`];
+    const parts = head;
     spec.props.forEach(key => {
         const v = el[key];
         if (v === undefined || v === null || v === '') return;
         if (typeof v === 'string' && v.startsWith('data:')) return;
         parts.push(`${key}:${encodeParamValue(v)}`);
     });
-    return `.element.${el.type} ${parts.join(' ')}`;
+    const directive = spec.directive ? spec.directive(el) : `element.${el.type}`;
+    return `.${directive} ${parts.join(' ')}`.trimEnd();
 }
 
 function defaultSerializeBody(el, bodyProp) {
@@ -259,8 +312,14 @@ export function parseGl(text) {
     };
     let currentSlide = null;
     const rawLines = normalizeGlText(text).split('\n');
+    const library = { imports: [], defines: [] };
 
     parseBlock(rawLines, 0, ({ kind, subtype, braceArg, params, lineNo }) => {
+        const libraryItem = handleLibraryDirective(library, { kind, braceArg, params, lineNo });
+        if (libraryItem !== undefined) {
+            currentSlide = null; // elements after a .define need a new .slide
+            return libraryItem;
+        }
         if (kind === 'project') {
             applyProjectParams(project, braceArg.value, params);
             currentSlide = null;
@@ -279,12 +338,14 @@ export function parseGl(text) {
             return null;
         }
         if (!currentSlide) {
-            throw new Error(`Line ${lineNo}: .element.${subtype ?? '?'} appears before any .slide`);
+            throw new Error(`Line ${lineNo}: .${kind}.${subtype ?? '?'} appears before any .slide`);
         }
-        const el = buildElementFromDirective(subtype, params, lineNo);
+        const el = buildElementFromDirective(kind, subtype, params, lineNo);
         currentSlide.elements.push(el);
         return el;
     });
+    project.imports = library.imports;
+    project.macros = finishDefines(library.defines);
 
     if (project.slides.length === 0) {
         const preview = rawLines
@@ -307,19 +368,76 @@ export function parseGl(text) {
 export function parseGlElements(text, lineOffset = 0) {
     const elements = [];
     parseBlock(String(text ?? '').split('\n'), lineOffset, ({ kind, subtype, params, lineNo }) => {
-        if (kind !== 'element') {
+        if (kind !== 'element' && kind !== 'macro') {
             throw new Error(`Line ${lineNo}: .${kind} is not allowed inside an element body.`);
         }
-        const el = buildElementFromDirective(subtype, params, lineNo);
+        const el = buildElementFromDirective(kind, subtype, params, lineNo);
         elements.push(el);
         return el;
     });
     return elements;
 }
 
-function buildElementFromDirective(subtype, params, lineNo) {
+/**
+ * Parses a macro library file (only .import and .define allowed).
+ * Returns { imports: [file], macros: [{ name, width, height, children }] }.
+ */
+export function parseGlLibrary(text) {
+    const library = { imports: [], defines: [] };
+    parseBlock(normalizeGlText(text).split('\n'), 0, ({ kind, braceArg, params, lineNo }) => {
+        const item = handleLibraryDirective(library, { kind, braceArg, params, lineNo });
+        if (item === undefined) {
+            throw new Error(`Line ${lineNo}: only .import and .define are allowed in a macro library.`);
+        }
+        return item;
+    });
+    return { imports: library.imports, macros: finishDefines(library.defines) };
+}
+
+/**
+ * .import / .define handling shared by project files and libraries.
+ * Returns undefined for other directives, null for .import, and for
+ * .define a holder whose indented body is parsed like a group's.
+ */
+function handleLibraryDirective(library, { kind, braceArg, params, lineNo }) {
+    if (kind === 'import') {
+        if (!braceArg.value) throw new Error(`Line ${lineNo}: .import needs a file name, e.g. .import {macros.gl}`);
+        library.imports.push(braceArg.value);
+        return null;
+    }
+    if (kind === 'define') {
+        if (!/^[A-Za-z][\w-]*$/.test(braceArg.value || '')) {
+            throw new Error(`Line ${lineNo}: .define needs a name of letters, digits, - or _, e.g. .define {card}`);
+        }
+        const holder = { type: 'group', children: [] };
+        library.defines.push({
+            holder,
+            name: braceArg.value,
+            width: Number(params.width) || 0,
+            height: Number(params.height) || 0,
+        });
+        return holder;
+    }
+    return undefined;
+}
+
+function finishDefines(defines) {
+    return defines.map(({ holder, name, width, height }) => ({
+        name,
+        width: width || 100,
+        height: height || 100,
+        children: holder.children,
+    }));
+}
+
+function buildElementFromDirective(kind, subtype, params, lineNo) {
     if (!subtype) {
-        throw new Error(`Line ${lineNo}: Missing element subtype on .element directive.`);
+        throw new Error(`Line ${lineNo}: Missing ${kind === 'macro' ? 'macro name' : 'element subtype'} on .${kind} directive.`);
+    }
+    if (kind === 'macro') {
+        const el = buildElement('macro', params);
+        el.ref = subtype;
+        return el;
     }
     return buildElement(subtype, params);
 }
@@ -439,6 +557,7 @@ function applyProjectParams(project, name, params) {
 function buildElement(type, params) {
     const rawId = params.id !== undefined && params.id !== '' ? Number(params.id) : NaN;
     const el = {type, id: Number.isFinite(rawId) ? rawId : null};
+    if (params.name) el.name = params.name;
     const spec = getElementGlSpec(type);
 
     const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => k !== 'id');

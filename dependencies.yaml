@@ -33,6 +33,16 @@ dependencies:
     url: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
     description: "CodeMirror 5 base stylesheet"
 
+  - name: show-hint.min.js
+    subdir: codemirror
+    url: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"
+    description: "CodeMirror autocomplete popup (inspector suggestions)"
+
+  - name: show-hint.min.css
+    subdir: codemirror
+    url: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css"
+    description: "CodeMirror autocomplete popup stylesheet"
+
 fonts:
   - name: "KaTeX_AMS-Regular.woff2"
     url: "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff2"

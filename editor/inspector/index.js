@@ -43,10 +43,16 @@ import {
     MIN_DRAWER_HEIGHT,
 } from './settings.js';
 import { initContextMenu } from './contextMenu.js';
+import { glHints } from './completions.js';
+import { libraryFiles, libraryText, applyLibraryText, loadImportedLibraries } from '../../core/macros.js';
 
 const DRAWER_ID = 'gl-inspector-drawer';
 const SETTINGS_ID = 'gl-inspector-settings-popover';
-const STYLESHEETS = ['libs/codemirror/codemirror.min.css', 'editor/inspector/inspector.css'];
+const STYLESHEETS = [
+    'libs/codemirror/codemirror.min.css',
+    'libs/codemirror/show-hint.min.css',
+    'editor/inspector/inspector.css',
+];
 const APPLY_DEBOUNCE_MS = 350;
 
 let drawer = null;
@@ -58,6 +64,7 @@ let currentTarget = {};      // { slideId, elementId } the view is centred on
 let isOpen = false;
 let isFocused = false;
 let hasUnappliedDraft = false;
+let activeFile = 'project'; // 'project' or a macro library file such as macros.gl
 let syncedText = '';         // text as last loaded from / applied to state
 let isApplying = false;      // inspector -> state in progress
 let isNavigating = false;    // caret -> canvas selection in progress
@@ -136,6 +143,7 @@ function buildDrawer() {
         <div class="gl-inspector-header">
             <div class="gl-inspector-meta">
                 <strong>.gl Inspector</strong>
+                <span class="gl-inspector-tabs" role="tablist"></span>
                 <span class="gl-inspector-badge">Editor Sync</span>
                 <span class="gl-inspector-status" id="gl-inspector-status">Ready</span>
             </div>
@@ -154,12 +162,19 @@ function buildDrawer() {
     editor = createGlCodeEditor(drawer.querySelector('.gl-code-editor'), {
         tabSize: getSettings().tabSize,
         onApplyShortcut: () => applyNow({ silentOnError: false }),
+        hint: glHints,
     });
     attachResizeHandle();
 
     settingsPopover = createSettingsPopover(SETTINGS_ID, { onChange: applySettings });
 
+    drawer.querySelector('.gl-inspector-tabs').addEventListener('click', (e) => {
+        const tab = e.target.closest('[data-file]');
+        if (tab) switchFile(tab.dataset.file);
+    });
+
     editor.onCursorLineChange((lineIdx) => {
+        if (activeFile !== 'project') return; // libraries are not on a slide
         const target = findTargetAtLine(editor.getValue(), lineIdx);
         if (!target) return;
         setStatus(formatTargetLabel(target, lineIdx));
@@ -263,6 +278,7 @@ function reportError(badge, message, silentOnError) {
 /** Parses `glText` and, if valid, replaces the project in state with it. */
 export async function applyInspectorText(glText, { silentOnError = true } = {}) {
     const raw = String(glText ?? '');
+    if (activeFile !== 'project') return applyLibrary(raw, silentOnError);
     if (!raw.trim() || !looksLikeGl(raw)) {
         return reportError('Invalid .gl', 'Expected .project / .slide directives', silentOnError);
     }
@@ -278,6 +294,8 @@ export async function applyInspectorText(glText, { silentOnError = true } = {}) 
     try {
         await hydrateFigures(parsed.slides, state.projectFolder);
         applyProjectData(parsed, { resetSelection: false });
+        await loadImportedLibraries(); // a new .import line takes effect at once
+        renderTabs();
         hasUnappliedDraft = false;
         syncedText = raw;
         markDirty(); // also records an undo checkpoint
@@ -291,6 +309,56 @@ export async function applyInspectorText(glText, { silentOnError = true } = {}) 
     }
 }
 
+/** Applies the text of the active library tab (definitions only). */
+async function applyLibrary(raw, silentOnError) {
+    try {
+        applyLibraryText(activeFile, raw);
+    } catch (err) {
+        return reportError('Parse Error', err.message, silentOnError);
+    }
+    isApplying = true;
+    try {
+        hasUnappliedDraft = false;
+        syncedText = raw;
+        markDirty();
+        renderEditor(); // every instance follows the new definitions
+        setBadge(isFocused ? 'listening' : 'synced', isFocused ? 'Editor Listening' : 'Synced');
+        setStatus(`Applied ${activeFile} — all instances updated`);
+        return true;
+    } finally {
+        isApplying = false;
+    }
+}
+
+// ---------- File tabs ----------
+
+function renderTabs() {
+    const files = ['project', ...libraryFiles()];
+    if (!files.includes(activeFile)) activeFile = 'project';
+    const tabs = drawer.querySelector('.gl-inspector-tabs');
+    // Rebuild only when the file list changes: replacing the buttons
+    // between mousedown and mouseup (the editor's blur refreshes the
+    // view) would swallow the click on a tab.
+    const key = files.length < 2 ? '' : files.join('|');
+    if (tabs.dataset.files !== key) {
+        tabs.dataset.files = key;
+        tabs.innerHTML = key === '' ? '' : files.map(f => `
+            <button type="button" role="tab" data-file="${f}">${f === 'project' ? 'Project' : f}</button>`).join('');
+    }
+    tabs.querySelectorAll('[data-file]').forEach(b => b.classList.toggle('active', b.dataset.file === activeFile));
+}
+
+function switchFile(file) {
+    if (file === activeFile) return;
+    if (hasUnappliedDraft) {
+        setStatus('Apply or Reset your changes before switching files');
+        return;
+    }
+    activeFile = file;
+    renderTabs();
+    refreshFromState({ force: true });
+}
+
 // ---------- Canvas -> inspector ----------
 
 /**
@@ -300,6 +368,17 @@ export async function applyInspectorText(glText, { silentOnError = true } = {}) 
 function refreshFromState({ force = false, jump = false } = {}) {
     if (!isOpen || isApplying || isNavigating) return;
     if (!force && (isFocused || hasUnappliedDraft)) return;
+
+    renderTabs();
+    if (activeFile !== 'project') {
+        const text = libraryText(activeFile);
+        editor.setValue(text);
+        syncedText = text;
+        hasUnappliedDraft = false;
+        setBadge('synced', 'Editor Sync');
+        setStatus(`${activeFile} — macro definitions`);
+        return;
+    }
 
     const glText = serializeProject();
     editor.setValue(glText);
@@ -323,12 +402,29 @@ function followSelection() {
 // ---------- Public API ----------
 
 export function openGlInspector(target = {}) {
+    activeFile = 'project';
     currentTarget = target || {};
     isOpen = true;
     hasUnappliedDraft = false;
     drawer.classList.add('open');
     applySettings();
     refreshFromState({ force: true, jump: true });
+}
+
+/** Opens the inspector on the file defining macro `name`, at its .define line. */
+export function openMacroDefinition(name) {
+    const macro = state.macros && state.macros[name];
+    if (!macro) return;
+    if (!isOpen) openGlInspector({});
+    hasUnappliedDraft = false;
+    activeFile = macro.source === 'project' ? 'project' : macro.source;
+    refreshFromState({ force: true });
+    const lines = editor.getValue().split('\n');
+    const idx = lines.findIndex(l => l.startsWith(`.define {${name}}`));
+    if (idx >= 0) {
+        editor.jumpToLine(idx);
+        setStatus(`Definition of ${name} — ${activeFile === 'project' ? 'project file' : activeFile}`);
+    }
 }
 
 export function closeGlInspector() {
@@ -375,6 +471,7 @@ export function initGlInspector() {
         refreshFromState();
     };
     document.addEventListener('editor-rendered', onCanvasChanged);
+    document.addEventListener('open-macro-definition', (e) => openMacroDefinition(e.detail.name));
     document.addEventListener('slide-content-changed', onCanvasChanged);
     document.addEventListener('slide-thumbnail-changed', onCanvasChanged);
 }

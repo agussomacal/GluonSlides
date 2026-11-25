@@ -5,6 +5,7 @@
 // ============================================================
 
 import {serializeGl, parseGl, looksLikeGl, GL_FORMAT_VERSION} from './gl/glformat.js';
+import {saveChangedLibraries, syncOpenSessions, closeSessionsExcept} from './macros.js';
 
 export const AUTOSAVE_INTERVAL_MS = 5000;   // safety-net interval
 export const AUTOSAVE_DEBOUNCE_MS = 800;    // save this long after the last change
@@ -41,6 +42,12 @@ export const state = {
     redoStack: [],
     _isApplyingHistory: false,
     _historyAnchorSnapshot: '',
+
+    // Element macros (core/macros.js): name -> { name, width, height,
+    // children, source } and the library files the project imports.
+    macros: {},
+    imports: [],
+    _loadedLibraries: {},   // file -> text as last loaded/saved
 
     rawTexMacros: DEFAULT_TEX_MACROS,
     projectMacros: {},
@@ -158,7 +165,9 @@ export function activeGroup() {
     const slide = currentSlide();
     let found = null;
     forEachElementDeep(slide ? slide.elements : [], el => {
-        if (el.id === state.editingGroupId && el.type === 'group') found = el;
+        // A group, or a macro instance with an open editing session.
+        const editable = el.type === 'group' || (el.type === 'macro' && Array.isArray(el.children));
+        if (el.id === state.editingGroupId && editable) found = el;
     });
     if (!found) state.editingGroupId = null;
     return found;
@@ -185,6 +194,13 @@ export function activeElements() {
 
 /** Enters a group (id) or leaves group editing (null). Clears selection. */
 export function setEditingGroup(id) {
+    // Close macro editing sessions that are not on the way to `id`.
+    const keep = new Set();
+    if (id !== null) {
+        keep.add(id);
+        (findElementPath(currentSlide(), id) || []).forEach(g => keep.add(g.id));
+    }
+    closeSessionsExcept(keep);
     state.editingGroupId = id;
     state.selectedElementIndices = [];
     state.selectedElementIndex = null;
@@ -396,6 +412,7 @@ export function resetMacros() {
 
 export function markDirty() {
     state.isDirty = true;
+    syncOpenSessions(); // canvas edits inside a macro -> overrides / definition
     recordUndoCheckpoint();
     scheduleAutosave();
 }
@@ -416,6 +433,9 @@ export function currentSnapshot() {
         nextId: state.nextId,
         citestyle: state.citestyle,
         rawTexMacros: state.rawTexMacros,
+        imports: state.imports,
+        macros: state.macros,
+        macrosComplete: true,
         slides: state.slides,
     });
 }
@@ -425,6 +445,8 @@ export function serializeProject() {
     return serializeGl({
         projectName: state.projectName,
         citestyle: state.citestyle,
+        imports: state.imports,
+        macros: Object.values(state.macros).filter(m => m.source === 'project'),
         slideWidth: state.slideWidth,
         slideHeight: state.slideHeight,
         gridSize: state.gridSize,
@@ -464,6 +486,10 @@ export function resetProjectState({ name = 'Untitled Project', path = null, fold
     state.projectPath = path;
     state.projectFolder = folder;
     state.nextId = 1;
+    state.macros = {};
+    state.imports = [];
+    state._loadedLibraries = {};
+    state._libraryImports = {};
     applyProjectData({
         slides: [{ title: 'Title Slide', elements: [] }],
         slideWidth: DEFAULT_SLIDE_WIDTH,
@@ -499,6 +525,7 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     state.nextId = Math.max(1, num(data.nextId, 1));
     const name = data.name || data.projectName;
     if (name) state.projectName = name;
+    applyMacroData(data);
     ensureIds();
 
     const lastIdx = Math.max(0, state.slides.length - 1);
@@ -507,6 +534,24 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     state.selectedElementIndex = null;
     state.selectedElementIndices = [];
     if (resetSelection) state.editingGroupId = null;
+}
+
+/**
+ * Macros/imports from parsed data. An undo snapshot carries the whole
+ * library; a parsed .gl only its own definitions (source 'project'),
+ * so macros loaded from imported files are kept.
+ */
+function applyMacroData(data) {
+    if (data.macrosComplete) {
+        state.macros = structuredClone(data.macros || {});
+        state.imports = [...(data.imports || [])];
+        return;
+    }
+    if (data.macros === undefined && data.imports === undefined) return;
+    const kept = Object.fromEntries(Object.entries(state.macros || {}).filter(([, m]) => m.source !== 'project'));
+    (data.macros || []).forEach(m => { kept[m.name] = { ...m, source: 'project' }; });
+    state.macros = kept;
+    state.imports = [...(data.imports || [])];
 }
 
 /**
@@ -556,6 +601,7 @@ async function saveIfChanged({ flash = null, force = false } = {}) {
     }
     state.lastSnapshot = snap;
     state.isDirty = currentSnapshot() !== snap;
+    await saveChangedLibraries(); // e.g. macros.gl, when a definition changed
     if (flash) flashSaveIndicator(flash);
     return true;
 }

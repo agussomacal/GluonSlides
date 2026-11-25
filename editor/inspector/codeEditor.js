@@ -52,11 +52,26 @@ function defineGluonMode(CodeMirror) {
 
 // ---------- Adapter ----------
 
+// Keys while the suggestion list is open: Enter or Tab accepts the
+// highlighted suggestion, Esc closes the list.
+const HINT_KEYS = {
+    Enter: (cm, h) => h.pick(),
+    Up: (cm, h) => h.moveFocus(-1),
+    Down: (cm, h) => h.moveFocus(1),
+    PageUp: (cm, h) => h.moveFocus(-h.menuSize() + 1, true),
+    PageDown: (cm, h) => h.moveFocus(h.menuSize() - 1, true),
+    Home: (cm, h) => h.setFocus(0),
+    End: (cm, h) => h.setFocus(h.length - 1),
+    Tab: (cm, h) => h.pick(),
+    Esc: (cm, h) => h.close(),
+};
+
 /**
  * Creates the editor inside `host`. Returns an adapter with a small,
- * app-agnostic API. `onApplyShortcut` runs on Ctrl/Cmd+Enter.
+ * app-agnostic API. `onApplyShortcut` runs on Ctrl/Cmd+Enter; `hint`
+ * is an optional show-hint provider for suggestions.
  */
-export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null } = {}) {
+export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null, hint = null } = {}) {
     const CodeMirror = window.CodeMirror;
     if (!CodeMirror) throw new Error('CodeMirror is not loaded (libs/codemirror/codemirror.min.js).');
     defineGluonMode(CodeMirror);
@@ -79,8 +94,36 @@ export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null }
             'Shift-Tab': 'indentLess',
             'Ctrl-Enter': () => onApplyShortcut && onApplyShortcut(),
             'Cmd-Enter': () => onApplyShortcut && onApplyShortcut(),
+            'Ctrl-Space': (ed) => showHints(ed),
         },
     });
+
+    // ---------- Suggestions (CodeMirror show-hint add-on) ----------
+    function showHints(ed) {
+        if (!hint || typeof ed.showHint !== 'function') return;
+        ed.showHint({
+            completeSingle: false,
+            customKeys: HINT_KEYS,
+            closeCharacters: /[\s()[\]{};>,]/,
+            hint: (cmInst) => {
+                const res = hint(cmInst);
+                if (res) {
+                    // After picking a parameter name, offer its values.
+                    window.CodeMirror.on(res, 'pick', (picked) => {
+                        if (picked && picked.chainValues) setTimeout(() => showHints(ed), 0);
+                    });
+                }
+                return res;
+            },
+        });
+    }
+    if (hint) {
+        cm.on('inputRead', (ed, change) => {
+            if (change.origin !== '+input' || ed.state.completionActive) return;
+            const ch = change.text[change.text.length - 1].slice(-1);
+            if (/[\w.:#-]/.test(ch) || ch === ' ') showHints(ed);
+        });
+    }
 
     let inputHandler = null;
     let focusHandler = null;

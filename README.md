@@ -75,9 +75,50 @@ Select several elements (drag a box on empty canvas space, or Ctrl+click) and pr
 
 Here the children live in a 400×200 frame drawn at 800×400, i.e. at 2× scale. Double-click a group to edit its children (Esc or a click outside to finish); **Ctrl+Shift+G** ungroups and bakes the scale into the children.
 
+### Macros (reusable components)
+
+Select some objects (or a group), type a name under **Make Macro** in the properties panel and press Enter. The objects are saved as a definition in `macros.gl` and replaced by an *instance*; insert more instances from the **Macros ▾** menu (each shown with a small preview). Every instance follows its definition.
+
+Editing on the canvas:
+
+- **Double-click an instance** (or *Edit this instance*) to move, restyle, add or delete its elements. Changes are saved as overrides of that instance only: a moved element becomes `::name x:…`, a deleted one `::name hidden:yes`, a new one an extra element. The selected element shows its `::name` and what is overridden, with *Reset to macro*.
+- **Edit definition (all instances)** opens the macro itself: every instance follows. Element names (used by overrides) can be renamed there.
+- **Go to definition** opens the `.define` block in the inspector; the instance's properties also list its element names.
+
+```
+# macros.gl
+.define {card} width:600 height:400
+	.element.shape name:frame x:0 y:0 width:600 height:400 radius:24 bg:#e0f2fe
+	.element.text name:title x:30 y:20 width:540 height:80 fontSize:40
+		Title
+```
+
+```
+# Deck.gl
+.import {macros.gl}
+.project {Deck} ...
+
+.slide {Results} id:3
+.macro.card id:20 x:100 y:100 width:600 height:400
+.macro.card id:21 x:800 y:100 width:900 height:600
+	::title
+		Results
+	::frame bg:#fee2e2
+	::badge hidden:yes
+	.element.text x:10 y:10 width:200 height:40 fontSize:18
+		Only on this instance
+```
+
+- `.define {name} width:W height:H` holds elements laid out in a W×H frame; an instance is drawn scaled to its own size, like a group. Definitions can live in the project file itself or in any imported file (`.import {file.gl}`); `macros.gl` is just where **Make Macro** puts them.
+- Elements inside a definition have a `name` instead of an id. In an instance, `::name key:value` overrides properties of that element, an indented body replaces its text, and `hidden:yes` hides it. Overrides come first, then any extra elements that only this instance has.
+- Overrides whose element no longer exists in the definition are flagged (⚠) instead of silently dropped; a missing macro shows a placeholder.
+- **Detach** turns an instance into an ordinary group with the overrides applied; **Reset all overrides** returns it to the definition.
+
 ## Integrated source editor
 
-The editor includes a built-in **source view with syntax highlighting** for `.gl` files, so you can flip between the canvas and the code that generates it. Adjust coordinates by typing instead of dragging, batch-rename colors, or paste in a slide written by a colleague — the canvas re-renders from the text instantly.
+The editor includes a built-in **source view with syntax highlighting** for `.gl` files, so you can flip between the canvas and the code that generates it. Adjust coordinates by typing instead of dragging, batch-rename colors, or paste in a slide written by a colleague — the canvas re-renders from the text instantly. Tabs switch between the project file and imported macro libraries.
+
+**Autocomplete** suggests what can come next, from the live element types and macro library: directives after `.`, an element's parameters, enum values (and colors already used in the file) after `key:`, and a macro's element names after `::` inside a `.macro.<name>` block. **Enter** or **Tab** accepts a suggestion; Ctrl+Space shows them on demand.
 
 ## Adding a new element type
 

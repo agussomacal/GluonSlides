@@ -541,6 +541,90 @@ body {
 }
 
 /* Checkbox row in the properties panel */
+.prop-inline {
+    display: flex;
+    gap: 6px;
+}
+
+.prop-inline .prop-control {
+    flex: 1;
+    min-width: 0;
+}
+
+.prop-inline .btn {
+    width: auto;
+    margin-bottom: 0;
+    padding: 6px 10px;
+    white-space: nowrap;
+}
+
+.prop-error,
+.prop-warning {
+    font-size: 12px;
+    color: #f87171;
+}
+
+.prop-error:empty {
+    display: none;
+}
+
+/* Macro instances (elements/macro/macro.js) */
+.prop-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.prop-stack .btn {
+    width: 100%;
+    margin-bottom: 0;
+    text-align: left;
+}
+
+.group-banner.macro-banner {
+    border-color: #8b5cf6;
+    background: rgba(139, 92, 246, 0.12);
+}
+
+.macro-thumb {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    border-radius: 3px;
+    background: #ffffff;
+    vertical-align: middle;
+}
+
+.macro-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border: 2px dashed #ef4444;
+    color: #ef4444;
+    font-size: 14px;
+    text-align: center;
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.macro-warning {
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #f59e0b;
+    color: #111;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+}
+
 .prop-check {
     display: flex;
     align-items: center;

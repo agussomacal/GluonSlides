@@ -16,8 +16,10 @@ import {
     allocateElementId,
     markDirty,
     flashSaveIndicator,
+    forEachElementDeep,
 } from '../core/state.js';
 import { groupScale } from '../elements/group/group.js';
+import { openSession } from '../core/macros.js';
 
 const round = (v) => Math.round(v * 100) / 100;
 
@@ -104,9 +106,22 @@ export function ungroupSelection() {
     return true;
 }
 
-/** Enters the group with `id` so its children can be edited. */
-export function enterGroup(id) {
+/**
+ * Enters the group with `id` so its children can be edited. For a macro
+ * instance, `mode` is 'instance' (changes become overrides) or
+ * 'definition' (changes edit the macro for every instance).
+ */
+export function enterGroup(id, mode = 'instance') {
+    const slide = currentSlide();
+    let target = null;
+    forEachElementDeep(slide ? slide.elements : [], el => { if (el.id === id) target = el; });
+    if (!target) return false;
+    if (target.type === 'macro') {
+        setEditingGroup(null);            // close any other session first
+        if (!openSession(target, mode)) return false;
+    }
     setEditingGroup(id);
+    return true;
 }
 
 /** Leaves the current group, selecting it at the parent level. */

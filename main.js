@@ -19,6 +19,8 @@ import './elements/index.js';
 
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
+    makeMacroFromPanel, detachSelectedMacros, editSelectedDefinition, resetSelectedOverride,
+    resetSelectedInstance, gotoSelectedDefinition,
 } from './editor/editor.js';
 import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
@@ -52,6 +54,12 @@ const clickActions = {
     'ungroup': ungroupSelected,
     'enter-group': enterSelectedGroup,
     'exit-group': leaveGroup,
+    'make-macro': makeMacroFromPanel,
+    'detach-macro': detachSelectedMacros,
+    'edit-macro-definition': editSelectedDefinition,
+    'goto-macro-definition': gotoSelectedDefinition,
+    'reset-override': resetSelectedOverride,
+    'reset-instance': resetSelectedInstance,
 };
 
 const valueActions = {
