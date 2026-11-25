@@ -1,7 +1,8 @@
 // ============================================================
 // elements/figure/figure.js — Figure/image element.
-// Stores only paths in .gl (never base64 data URIs) and hydrates
-// `el.src` in memory when a project is opened.
+// Stores only paths in .gl and in state. Image data lives in an
+// in-memory cache keyed by path (see figureSrc / hydrateFigures), so
+// snapshots and undo history never carry base64 payloads.
 // ============================================================
 
 import { state, pyApi, markDirty } from '../../core/state.js';
@@ -28,15 +29,28 @@ async function processAndAssignFigure(elIndex, filePath) {
     assignFigureSource(elIndex, filePath, filePath, filePath);
 }
 
-function assignFigureSource(elIndex, dataUri, originalPath, storedPath) {
+// ---------- Image cache (path -> data URI / URL) ----------
+
+const figureSources = new Map();
+
+function figureKey(el) {
+    return el.filePath || el.originalPath || '';
+}
+
+/** Displayable src for a figure element ('' if not loaded yet). */
+export function figureSrc(el) {
+    return figureSources.get(figureKey(el)) || '';
+}
+
+function assignFigureSource(elIndex, src, originalPath, storedPath) {
     const slide = state.slides[state.currentSlideIndex];
     if (!slide || !slide.elements[elIndex]) return;
 
     const el = slide.elements[elIndex];
-    el.src = (typeof dataUri === 'string' && dataUri.startsWith('data:')) ? dataUri : (dataUri || '');
     el.originalPath = originalPath || '';
     el.filePath = storedPath || '';
     el.borderStyle = 'solid';
+    if (src) figureSources.set(figureKey(el), src);
     markDirty();
     notifyFullRender();
 }
@@ -91,39 +105,42 @@ function absoluteLocalPath(localPath) {
 }
 
 /**
- * Hydrates in-memory `el.src` for figure elements from `filePath` /
- * `originalPath` without modifying `.gl` serialization.
+ * Loads image data for every figure in `slides` that is not cached yet.
+ * Also migrates a legacy in-object `el.src` into the cache.
  */
-export async function hydrateFigureElements(slides, projectFolder) {
+export async function hydrateFigures(slides, projectFolder) {
+    if (!Array.isArray(slides)) return;
     const api = pyApi();
-    if (!api || typeof api.load_figure_data_uri !== 'function' || !Array.isArray(slides)) {
-        return;
-    }
+    const pending = new Map();
 
-    const candidatesToLoad = [];
     for (const slide of slides) {
         for (const el of (slide.elements || [])) {
             if (el.type !== 'figure') continue;
-            if (typeof el.src === 'string' && el.src.startsWith('data:')) continue;
-            const targetPath = el.filePath || el.originalPath || '';
-            if (targetPath) {
-                candidatesToLoad.push({ el, targetPath });
+            const key = figureKey(el);
+            if (typeof el.src === 'string' && el.src) {
+                if (key && !figureSources.has(key)) figureSources.set(key, el.src);
+                delete el.src;
             }
+            if (key && !figureSources.has(key)) pending.set(key, key);
         }
     }
 
-    await Promise.all(candidatesToLoad.map(async ({ el, targetPath }) => {
+    await Promise.all([...pending.keys()].map(async (key) => {
         try {
-            const res = await api.load_figure_data_uri(projectFolder || '', targetPath);
-            if (res && res.success && res.data_uri) {
-                el.src = res.data_uri;
-            } else if (!el.src && targetPath) {
-                el.src = targetPath;
-            }
+            const res = api && typeof api.load_figure_data_uri === 'function'
+                ? await api.load_figure_data_uri(projectFolder || '', key)
+                : null;
+            // Fall back to the raw path (works for URLs / browser preview).
+            figureSources.set(key, res && res.success && res.data_uri ? res.data_uri : key);
         } catch (err) {
-            console.warn('Could not hydrate figure:', targetPath, err);
+            console.warn('Could not load figure:', key, err);
         }
     }));
+}
+
+/** Drops cached image data (e.g. when switching projects). */
+export function clearFigureCache() {
+    figureSources.clear();
 }
 
 window.SlideStudioFigure = { browseFigurePath, handleFigureDrop, openPathInSystem };
@@ -152,7 +169,6 @@ const FigureElement = {
             x: 0, y: 0,
             width: Math.round(400 * scale),
             height: Math.round(300 * scale),
-            src: '',
             originalPath: '',
             filePath: '',
             bg: state.isDarkMode ? '#1e293b' : '#f1f5f9',
@@ -169,8 +185,9 @@ const FigureElement = {
         domEl.style.justifyContent = 'center';
         domEl.style.overflow = 'hidden';
 
-        if (el.src) {
-            domEl.innerHTML = `<img src="${el.src}" style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;" />`;
+        const src = figureSrc(el);
+        if (src) {
+            domEl.innerHTML = `<img src="${escapeHtml(src)}" style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;" />`;
         } else {
             domEl.innerHTML = `
                 <div style="text-align: center; pointer-events: none; padding: 10px;">
@@ -189,8 +206,9 @@ const FigureElement = {
     },
 
     exportInner(el) {
-        if (el.src) {
-            return `<img src="${el.src}" style="width:100%; height:100%; object-fit:contain;" />`;
+        const src = figureSrc(el);
+        if (src) {
+            return `<img src="${escapeHtml(src)}" style="width:100%; height:100%; object-fit:contain;" />`;
         }
         return `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-family:sans-serif;">[Figure Placeholder]</div>`;
     },

@@ -5,9 +5,9 @@
 // registration (each element module self-registers).
 // ============================================================
 
-import '../../elements/text/text.js';
-import '../../elements/shape/shape.js';
-import '../../elements/figure/figure.js';
+import './text/text.js';
+import './shape/shape.js';
+import './figure/figure.js';
 
 // Future elements: add the import here. If you forget, the app
 // throws at startup telling you the type is missing — loud, not silent.

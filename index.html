@@ -8,11 +8,15 @@
     <link rel="stylesheet" href="libs/katex.min.css">
     <!-- Local KaTeX JS -->
     <script defer src="libs/katex.min.js"></script>
-    <script defer src="libs/auto-render.min.js" onload="renderAllMath()"></script>
+    <script defer src="libs/auto-render.min.js"></script>
     <!-- Local html2canvas -->
     <script src="libs/html2canvas.min.js"></script>
     <!-- Marked.js for Markdown Support -->
     <script src="libs/marked.min.js"></script>
+    <!-- DOMPurify: sanitizes rendered Markdown -->
+    <script src="libs/purify.min.js"></script>
+    <!-- CodeMirror 5 for the .gl inspector -->
+    <script src="libs/codemirror/codemirror.min.js"></script>
     <!-- Custom Stylesheet -->
     <link rel="stylesheet" href="style.css">
     <!-- Dedicated Text & Math Stylesheet -->
@@ -24,8 +28,8 @@
     <div class="welcome-card">
         <h1>GluonSlides</h1>
         <p>Local Markdown, LaTeX, and Freeform presentation builder with the Gluon (.gl) format.</p>
-        <button class="btn btn-primary" onclick="showNewProjectModal()">+ Create New Project</button>
-        <button class="btn btn-secondary" onclick="openProjectFromFile()">📂 Open Project File...</button>
+        <button class="btn btn-primary" data-action="new-project">+ Create New Project</button>
+        <button class="btn btn-secondary" data-action="open-project">📂 Open Project File...</button>
         <div class="existing-projects">
             <p style="font-size: 12px; margin-bottom: 6px;">Recent Projects:</p>
             <ul class="project-list" id="project-list"></ul>
@@ -41,17 +45,17 @@
         <div class="prop-group">
             <label>Project Name</label>
             <input type="text" id="new-project-name" class="prop-control" placeholder="My Presentation"
-                   oninput="validateNewProjectForm()">
+                   data-input="validate-new-project">
         </div>
         <div class="prop-group" style="margin-top: 14px;">
             <label>Location</label>
-            <button class="sidebar-btn" onclick="chooseNewProjectFolder()">📁 Choose Folder...</button>
+            <button class="sidebar-btn" data-action="choose-project-folder">📁 Choose Folder...</button>
             <div class="modal-folder-path" id="new-project-folder">No folder selected</div>
         </div>
         <div class="modal-error" id="new-project-error"></div>
         <div class="modal-actions">
-            <button class="btn btn-secondary" onclick="closeNewProjectModal()">Cancel</button>
-            <button class="btn btn-primary" id="new-project-create-btn" onclick="confirmCreateProject()" disabled>Create
+            <button class="btn btn-secondary" data-action="close-modal" data-arg="new-project-modal">Cancel</button>
+            <button class="btn btn-primary" id="new-project-create-btn" data-action="create-project" disabled>Create
             </button>
         </div>
     </div>
@@ -71,8 +75,8 @@
         </div>
         <div class="modal-error" id="macros-error"></div>
         <div class="modal-actions">
-            <button class="btn btn-secondary" onclick="closeMacrosModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveMacros()">Save & Apply</button>
+            <button class="btn btn-secondary" data-action="close-modal" data-arg="macros-modal">Cancel</button>
+            <button class="btn btn-primary" data-action="save-macros">Save & Apply</button>
         </div>
     </div>
 </div>
@@ -92,8 +96,8 @@
         </div>
         <div class="modal-error" id="bib-error"></div>
         <div class="modal-actions">
-            <button class="btn btn-secondary" onclick="closeBibModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveBib()">Save & Apply</button>
+            <button class="btn btn-secondary" data-action="close-modal" data-arg="bib-modal">Cancel</button>
+            <button class="btn btn-primary" data-action="save-bib">Save & Apply</button>
         </div>
     </div>
 </div>
@@ -107,14 +111,14 @@
             </div>
             <div class="slide-title-box">
                 <input type="text" class="slide-title-input" id="slide-title-input"
-                       placeholder="Slide Title" oninput="renameCurrentSlide(this.value)">
+                       placeholder="Slide Title" data-input="rename-slide">
             </div>
         </div>
         <div class="slides-thumb-list" id="slides-thumb-list"></div>
 
         <div class="sidebar-footer">
             <div class="export-pair-row">
-                <button class="toolbar-btn export-half-btn" title="Export HTML" onclick="directExport('html')">
+                <button class="toolbar-btn export-half-btn" title="Export HTML" data-action="export-html">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                          stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="16 18 22 12 16 6"></polyline>
@@ -122,7 +126,7 @@
                     </svg>
                     HTML
                 </button>
-                <button class="toolbar-btn export-half-btn" title="Export PDF" onclick="directExport('pdf')">
+                <button class="toolbar-btn export-half-btn" title="Export PDF" data-action="export-pdf">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                          stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -133,25 +137,25 @@
                     PDF
                 </button>
             </div>
-            <button class="toolbar-btn" id="theme-toggle-btn" onclick="toggleDarkMode()"
+            <button class="toolbar-btn" id="theme-toggle-btn" data-action="toggle-dark-mode"
                     style="width: 100%; justify-content: center;">
                 <span>🌙</span> Night Mode
             </button>
             <!-- Bibliography (.bib) + citation style, 3/4 + 1/4 row -->
             <div class="export-pair-row">
-                <button class="sidebar-btn bib-btn" onclick="openBibModal()" style="flex: 3;">
+                <button class="sidebar-btn bib-btn" data-action="open-bib" style="flex: 3;">
                     <span>📚</span> Bibliography (.bib)
                 </button>
-                <select id="citestyle-select" class="toolbar-select" onchange="changeCitestyle(this.value)"
+                <select id="citestyle-select" class="toolbar-select" data-change="change-citestyle"
                         style="flex: 1; min-width: 0;" title="Citation style">
                     <option value="numeric" selected>[n]</option>
                     <option value="authoryear">(AY)</option>
                 </select>
             </div>
-            <button class="sidebar-btn" onclick="openMacrosModal()">
+            <button class="sidebar-btn" data-action="open-macros">
                 <span>⚙️</span> Edit LaTeX Macros...
             </button>
-            <button class="sidebar-btn" onclick="goToHome()">
+            <button class="sidebar-btn" data-action="go-home">
                 <span>←</span> Back to Home
             </button>
         </div>
@@ -172,7 +176,7 @@
             <div class="toolbar-field">
                 <label for="grid-size-select">Grid</label>
                 <select id="grid-size-select" class="toolbar-select"
-                        onchange="changeGridSize(this.value)">
+                        data-change="change-grid-size">
                     <option value="0">None</option>
                     <option value="10">10px</option>
                     <option value="20" selected>20px</option>
@@ -183,7 +187,7 @@
             <div class="toolbar-field">
                 <label for="global-slide-size">Size</label>
                 <select id="global-slide-size" class="toolbar-select toolbar-select-size"
-                        onchange="changeSlideSizePreset(this.value)">
+                        data-change="change-slide-size">
                     <option value="1920x1080" selected>1920×1080</option>
                     <option value="960x540">960×540</option>
                     <option value="1280x960">1280×960</option>

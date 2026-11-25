@@ -146,7 +146,7 @@ export async function exportProjectPdf() {
         return {ok: false, error: 'Please create or open a project folder first before exporting.'};
     }
 
-    const baseName = (state.projectName || 'presentation').replace(/\s+/g, '_');
+    const baseName = (state.projectName || 'presentation').replace(/[\s\\/:*?"<>|]+/g, '_');
 
     // 1. Save the HTML in the project folder
     const htmlContent = await getExportHtmlString();

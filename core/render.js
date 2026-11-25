@@ -9,6 +9,20 @@ import { resolveCitations } from './citations.js';
 
 // ---------- Markdown + KaTeX ----------
 
+/**
+ * Strips scripts/event handlers from user-authored HTML. Text content
+ * comes from .gl files that may be shared, and the page can call the
+ * Python API (file writes), so raw HTML must never execute.
+ * Without DOMPurify loaded we fall back to escaping everything.
+ */
+function sanitizeHtml(html) {
+    if (window.DOMPurify && typeof window.DOMPurify.sanitize === 'function') {
+        return window.DOMPurify.sanitize(html);
+    }
+    console.warn('DOMPurify not loaded; rendering text as plain text.');
+    return escapeHtml(html);
+}
+
 export function renderMarkdownAndKatex(element, rawText) {
     // Citations are resolved at render time only — the stored content
     // keeps the raw \cite{...} / [@key] markers for round-trip fidelity.
@@ -28,7 +42,7 @@ export function renderMarkdownAndKatex(element, rawText) {
             console.error('Markdown parsing error:', e);
         }
     }
-    element.innerHTML = html;
+    element.innerHTML = sanitizeHtml(html);
     if (window.renderMathInElement) {
         try {
             renderMathInElement(element, {
@@ -57,7 +71,8 @@ export function escapeHtml(s) {
     return String(s)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 // ---------- Alignment: single source of truth ----------
@@ -152,6 +167,32 @@ export function syncSlideSizeSelect() {
 export function syncGridSizeSelect() {
     const sel = document.getElementById('grid-size-select');
     if (sel) sel.value = state.gridSize;
+}
+
+export function syncThemeToggle() {
+    document.body.classList.toggle('dark-mode', state.isDarkMode);
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) {
+        btn.innerHTML = state.isDarkMode ? '<span>☀️</span> Day Mode' : '<span>🌙</span> Night Mode';
+    }
+}
+
+export function syncCitestyleSelect() {
+    const sel = document.getElementById('citestyle-select');
+    if (sel) sel.value = state.citestyle;
+}
+
+/**
+ * Syncs every project-level control (theme, size, grid, citation
+ * style, canvas dimensions) from state. Call after state was replaced
+ * wholesale: project open, undo/redo, inspector apply.
+ */
+export function syncProjectChrome() {
+    syncThemeToggle();
+    syncSlideSizeSelect();
+    syncGridSizeSelect();
+    syncCitestyleSelect();
+    updateDimensionsCSS();
 }
 
 // Late-bound render callback to avoid a circular static import

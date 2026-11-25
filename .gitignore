@@ -1,1 +1,5 @@
 /libs/
+__pycache__/
+.idea/
+recents.json
+gl_inspector_settings.json

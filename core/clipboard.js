@@ -15,7 +15,7 @@ import {
     undo,
     redo,
     allocateElementId,
-    ensureElementIds,
+    allocateSlideId,
 } from './state.js';
 import {
     renderEditor,
@@ -25,11 +25,7 @@ import {
     navigateSlideByArrow,
     moveSelectedElementsByArrow,
 } from '../editor/editor.js';
-import {
-    syncSlideSizeSelect,
-    syncGridSizeSelect,
-    updateDimensionsCSS,
-} from './render.js';
+import { syncProjectChrome } from './render.js';
 
 const PASTE_OFFSET_PX = 40;
 
@@ -42,14 +38,7 @@ function isTypingTarget(activeEl) {
 }
 
 function syncUiAfterHistoryChange() {
-    document.body.classList.toggle('dark-mode', state.isDarkMode);
-    const themeBtn = document.getElementById('theme-toggle-btn');
-    if (themeBtn) {
-        themeBtn.innerHTML = state.isDarkMode ? '<span>☀️</span> Day Mode' : '<span>🌙</span> Night Mode';
-    }
-    syncSlideSizeSelect();
-    syncGridSizeSelect();
-    updateDimensionsCSS();
+    syncProjectChrome();
     renderEditor();
 }
 
@@ -211,12 +200,9 @@ export function initKeyboardShortcuts() {
             if (Array.isArray(state.slideClipboard) && state.slideClipboard.length > 0) {
                 const insertAfter = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
                 const pastedSlideIndices = [];
-                let maxId = state.slides.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0);
-
                 state.slideClipboard.forEach((templateSlide, offset) => {
-                    maxId += 1;
                     const newSlide = JSON.parse(JSON.stringify(templateSlide));
-                    newSlide.id = maxId;
+                    newSlide.id = allocateSlideId();
                     newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
                     // Pasted slides carry their elements with their original
                     // IDs; those are remapped below to stay unique.

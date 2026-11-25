@@ -1,5 +1,5 @@
 // ============================================================
-// editor/glTokenizer.js — Pure syntax tokenizer for Gluon (.gl)
+// editor/inspector/tokenizer.js — Pure syntax tokenizer for Gluon (.gl)
 // text. Produces `{ type, value }` tokens for comments,
 // structural/function directives, element directives, brace args,
 // key:value parameters, and indented body content (including
@@ -166,33 +166,40 @@ export function tokenizeGlLine(line, { inElementBody = false } = {}) {
     return [{ type: 'plain', value: s }];
 }
 
-export function tokenizeGlDocument(text) {
-    const lines = String(text ?? '').split('\n');
-    const result = [];
-    let inElementBody = false;
+/**
+ * Tokenizes one line given the context carried over from the previous
+ * line (whether we are inside an element body). Returns the tokens and
+ * the context for the next line. Used line-by-line by the CodeMirror
+ * mode and by tokenizeGlDocument.
+ */
+export function scanGlLine(line, inElementBody) {
+    const trimmedStart = line.replace(/^[ \t\u200B-\u200D\uFEFF]+/, '');
 
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmedStart = line.replace(/^[ \t\u200B-\u200D\uFEFF]+/, '');
-
-        if (DIRECTIVE_HEAD_RE.test(trimmedStart)) {
-            inElementBody = trimmedStart.startsWith('.element.');
-            result.push(tokenizeGlLine(line, { inElementBody: false }));
-            continue;
-        }
-
-        if (line.trim() === '') {
-            const indentMatch = line.match(/^([ \t]+)/);
-            if (inElementBody && indentMatch) {
-                result.push([{ type: 'body-indent', value: indentMatch[1] }]);
-            } else {
-                result.push([{ type: 'body-text', value: line }]);
-            }
-            continue;
-        }
-
-        result.push(tokenizeGlLine(line, { inElementBody }));
+    if (DIRECTIVE_HEAD_RE.test(trimmedStart)) {
+        return {
+            tokens: tokenizeGlLine(line, { inElementBody: false }),
+            inElementBody: trimmedStart.startsWith('.element.'),
+        };
     }
 
+    if (line.trim() === '') {
+        const indentMatch = line.match(/^([ \t]+)/);
+        const tokens = inElementBody && indentMatch
+            ? [{ type: 'body-indent', value: indentMatch[1] }]
+            : [{ type: 'body-text', value: line }];
+        return { tokens, inElementBody };
+    }
+
+    return { tokens: tokenizeGlLine(line, { inElementBody }), inElementBody };
+}
+
+export function tokenizeGlDocument(text) {
+    const result = [];
+    let inElementBody = false;
+    for (const line of String(text ?? '').split('\n')) {
+        const scanned = scanGlLine(line, inElementBody);
+        inElementBody = scanned.inElementBody;
+        result.push(scanned.tokens);
+    }
     return result;
 }

@@ -63,31 +63,49 @@ export function pyApi() {
     return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
 }
 
-// ---------- Element IDs ----------
+// ---------- IDs ----------
 
-/** Allocate the next element ID (monotonic, never reused). */
-export function allocateElementId() {
+/**
+ * Allocate the next ID (monotonic, never reused). Slides and elements
+ * share one counter, so every ID is unique project-wide; the counter
+ * travels with the project (.gl header param `nextid`).
+ */
+export function allocateId() {
     const id = state.nextId;
     state.nextId += 1;
     return id;
 }
 
+export const allocateElementId = allocateId;
+export const allocateSlideId = allocateId;
+
 /**
- * Backfills missing element IDs (legacy JSON projects) and lifts
- * nextId above every ID seen. Safe to call repeatedly.
+ * Assigns IDs to slides/elements that lack one or carry a duplicate
+ * (legacy JSON, hand-edited files), and lifts nextId above every ID
+ * seen. Safe to call repeatedly.
  */
-export function ensureElementIds() {
+export function ensureIds() {
     let maxSeen = 0;
-    state.slides.forEach(s => (s.elements || []).forEach(el => {
-        if (Number.isInteger(el.id) && el.id > maxSeen) maxSeen = el.id;
-    }));
-    state.slides.forEach(s => (s.elements || []).forEach(el => {
-        if (!Number.isInteger(el.id)) {
-            maxSeen += 1;
-            el.id = maxSeen;
-        }
-    }));
-    if (maxSeen + 1 > state.nextId) state.nextId = maxSeen + 1;
+    const isId = v => Number.isInteger(v) && v > 0;
+    state.slides.forEach(s => {
+        if (isId(s.id)) maxSeen = Math.max(maxSeen, s.id);
+        (s.elements || []).forEach(el => {
+            if (isId(el.id)) maxSeen = Math.max(maxSeen, el.id);
+        });
+    });
+    if (state.nextId <= maxSeen) state.nextId = maxSeen + 1;
+
+    const seenSlides = new Set();
+    const seenElements = new Set();
+    state.slides.forEach(s => {
+        if (!isId(s.id) || seenSlides.has(s.id)) s.id = allocateId();
+        seenSlides.add(s.id);
+        s.elements = s.elements || [];
+        s.elements.forEach(el => {
+            if (!isId(el.id) || seenElements.has(el.id)) el.id = allocateId();
+            seenElements.add(el.id);
+        });
+    });
 }
 
 export function currentSlide() {
@@ -198,13 +216,7 @@ function applyHistoryEntry(entry) {
     state._isApplyingHistory = true;
     try {
         const parsed = JSON.parse(entry.snapshot);
-        state.slides = parsed.slides || [];
-        state.slideWidth = parsed.slideWidth || 1920;
-        state.slideHeight = parsed.slideHeight || 1080;
-        state.gridSize = parsed.gridSize !== undefined ? parsed.gridSize : 20;
-        state.isDarkMode = !!parsed.isDarkMode;
-        state.nextId = parsed.nextId || 1;
-        ensureElementIds();
+        applyProjectData(parsed, { resetSelection: false });
         if (typeof parsed.rawTexMacros === 'string') {
             state.rawTexMacros = parsed.rawTexMacros;
             state.projectMacros = parseTexMacros(state.rawTexMacros);
@@ -320,6 +332,7 @@ export function currentSnapshot() {
         gridSize: state.gridSize,
         isDarkMode: state.isDarkMode,
         nextId: state.nextId,
+        citestyle: state.citestyle,
         rawTexMacros: state.rawTexMacros,
         slides: state.slides,
     });
@@ -329,11 +342,13 @@ export function currentSnapshot() {
 export function serializeProject() {
     return serializeGl({
         projectName: state.projectName,
+        citestyle: state.citestyle,
         slideWidth: state.slideWidth,
         slideHeight: state.slideHeight,
         gridSize: state.gridSize,
         isDarkMode: state.isDarkMode,
         nextId: state.nextId,
+        citestyle: state.citestyle,
         slides: state.slides,
     });
 }
@@ -351,32 +366,82 @@ export function serializeProjectJson() {
     });
 }
 
+// ---------- Loading project data into state ----------
+
+const DEFAULT_SLIDE_WIDTH = 1920;
+const DEFAULT_SLIDE_HEIGHT = 1080;
+const DEFAULT_GRID_SIZE = 20;
+
 /**
- * Loads project data into state (data only — call applyUiFromState()
- * afterwards to sync the DOM). Accepts both .gl and legacy JSON.
- * Throws on invalid content.
+ * Resets every project-scoped field to a fresh, empty project.
+ * Use before starting a new project (or the sample) so nothing leaks
+ * over from a previously opened one.
  */
-export function deserializeProject(content) {
-    let data;
-    if (looksLikeGl(content)) {
-        data = parseGl(content);
-    } else {
-        data = JSON.parse(content); // legacy .ssproj JSON
-        if (!Array.isArray(data.slides)) throw new Error("Missing 'slides' array");
-        data.nextId = 1;
-    }
-    state.slides = data.slides;
-    state.slideWidth = Number.isFinite(Number(data.slideWidth)) ? Number(data.slideWidth) : 1920;
-    state.slideHeight = Number.isFinite(Number(data.slideHeight)) ? Number(data.slideHeight) : 1080;
-    state.gridSize = data.gridSize !== undefined && data.gridSize !== null ? Number(data.gridSize) : 20;
+export function resetProjectState({ name = 'Untitled Project', path = null, folder = null } = {}) {
+    state.projectName = name;
+    state.projectPath = path;
+    state.projectFolder = folder;
+    state.nextId = 1;
+    applyProjectData({
+        slides: [{ title: 'Title Slide', elements: [] }],
+        slideWidth: DEFAULT_SLIDE_WIDTH,
+        slideHeight: DEFAULT_SLIDE_HEIGHT,
+        gridSize: DEFAULT_GRID_SIZE,
+        isDarkMode: false,
+        citestyle: 'numeric',
+        nextId: 1,
+    });
+    resetMacros();
+    state.rawBib = '';
+    state.bibEntries = {};
+    state._citationOrder = [];
+    state.elementClipboard = null;
+    state.slideClipboard = null;
+}
+
+/**
+ * The single place that copies parsed project data (from .gl, legacy
+ * JSON, an undo snapshot or the inspector) into `state`.
+ * With resetSelection=false the current slide index is clamped instead
+ * of reset (the caller restores selection itself).
+ */
+export function applyProjectData(data, { resetSelection = true } = {}) {
+    const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : fallback);
+
+    state.slides = Array.isArray(data.slides) ? data.slides : [];
+    state.slideWidth = num(data.slideWidth, DEFAULT_SLIDE_WIDTH);
+    state.slideHeight = num(data.slideHeight, DEFAULT_SLIDE_HEIGHT);
+    state.gridSize = num(data.gridSize, DEFAULT_GRID_SIZE);
     state.isDarkMode = !!data.isDarkMode;
-    state.projectName = data.name || data.projectName || 'Untitled Project';
-    state.nextId = data.nextId || 1;
-    ensureElementIds();
-    state.currentSlideIndex = 0;
-    state.selectedSlideIndices = state.slides.length > 0 ? [0] : [];
+    state.citestyle = data.citestyle === 'authoryear' ? 'authoryear' : 'numeric';
+    state.nextId = Math.max(1, num(data.nextId, 1));
+    const name = data.name || data.projectName;
+    if (name) state.projectName = name;
+    ensureIds();
+
+    const lastIdx = Math.max(0, state.slides.length - 1);
+    state.currentSlideIndex = resetSelection ? 0 : Math.max(0, Math.min(state.currentSlideIndex, lastIdx));
+    state.selectedSlideIndices = state.slides.length > 0 ? [state.currentSlideIndex] : [];
     state.selectedElementIndex = null;
     state.selectedElementIndices = [];
+}
+
+/**
+ * Parses project file content (.gl or legacy JSON). Throws on invalid
+ * content. Pure: does not touch state.
+ */
+export function parseProjectContent(content) {
+    if (looksLikeGl(content)) return parseGl(content);
+    const data = JSON.parse(content); // legacy .ssproj JSON
+    if (!Array.isArray(data.slides)) throw new Error("Missing 'slides' array");
+    return data;
+}
+
+/** Loads project file content into state. Throws on invalid content. */
+export function deserializeProject(content) {
+    const data = parseProjectContent(content);
+    if (!data.name && !data.projectName) data.name = 'Untitled Project';
+    applyProjectData(data);
 }
 
 export function flashSaveIndicator(text) {
@@ -388,22 +453,33 @@ export function flashSaveIndicator(text) {
     flashSaveIndicator._t = setTimeout(() => el.classList.remove('visible'), 1600);
 }
 
-async function autoSaveTick() {
+/**
+ * Writes the project if it changed since the last save. The snapshot
+ * and text are captured *before* awaiting, so edits made while the
+ * write is in flight stay marked dirty and are saved next time.
+ */
+async function saveIfChanged({ flash = null, force = false } = {}) {
     const api = pyApi();
-    if (!state.projectPath || !state.isDirty || !api) return;
+    if (!state.projectPath || !api) return false;
     const snap = currentSnapshot();
-    if (snap === state.lastSnapshot) {
+    if (!force && snap === state.lastSnapshot) {
         state.isDirty = false;
-        return;
+        return false;
     }
     const res = await api.save_project_data(state.projectPath, serializeProject());
-    if (res.success) {
-        state.lastSnapshot = snap;
-        state.isDirty = false;
-        flashSaveIndicator('Autosaved ✓');
-    } else {
-        console.error('Autosave failed:', res.error);
+    if (!res || !res.success) {
+        console.error('Save failed:', res && res.error);
+        return false;
     }
+    state.lastSnapshot = snap;
+    state.isDirty = currentSnapshot() !== snap;
+    if (flash) flashSaveIndicator(flash);
+    return true;
+}
+
+async function autoSaveTick() {
+    if (!state.isDirty) return;
+    await saveIfChanged({ flash: 'Autosaved ✓' });
 }
 
 export function startAutosave() {
@@ -411,26 +487,13 @@ export function startAutosave() {
 }
 
 export async function flushPendingSave() {
-    const api = pyApi();
-    if (state.projectPath && state.isDirty && api && currentSnapshot() !== state.lastSnapshot) {
-        const res = await api.save_project_data(state.projectPath, serializeProject());
-        if (res.success) {
-            state.lastSnapshot = currentSnapshot();
-            state.isDirty = false;
-        }
-    }
+    if (!state.isDirty) return;
+    await saveIfChanged();
 }
 
 export async function renameProject(value) {
     state.projectName = (value || '').trim() || 'Untitled Project';
     markDirty();
-    const api = pyApi();
-    if (state.projectPath && api) {
-        const res = await api.save_project_data(state.projectPath, serializeProject());
-        if (res.success) {
-            state.lastSnapshot = currentSnapshot();
-            state.isDirty = false;
-            flashSaveIndicator('Saved ✓');
-        }
-    }
+    // The name is not part of the snapshot, so force the write.
+    await saveIfChanged({ flash: 'Saved ✓', force: true });
 }

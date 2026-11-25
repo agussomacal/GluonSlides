@@ -17,7 +17,7 @@ export async function projectExportHtml() {
             return;
         }
 
-        const safeName = (state.projectName || 'presentation').replace(/\s+/g, '_');
+        const safeName = (state.projectName || 'presentation').replace(/[\s\\/:*?"<>|]+/g, '_');
         const res = await api.save_text_file(state.projectFolder, `${safeName}.html`, htmlContent);
         if (res.success) {
             api.open_file_with_system(res.path);

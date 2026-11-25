@@ -30,12 +30,13 @@ Instead of an opaque JSON blob, a GluonSlides project is a text file heavily ins
 
 .slide {Results} id:2
 .element.figure id:3 x:400 y:150 width:600 height:450 filePath:figures/plot.png originalPath:/home/me/plot.png bg:transparent borderCol:transparent borderWidth:0 borderStyle:dashed
-data:image/png;base64,iVBORw0KGgo...
 ```
+
+Figures are stored by path only (imported images are copied into the project's `figures/` folder); image data is loaded at runtime and never written into the `.gl` file.
 
 The rules are simple:
 
-- `.project` is the header: name, canvas size, grid, theme, and the next available element ID.
+- `.project` is the header: name, canvas size, grid, theme, citation style, and the next available ID (slides and elements share one ID counter).
 - Each `.slide {Title}` starts a slide.
 - Each `.element.<type> id:n k:v k:v ...` places an element; the parameters are exactly the properties you see in the editor's right-hand panel.
 - Lines following a `.element.text` directive are its body — Markdown and LaTeX verbatim.
@@ -123,13 +124,30 @@ core/
     glformat.js   the .gl format: spec, serializer, parser
 editor/
   editor.js       canvas, thumbnails, properties panel, slide ops
+  inspector/      .gl source inspector (bottom drawer)
+    index.js        drawer + two-way sync with the canvas
+    codeEditor.js   CodeMirror 5 wrapper + .gl syntax mode
+    tokenizer.js    pure .gl tokenizer used by the syntax mode
+    glNavigation.js line <-> slide/element mapping
+    settings.js     inspector settings + popover
+    contextMenu.js  right-click "Go to Gluon file"
+ui/
+  project.js      create/open/sample project, recents, project settings
+  modals.js       new-project, macros and bibliography dialogs
+main.js           entry point: wires index.html controls (data-action)
 elements/
   index.js        registry hookup — one import per element type
   text/ shape/ figure/
 export/
   html.js         interactive HTML viewer + print source
   pdf.js          headless-Chromium vector PDF
-app.py            pywebview backend: dialogs, file IO, figure import, PDF
+app.py            launcher (snap env fix, lib download, window)
+backend/
+  api.py          Api class exposed to JS as pywebview.api
+  dialogs.py project_io.py figures.py pdf_export.py
+  user_settings.py  recents + inspector settings (~/.config/gluonslides)
+  vendor_libs.py    downloads JS/CSS libs listed in dependencies.yaml
+  snap_env.py       undoes env leaked by snap-packaged terminals
 ```
 
 The in-memory model is plain JS objects; `.gl` is a projection applied only at the file boundary (`serializeProject` / `deserializeProject`), which keeps rendering, selection, and history logic completely format-agnostic. Text elements never import the editor — they communicate through DOM events, so there are no circular dependencies.
@@ -139,8 +157,10 @@ The in-memory model is plain JS objects; `.gl` is a projection applied only at t
 Requirements: Python 3 with GTK bindings (Linux: `sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0`) and the packages in `pyproject.toml` / `dependencies.yaml`.
 
 ```bash
-python3 app.py
+uv run app.py      # or: python3 app.py
 ```
+
+On first start, missing JS/CSS libraries from `dependencies.yaml` are downloaded into `libs/`. Recent projects and inspector settings are stored per user (`~/.config/gluonslides` on Linux).
 
 Create a project (pick a folder — you get `MyDeck.gl` plus a `macros.tex` for your LaTeX macros), add elements from the toolbar, and export with the HTML/PDF buttons. Autosave runs continuously; your project file always reflects the current canvas.
 

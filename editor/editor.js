@@ -14,6 +14,7 @@ import {
     getSelectedSlideIndices,
     setSelectedSlideIndices,
     allocateElementId,
+    allocateSlideId,
 } from '../core/state.js';
 import { ElementRegistry } from '../core/registry.js';
 import {
@@ -248,6 +249,7 @@ function renderCanvas() {
         const def = ElementRegistry.get(el.type);
         const domEl = document.createElement('div');
         domEl.className = `canvas-element ${def ? def.className : 'element-shape'}`;
+        domEl.dataset.elementId = String(el.id);
         if (selectedSet.has(elIndex)) {
             domEl.classList.add('selected');
         }
@@ -679,6 +681,7 @@ export function renderEditor() {
     state.slides.forEach((slide, idx) => {
         const container = document.createElement('div');
         container.className = `thumb-container ${idx === state.currentSlideIndex ? 'active' : ''} ${selectedSlideSet.has(idx) ? 'selected' : ''}`;
+        container.dataset.slideId = String(slide.id);
         attachSlideDragReorder(container, idx, thumbList);
 
         const labelRow = document.createElement('div');
@@ -712,13 +715,19 @@ export function renderEditor() {
     renderCanvas();
     renderPropertiesPanel();
     syncToolbarSelectsNow();
+
+    // Lets other views (e.g. the .gl inspector) follow every re-render
+    // without wrapping this function.
+    document.dispatchEvent(new CustomEvent('editor-rendered'));
 }
 
 // ---------- Slide operations ----------
 
 export function addSlide() {
-    const newSlideId = state.slides.length + 1;
-    state.slides.push({ id: newSlideId, title: `Slide ${newSlideId}`, elements: [] });
+    const usedTitles = new Set(state.slides.map(s => s.title));
+    let n = state.slides.length + 1;
+    while (usedTitles.has(`Slide ${n}`)) n++;
+    state.slides.push({ id: allocateSlideId(), title: `Slide ${n}`, elements: [] });
     const newIdx = state.slides.length - 1;
     state.currentSlideIndex = newIdx;
     setSelectedSlideIndices([newIdx]);
@@ -787,7 +796,7 @@ export function deleteSelectedSlides(showFlash = true) {
     const remaining = state.slides.filter((_, idx) => !removeSet.has(idx));
 
     if (remaining.length === 0) {
-        state.slides = [{ id: 1, title: 'Slide 1', elements: [] }];
+        state.slides = [{ id: allocateSlideId(), title: 'Slide 1', elements: [] }];
         state.currentSlideIndex = 0;
         setSelectedSlideIndices([0]);
     } else {

@@ -16,8 +16,22 @@ dependencies:
     description: "html2canvas library for PDF slide export"
 
   - name: marked.min.js
-    url: "https://cdn.jsdelivr.net/npm/marked/marked.min.js"
+    url: "https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"
     description: "marked library for markdown support"
+
+  - name: purify.min.js
+    url: "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"
+    description: "DOMPurify: sanitizes user-authored HTML before rendering"
+
+  - name: codemirror.min.js
+    subdir: codemirror
+    url: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"
+    description: "CodeMirror 5 editor used by the .gl inspector"
+
+  - name: codemirror.min.css
+    subdir: codemirror
+    url: "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
+    description: "CodeMirror 5 base stylesheet"
 
 fonts:
   - name: "KaTeX_AMS-Regular.woff2"

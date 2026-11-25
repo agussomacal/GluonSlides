@@ -192,7 +192,7 @@
 
 .gl-inspector-body {
     flex: 1;
-    overflow: auto;
+    overflow: hidden;
     min-height: 0;
     background: #0f172a;
     position: relative;
@@ -200,52 +200,62 @@
     -moz-tab-size: var(--gl-tab-size);
 }
 
-.gl-line-editor {
-    min-height: 100%;
-    padding: 10px 14px;
+/* CodeMirror host: fills the drawer body */
+.gl-code-editor {
+    height: 100%;
+}
+
+.gl-code-editor .CodeMirror {
+    height: 100%;
+    background: transparent;
+    color: var(--gl-tok-plain);
     font-family: var(--gl-mono);
     font-size: var(--gl-font-size);
     line-height: var(--gl-line-height);
-    tab-size: var(--gl-tab-size);
-    -moz-tab-size: var(--gl-tab-size);
-    box-sizing: border-box;
-    outline: none;
 }
 
-.gl-tok-line {
-    display: block;
-    min-height: var(--gl-line-height);
-    line-height: var(--gl-line-height);
-    white-space: pre;
-    tab-size: var(--gl-tab-size);
-    -moz-tab-size: var(--gl-tab-size);
-    outline: none;
+/* style.css sets a sans-serif font on `*`; keep the editor monospace. */
+.gl-code-editor .CodeMirror * {
+    font-family: inherit;
 }
 
-.gl-tok-line span {
-    tab-size: var(--gl-tab-size);
-    -moz-tab-size: var(--gl-tab-size);
+.gl-code-editor .CodeMirror-lines {
+    padding: 10px 0;
 }
 
-.gl-tok-line.highlighted {
+.gl-code-editor .CodeMirror pre.CodeMirror-line,
+.gl-code-editor .CodeMirror pre.CodeMirror-line-like {
+    padding: 0 14px;
+}
+
+.gl-code-editor .CodeMirror-cursor {
+    border-left-color: #f8fafc;
+}
+
+.gl-code-editor .CodeMirror-selected,
+.gl-code-editor .CodeMirror-focused .CodeMirror-selected {
+    background: rgba(148, 163, 184, 0.28);
+}
+
+.gl-code-editor .gl-active-line {
     background: var(--gl-highlight-line-bg);
 }
 
-/* Syntax token colors */
-.gl-tok-comment { color: var(--gl-tok-comment); }
-.gl-tok-directive-struct { color: var(--gl-tok-directive-struct); }
-.gl-tok-directive-element { color: var(--gl-tok-directive-element); }
-.gl-tok-brace-arg { color: var(--gl-tok-brace-arg); }
-.gl-tok-param-key { color: var(--gl-tok-param-key); }
-.gl-tok-param-punct { color: var(--gl-tok-param-punct); }
-.gl-tok-param-num { color: var(--gl-tok-param-num); }
-.gl-tok-param-color { color: var(--gl-tok-param-color); }
-.gl-tok-param-str { color: var(--gl-tok-param-str); }
-.gl-tok-param-val { color: var(--gl-tok-param-val); }
-.gl-tok-body-indent { color: var(--gl-tok-body-text); }
-.gl-tok-body-text { color: var(--gl-tok-body-text); }
-.gl-tok-body-math { color: var(--gl-tok-body-math); }
-.gl-tok-plain { color: var(--gl-tok-plain); }
+/* Syntax token colors (CodeMirror prefixes mode styles with cm-) */
+.gl-code-editor .cm-gl-comment { color: var(--gl-tok-comment); }
+.gl-code-editor .cm-gl-directive-struct { color: var(--gl-tok-directive-struct); }
+.gl-code-editor .cm-gl-directive-element { color: var(--gl-tok-directive-element); }
+.gl-code-editor .cm-gl-brace-arg { color: var(--gl-tok-brace-arg); }
+.gl-code-editor .cm-gl-param-key { color: var(--gl-tok-param-key); }
+.gl-code-editor .cm-gl-param-punct { color: var(--gl-tok-param-punct); }
+.gl-code-editor .cm-gl-param-num { color: var(--gl-tok-param-num); }
+.gl-code-editor .cm-gl-param-color { color: var(--gl-tok-param-color); }
+.gl-code-editor .cm-gl-param-str { color: var(--gl-tok-param-str); }
+.gl-code-editor .cm-gl-param-val { color: var(--gl-tok-param-val); }
+.gl-code-editor .cm-gl-body-text { color: var(--gl-tok-body-text); }
+.gl-code-editor .cm-gl-body-math { color: var(--gl-tok-body-math); }
+.gl-code-editor .cm-gl-plain { color: var(--gl-tok-plain); }
+.gl-code-editor .cm-gl-body-indent { color: var(--gl-tok-body-text); }
 
 /* Settings popover */
 .gl-settings-popover {

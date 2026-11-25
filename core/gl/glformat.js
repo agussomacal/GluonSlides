@@ -153,7 +153,7 @@ export function serializeGl(project) {
     normalizeUniqueIds(working);
 
     const lines = [];
-    lines.push('# Gluon slide project — saved by Slide Studio');
+    lines.push('# Gluon slide project — saved by GluonSlides');
     lines.push('# Indented lines after an .element.* directive form its body.');
 
     const headerParams = {
