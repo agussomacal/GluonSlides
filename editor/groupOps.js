@@ -20,6 +20,7 @@ import {
 } from '../core/state.js';
 import { groupScale } from '../elements/group/group.js';
 import { openSession } from '../core/macros.js';
+import { withDefaults } from '../core/defaults.js';
 
 const round = (v) => Math.round(v * 100) / 100;
 
@@ -74,8 +75,14 @@ function bakeChild(child, group) {
         width: round(child.width * sx),
         height: round(child.height * sy),
     };
-    if (typeof child.fontSize === 'number') out.fontSize = round(child.fontSize * k);
-    if (typeof child.borderWidth === 'number') out.borderWidth = round(child.borderWidth * k);
+    // Scaled sizes become explicit (an inherited default cannot carry a
+    // scale); unscaled children keep inheriting.
+    if (Math.abs(k - 1) > 1e-9) {
+        const view = withDefaults(child);
+        ['fontSize', 'borderWidth', 'strokeWidth'].forEach(key => {
+            if (typeof view[key] === 'number') out[key] = round(view[key] * k);
+        });
+    }
     return out;
 }
 

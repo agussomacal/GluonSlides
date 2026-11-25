@@ -38,6 +38,7 @@ import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
 import { makeMacroFromSelection, detachSelected, resetSelectedInstances } from './macroOps.js';
 import { resetWorkingElement } from '../core/macros.js';
+import { withDefaults, withoutStyle, isStyleKey, inheritsKey } from '../core/defaults.js';
 import { createGroupFrame, groupScale } from '../elements/group/group.js';
 import { enterGroup, exitGroup, groupSelection, ungroupSelection, isEditingGroup } from './groupOps.js';
 
@@ -79,7 +80,9 @@ function insertNewElement(def, variantId, props) {
         : (variant && variant.preset) || {};
 
     const el = {
-        ...def.defaults({}),
+        // Style values are inherited from the project defaults unless the
+        // variant sets them (e.g. a dot's fill).
+        ...withoutStyle(def.type, def.defaults({})),
         ...preset,
         ...props,
         id: allocateElementId(), // stable, monotonic, never reused
@@ -143,6 +146,51 @@ function updateProp(propName, value) {
     updateThumbnailLive();
 }
 
+/**
+ * Marks style fields that come from the project defaults ("default")
+ * and gives overridden ones a ↺ to go back to the default.
+ */
+/**
+ * Puts a label's text in a span so it can shrink with an ellipsis,
+ * keeping the label (and a tag / ↺ after it) on one line.
+ */
+function prepareLabel(label) {
+    if (label.querySelector('.prop-label-text')) return;
+    const span = document.createElement('span');
+    span.className = 'prop-label-text';
+    [...label.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).forEach(n => span.appendChild(n));
+    span.textContent = span.textContent.trim();
+    span.title = span.textContent;
+    label.prepend(span);
+}
+
+function markInheritedFields(panel, el) {
+    panel.querySelectorAll('[data-prop]').forEach(control => {
+        const key = control.dataset.prop;
+        if (!isStyleKey(el.type, key)) return;
+        const label = control.closest('.prop-group')?.querySelector('label');
+        if (!label || label.querySelector('.prop-default-tag, .prop-reset')) return;
+        prepareLabel(label);
+        if (inheritsKey(el, key)) {
+            label.insertAdjacentHTML('beforeend',
+                ' <span class="prop-default-tag" title="From the project defaults (⚙ Project settings)">default</span>');
+        } else {
+            label.insertAdjacentHTML('beforeend',
+                ` <button type="button" class="prop-reset" data-reset-prop="${key}" title="Use the project default">↺</button>`);
+        }
+    });
+}
+
+/** ↺ next to a field: the selected elements inherit that property again. */
+function resetToDefault(key) {
+    const elements = activeElements();
+    getSelectedElementIndices().forEach(i => {
+        if (elements[i]) delete elements[i][key];
+    });
+    markDirty();
+    renderEditor();
+}
+
 /** "Make macro" field shown under any selection. */
 function makeMacroSection() {
     return `
@@ -203,6 +251,16 @@ function onPropertyControl(e) {
         const group = activeGroup();
         const el = activeElements()[state.selectedElementIndex];
         if (info && group && el) info.innerHTML = macroChildInfo(group, el);
+        // The field now overrides the project default: show its ↺.
+        if (el && isStyleKey(el.type, control.dataset.prop)) {
+            const label = control.closest('.prop-group')?.querySelector('label');
+            if (label && !label.querySelector('.prop-reset')) {
+                prepareLabel(label);
+                label.querySelector('.prop-default-tag')?.remove();
+                label.insertAdjacentHTML('beforeend',
+                    ` <button type="button" class="prop-reset" data-reset-prop="${control.dataset.prop}" title="Use the project default">↺</button>`);
+            }
+        }
     }
 }
 propertiesPanel.addEventListener('input', onPropertyControl);
@@ -215,6 +273,11 @@ propertiesPanel.addEventListener('keydown', (e) => {
 propertiesPanel.addEventListener('change', onPropertyControl);
 
 propertiesPanel.addEventListener('click', (e) => {
+    const reset = e.target.closest('[data-reset-prop]');
+    if (reset) {
+        resetToDefault(reset.dataset.resetProp);
+        return;
+    }
     const btn = e.target.closest('[data-element-action]');
     if (!btn) return;
     const elIndex = state.selectedElementIndex;
@@ -416,8 +479,9 @@ function appendHandles(container, domEl, el, def, elIndex) {
     };
 
     const repaint = () => {
-        applyCommonBoxStyles(domEl, el);
-        def.renderDom(domEl, el, { context: 'canvas', elIndex });
+        const view = withDefaults(el);
+        applyCommonBoxStyles(domEl, view);
+        def.renderDom(domEl, view, { context: 'canvas', elIndex });
         paint();
     };
 
@@ -468,10 +532,12 @@ function renderInteractiveElements(container, elements) {
             domEl.classList.add('selected');
         }
 
-        applyCommonBoxStyles(domEl, el);
+        // Drawn with project defaults filled in; geometry edits use `el`.
+        const view = withDefaults(el);
+        applyCommonBoxStyles(domEl, view);
 
         if (def) {
-            def.renderDom(domEl, el, { context: 'canvas', elIndex });
+            def.renderDom(domEl, view, { context: 'canvas', elIndex });
         }
 
         // Elements with handles (paths) are reshaped with those, not box edges.
@@ -655,7 +721,7 @@ function renderPropertiesPanel() {
     }
 
     if (selectedIndices.length > 1) {
-        const firstEl = elements[selectedIndices[0]];
+        const firstEl = withDefaults(elements[selectedIndices[0]]);
         panelBody.innerHTML = groupBanner + `
             <div class="prop-group">
                 <label>Selection</label>
@@ -672,11 +738,11 @@ function renderPropertiesPanel() {
             </div>
             <div class="prop-row">
                 <div class="prop-group">
-                    <label>Border Color</label>
+                    <label>Border</label>
                     <input type="color" class="prop-control prop-color" value="${firstEl.borderCol === 'transparent' ? '#000000' : firstEl.borderCol}" data-prop="borderCol">
                 </div>
                 <div class="prop-group">
-                    <label>Border Width</label>
+                    <label>Thickness</label>
                     <input type="number" class="prop-control" min="0" max="20" value="${firstEl.borderWidth}" data-prop="borderWidth">
                 </div>
             </div>
@@ -685,8 +751,9 @@ function renderPropertiesPanel() {
     }
 
     const activeIdx = selectedIndices[0];
-    const el = elements[activeIdx];
-    const sessionInfo = macroChildSection(group, el);
+    const rawEl = elements[activeIdx];
+    const el = withDefaults(rawEl); // shows inherited values
+    const sessionInfo = macroChildSection(group, rawEl);
     const def = ElementRegistry.get(el.type);
     const typeLabel = def && typeof def.typeLabel === 'function'
         ? def.typeLabel(el)
@@ -731,11 +798,11 @@ function renderPropertiesPanel() {
         </div>
         <div class="prop-row">
             <div class="prop-group">
-                <label>Border Color</label>
+                <label>Border</label>
                 <input type="color" class="prop-control prop-color" value="${el.borderCol === 'transparent' ? '#000000' : el.borderCol}" data-prop="borderCol">
             </div>
             <div class="prop-group">
-                <label>Border Width (px)</label>
+                <label>Thickness</label>
                 <input type="number" class="prop-control" min="0" max="20" value="${el.borderWidth}" data-prop="borderWidth">
             </div>
         </div>
@@ -751,6 +818,7 @@ function renderPropertiesPanel() {
     `;
 
     panelBody.innerHTML = html + makeMacroSection();
+    markInheritedFields(panelBody, rawEl);
 }
 
 // ---------- Groups ----------

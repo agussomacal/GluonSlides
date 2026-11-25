@@ -13,6 +13,7 @@
 
 import { state } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
+import { STYLE_KEYS } from '../../core/defaults.js';
 
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
 
@@ -72,6 +73,7 @@ function lineContext(cm, lineNo, text) {
     if (text.startsWith('.project')) return { params: PROJECT_PARAMS, keys };
     if (text.startsWith('.slide')) return { params: ['id'], keys };
     if (text.startsWith('.define')) return { params: ['width', 'height'], keys };
+    if ((m = text.match(/^\.defaults\.([\w-]+)/))) return { params: STYLE_KEYS[m[1]] || [], keys };
     if ((m = text.match(/^::([\w-]+)/))) {
         const macro = state.macros && state.macros[enclosingMacro(cm, lineNo)];
         const target = macro && findNamed(macro.children, m[1]);
@@ -95,6 +97,7 @@ function directiveCandidates() {
         { text: '.define {', displayText: '.define {name} width: height:' },
         { text: '.import {', displayText: '.import {macros.gl}' },
         { text: '.project {', displayText: '.project {Name} ...' },
+        ...Object.keys(STYLE_KEYS).map(t => ({ text: `.defaults.${t} `, displayText: `.defaults.${t}  (project defaults)` })),
     ];
     ElementRegistry.types()
         .filter(def => def.type !== 'macro')

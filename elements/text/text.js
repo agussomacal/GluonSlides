@@ -19,8 +19,7 @@ import {
  * a quiet line for open licences, a warning otherwise, and a clear
  * notice when the licence forbids embedding in exports.
  */
-async function showFontLicense(family) {
-    const box = document.querySelector('.font-license');
+export async function showFontLicense(family, box = document.querySelector('#properties-body .font-license')) {
     if (!box || box.dataset.family !== family) return;
     const lic = await fontLicense(family);
     if (!box.isConnected || box.dataset.family !== family) return;
@@ -51,7 +50,7 @@ async function showFontLicense(family) {
 }
 
 /** <optgroup>s for the font dropdown; each name previewed in its font. */
-function fontOptions(current) {
+export function fontOptions(current) {
     const groups = fontGroups();
     const known = groups.some(g => g.fonts.some(f => f.family === current));
     if (!known) groups.unshift({ label: 'Current', fonts: [{ family: current, label: current }] });
@@ -222,7 +221,7 @@ const TextElement = {
             </div>
             <div class="prop-row">
                 <div class="prop-group">
-                    <label>Font Size (px)</label>
+                    <label>Font Size</label>
                     <input type="number" class="prop-control" value="${el.fontSize}" data-prop="fontSize">
                 </div>
                 <div class="prop-group">
@@ -232,7 +231,7 @@ const TextElement = {
             </div>
             <div class="prop-row">
                 <div class="prop-group">
-                    <label>H-Alignment</label>
+                    <label>Horizontal</label>
                     <select class="prop-control" data-prop="textAlign">
                         <option value="left" ${(el.textAlign || 'center') === 'left' ? 'selected' : ''}>Left</option>
                         <option value="center" ${(el.textAlign || 'center') === 'center' ? 'selected' : ''}>Center</option>
@@ -240,7 +239,7 @@ const TextElement = {
                     </select>
                 </div>
                 <div class="prop-group">
-                    <label>V-Alignment</label>
+                    <label>Vertical</label>
                     <select class="prop-control" data-prop="verticalAlign">
                         <option value="top" ${(el.verticalAlign || 'center') === 'top' ? 'selected' : ''}>Top</option>
                         <option value="center" ${(el.verticalAlign || 'center') === 'center' ? 'selected' : ''}>Center</option>

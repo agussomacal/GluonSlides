@@ -15,6 +15,7 @@ import {
 import { initKeyboardShortcuts } from './core/clipboard.js';
 import { initStyledSelects } from './ui/selectMenu.js';
 import { loadSystemFonts } from './core/fonts.js';
+import { openProjectSettings } from './ui/projectSettings.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
@@ -45,6 +46,7 @@ const clickActions = {
     'create-project': confirmCreateProject,
     'close-modal': (id) => closeModal(id),
     'open-macros': openMacrosModal,
+    'open-project-settings': openProjectSettings,
     'save-macros': saveMacros,
     'open-bib': openBibModal,
     'save-bib': saveBib,

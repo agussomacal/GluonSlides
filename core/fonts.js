@@ -203,6 +203,9 @@ function usedFamilies() {
     });
     state.slides.forEach(s => visit(s.elements));
     Object.values(state.macros || {}).forEach(m => visit(m.children));
+    // Text that inherits the project's default font uses it too.
+    const projectFont = state.defaults && state.defaults.text && state.defaults.text.fontFamily;
+    if (projectFont) used.add(String(projectFont));
     return [...used].filter(f => !GENERIC.has(f));
 }
 

@@ -10,7 +10,7 @@ export const GL_FORMAT_VERSION = 2;
 
 const BODY_INDENT = '\t';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
-const DIRECTIVE_RE = /^\.(project|slide|element|import|define|macro)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const DIRECTIVE_RE = /^\.(project|slide|element|import|define|macro|defaults)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -198,6 +198,12 @@ export function serializeGl(project) {
     (project.imports || []).forEach(file => lines.push(`.import {${encodeBraceArg(file)}}`));
     lines.push(`.project${headerArgs} ${header}`);
 
+    // Project-wide style defaults, e.g. .defaults.text fontFamily:"EB Garamond"
+    Object.keys(project.defaults || {}).sort().forEach(type => {
+        const params = formatGlParams(project.defaults[type] || {});
+        if (params) lines.push(`.defaults.${type} ${params}`);
+    });
+
     // Macros defined in the project file itself (others live in imports).
     (project.macros || []).forEach(def => {
         lines.push('');
@@ -325,6 +331,18 @@ export function parseGl(text) {
             currentSlide = null;
             return null;
         }
+        if (kind === 'defaults') {
+            if (!subtype) throw new Error(`Line ${lineNo}: .defaults needs an element type, e.g. .defaults.text`);
+            const spec = getElementGlSpec(subtype);
+            const typed = {};
+            for (const [k, v] of Object.entries(params)) {
+                const n = Number(v);
+                typed[k] = spec.numericProps.has(k) && Number.isFinite(n) ? n : v;
+            }
+            project.defaults = { ...(project.defaults || {}), [subtype]: { ...((project.defaults || {})[subtype] || {}), ...typed } };
+            currentSlide = null;
+            return null;
+        }
         if (kind === 'slide') {
             const parsedId = params.id !== undefined && params.id !== ''
                 ? (Number.isFinite(Number(params.id)) ? Number(params.id) : params.id)
@@ -346,6 +364,7 @@ export function parseGl(text) {
     });
     project.imports = library.imports;
     project.macros = finishDefines(library.defines);
+    project.defaults = project.defaults || {};
 
     if (project.slides.length === 0) {
         const preview = rawLines

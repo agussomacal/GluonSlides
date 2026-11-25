@@ -43,6 +43,19 @@ The rules are simple:
 
 Because the format is deterministic (fixed property order, stable IDs, no timestamps), the file plays nicely with `git diff`, and every position change in the GUI translates into a tiny, reviewable edit. You can also hand-edit the file and reopen it — the parser reports friendly, actionable errors.
 
+### Project defaults
+
+**⚙ Project settings** (sidebar) sets the project's defaults for text (font, size, color, alignment), shapes (fill, border) and lines (stroke, width, style). They work like CSS: an element's own value wins, otherwise the project default applies, otherwise the built-in one. New elements store no style values, so they follow the defaults, and changing a default updates every element that inherits it. In the properties panel inherited fields are tagged *default*; overridden ones get a ↺ to return to the default. In `.gl`:
+
+```
+.project {Deck} ...
+.defaults.text fontFamily:"EB Garamond" fontSize:32 fontColor:#0f172a
+.defaults.shape bg:#e0f2fe borderCol:#0369a1
+.defaults.path stroke:#0f172a strokeWidth:4
+```
+
+Older projects store every value in each element; *Use project defaults for existing elements* (in the dialog) makes elements whose values are just the standard ones follow the defaults, keeping values you changed on purpose. Elements inside macros inherit the defaults too.
+
 ### Fonts
 
 The font list of a text box (searchable, each name shown in its own font) has:
@@ -52,7 +65,7 @@ The font list of a text box (searchable, each name shown in its own font) has:
 - **Project fonts:** `.ttf`, `.otf`, `.woff` or `.woff2` files in the project's `fonts/` folder (**＋ Add font files…** copies them there), so they travel with the project.
 - **This computer:** fonts installed on your system.
 
-Exports embed every font the presentation uses (not the defaults), so the HTML and PDF look the same on any computer. Check the license of commercial fonts before embedding them. In `.gl`, names with spaces are quoted: `fontFamily:"EB Garamond"`.
+Exports embed every font the presentation uses (not the generic defaults), so the HTML and PDF look the same on any computer. The licence of a chosen font is shown under the font list (with a warning when it is not an open licence); fonts whose licence forbids embedding are never embedded, and exports tell you which fonts were left out or are not openly licensed. In `.gl`, names with spaces are quoted: `fontFamily:"EB Garamond"`.
 
 ### Shapes
 

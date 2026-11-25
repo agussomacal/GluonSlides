@@ -759,6 +759,60 @@ body {
     pointer-events: auto;
 }
 
+.prop-default-tag {
+    margin-left: auto;
+    flex-shrink: 0;
+    line-height: 14px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: none;
+    color: #a5b4fc;
+    background: rgba(99, 102, 241, 0.18);
+}
+
+.prop-reset {
+    margin-left: auto;
+    flex-shrink: 0;
+    line-height: 14px;
+    border: none;
+    background: none;
+    padding: 0 3px;
+    color: #93c5fd;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.prop-reset:hover {
+    color: #ffffff;
+}
+
+/* Project settings dialog (ui/projectSettings.js) */
+.modal.project-settings {
+    width: 520px;
+    max-height: 86vh;
+    overflow-y: auto;
+}
+
+.settings-section-title {
+    margin: 18px 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #93c5fd;
+}
+
+.project-settings .prop-group {
+    margin-bottom: 10px;
+}
+
+.settings-result {
+    margin-top: 8px;
+}
+
 .prop-check {
     display: flex;
     align-items: center;
@@ -1046,6 +1100,18 @@ select.toolbar-select:focus {
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    /* One line, fixed height: a "default" tag or ↺ never moves the fields. */
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 16px;
+    white-space: nowrap;
+}
+
+.prop-label-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .prop-row {
@@ -1055,6 +1121,7 @@ select.toolbar-select:focus {
 
 .prop-row .prop-group {
     flex: 1;
+    min-width: 0; /* columns share the width; long labels shorten with … */
 }
 
 .prop-control {

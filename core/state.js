@@ -47,6 +47,8 @@ export const state = {
     // children, source } and the library files the project imports.
     macros: {},
     imports: [],
+    // Project-wide style defaults per element type (core/defaults.js).
+    defaults: {},
     _loadedLibraries: {},   // file -> text as last loaded/saved
 
     rawTexMacros: DEFAULT_TEX_MACROS,
@@ -436,6 +438,7 @@ export function currentSnapshot() {
         imports: state.imports,
         macros: state.macros,
         macrosComplete: true,
+        defaults: state.defaults,
         slides: state.slides,
     });
 }
@@ -447,6 +450,7 @@ export function serializeProject() {
         citestyle: state.citestyle,
         imports: state.imports,
         macros: Object.values(state.macros).filter(m => m.source === 'project'),
+        defaults: state.defaults,
         slideWidth: state.slideWidth,
         slideHeight: state.slideHeight,
         gridSize: state.gridSize,
@@ -488,6 +492,7 @@ export function resetProjectState({ name = 'Untitled Project', path = null, fold
     state.nextId = 1;
     state.macros = {};
     state.imports = [];
+    state.defaults = {};
     state._loadedLibraries = {};
     state._libraryImports = {};
     applyProjectData({
@@ -526,6 +531,7 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     const name = data.name || data.projectName;
     if (name) state.projectName = name;
     applyMacroData(data);
+    if (data.defaults !== undefined) state.defaults = structuredClone(data.defaults || {});
     ensureIds();
 
     const lastIdx = Math.max(0, state.slides.length - 1);

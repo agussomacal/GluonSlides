@@ -8,6 +8,7 @@ import { state, markDirty } from './state.js';
 import { resolveCitations } from './citations.js';
 import { ElementRegistry } from './registry.js';
 import { fontStack } from './fonts.js';
+import { withDefaults } from './defaults.js';
 
 // ---------- Markdown + KaTeX ----------
 
@@ -140,7 +141,8 @@ export function applyCommonBoxStyles(domEl, el) {
  * contents of groups that are not being edited, and for elements
  * outside the group being edited.
  */
-export function buildStaticElement(el, className = 'thumb-element') {
+export function buildStaticElement(raw, className = 'thumb-element') {
+    const el = withDefaults(raw); // project style defaults fill unset properties
     const def = ElementRegistry.get(el.type);
     const domEl = document.createElement('div');
     domEl.className = `${className} ${def ? def.className : 'element-shape'}`;
@@ -151,7 +153,8 @@ export function buildStaticElement(el, className = 'thumb-element') {
 }
 
 /** Positioned HTML for one element in HTML/PDF exports. */
-export function exportElementMarkup(el) {
+export function exportElementMarkup(raw) {
+    const el = withDefaults(raw);
     const def = ElementRegistry.get(el.type);
     const geo = `position: absolute; left:${el.x}px; top:${el.y}px;`
         + `width:${el.width}px; height:${el.height}px;`

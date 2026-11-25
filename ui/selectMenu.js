@@ -15,6 +15,7 @@ let open = null; // { select, menu }
 
 function close() {
     if (!open) return;
+    if (open.observer) open.observer.disconnect();
     open.menu.remove();
     open.select.classList.remove('select-open');
     open = null;
@@ -55,8 +56,10 @@ function makeItem(select, opt) {
     item.setAttribute('role', 'option');
     item.textContent = opt.textContent.trim();
     item.dataset.value = opt.value;
-    // e.g. a font name drawn in its own font
-    if (opt.dataset.preview) item.style.fontFamily = opt.dataset.preview;
+    // e.g. a font name drawn in its own font. Applied only when the item
+    // scrolls into view (see openFor): drawing hundreds of names in their
+    // own fonts at once makes the list slow to open.
+    if (opt.dataset.preview) item.dataset.previewFont = opt.dataset.preview;
     if (opt.disabled) item.disabled = true;
     if (opt.value === select.value) item.classList.add('selected', 'focused');
     item.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus
@@ -125,8 +128,22 @@ function openFor(select) {
     } else {
         menu.style.top = `${r.bottom + 4}px`;
     }
+    // Font previews for visible items only.
+    let observer = null;
+    const lazy = list.querySelectorAll('[data-preview-font]');
+    if (lazy.length) {
+        observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                entry.target.style.fontFamily = entry.target.dataset.previewFont;
+                observer.unobserve(entry.target);
+            });
+        }, { root: list, rootMargin: '120px 0px' });
+        lazy.forEach(item => observer.observe(item));
+    }
+
     select.classList.add('select-open');
-    open = { select, menu, search };
+    open = { select, menu, search, observer };
     const sel = menu.querySelector('.selected');
     if (sel) sel.scrollIntoView({ block: 'nearest' });
     if (search) search.focus();
