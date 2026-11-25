@@ -85,6 +85,28 @@ function filterItems(menu, query) {
     setActive(menu, 0);
 }
 
+/** Places the list below its select, or above it when there is no room. */
+function position(menu, select) {
+    const r = select.getBoundingClientRect();
+    menu.style.left = `${Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)}px`;
+    const below = window.innerHeight - r.bottom - 8;
+    if (menu.offsetHeight > below && r.top > below) {
+        menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 4)}px`;
+    } else {
+        menu.style.top = `${r.bottom + 4}px`;
+    }
+}
+
+/** True while the select is visible inside its scrolling panel/window. */
+function selectVisible(select) {
+    const r = select.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) return false;
+    const scroller = select.closest('.properties-sidebar, .settings-content, .modal');
+    if (!scroller) return true;
+    const b = scroller.getBoundingClientRect();
+    return r.bottom > b.top && r.top < b.bottom;
+}
+
 function openFor(select) {
     close();
     const menu = document.createElement('div');
@@ -118,16 +140,8 @@ function openFor(select) {
     menu.appendChild(list);
     document.body.appendChild(menu);
 
-    // Below the select, or above it when there is no room.
-    const r = select.getBoundingClientRect();
-    menu.style.minWidth = `${r.width}px`;
-    menu.style.left = `${Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)}px`;
-    const below = window.innerHeight - r.bottom - 8;
-    if (menu.offsetHeight > below && r.top > below) {
-        menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 4)}px`;
-    } else {
-        menu.style.top = `${r.bottom + 4}px`;
-    }
+    menu.style.minWidth = `${select.getBoundingClientRect().width}px`;
+    position(menu, select);
     // Font previews for visible items only.
     let observer = null;
     const lazy = list.querySelectorAll('[data-preview-font]');
@@ -185,9 +199,12 @@ export function initStyledSelects() {
         }
     }, true);
 
-    // The list would drift away from its select.
+    // When the page/panel scrolls, the list follows its select; it only
+    // closes once the select is scrolled out of view.
     window.addEventListener('resize', close);
     document.addEventListener('scroll', (e) => {
-        if (open && !open.menu.contains(e.target)) close();
+        if (!open || open.menu.contains(e.target)) return;
+        if (selectVisible(open.select)) position(open.menu, open.select);
+        else close();
     }, true);
 }

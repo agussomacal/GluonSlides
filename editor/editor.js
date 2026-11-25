@@ -38,7 +38,11 @@ import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
 import { makeMacroFromSelection, detachSelected, resetSelectedInstances } from './macroOps.js';
 import { resetWorkingElement } from '../core/macros.js';
-import { withDefaults, withoutStyle, isStyleKey, inheritsKey } from '../core/defaults.js';
+import { colorField } from '../ui/colorPicker.js';
+import {
+    withDefaults, forDrawing, withoutStyle, isStyleKey, inheritsKey, inheritedFrom,
+    STYLE_KEYS, styleNames, getStyle, createStyle,
+} from '../core/defaults.js';
 import { createGroupFrame, groupScale } from '../elements/group/group.js';
 import { enterGroup, exitGroup, groupSelection, ungroupSelection, isEditingGroup } from './groupOps.js';
 
@@ -172,8 +176,13 @@ function markInheritedFields(panel, el) {
         if (!label || label.querySelector('.prop-default-tag, .prop-reset')) return;
         prepareLabel(label);
         if (inheritsKey(el, key)) {
+            // Where the value comes from: its style's name, or "default".
+            const from = inheritedFrom(el, key);
+            const title = from === 'default'
+                ? 'From the project defaults (⚙ Project settings)'
+                : `From the style "${from}"`;
             label.insertAdjacentHTML('beforeend',
-                ' <span class="prop-default-tag" title="From the project defaults (⚙ Project settings)">default</span>');
+                ` <span class="prop-default-tag${from === 'default' ? '' : ' from-style'}" title="${escapeHtml(title)}">${escapeHtml(from)}</span>`);
         } else {
             label.insertAdjacentHTML('beforeend',
                 ` <button type="button" class="prop-reset" data-reset-prop="${key}" title="Use the project default">↺</button>`);
@@ -189,6 +198,65 @@ function resetToDefault(key) {
     });
     markDirty();
     renderEditor();
+}
+
+/** Style picker for elements that have style properties. */
+function styleSection(el) {
+    if (!STYLE_KEYS[el.type]) return '';
+    const names = styleNames(el.type);
+    const current = el.style || '';
+    const options = [`<option value="" ${current ? '' : 'selected'}>None (project defaults)</option>`,
+        ...names.map(n => `<option value="${escapeHtml(n)}" ${n === current ? 'selected' : ''}>${escapeHtml(n)}</option>`)];
+    if (current && !names.includes(current)) options.push(`<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (missing)</option>`);
+    return `
+        <div class="prop-group">
+            <label>Style</label>
+            <div class="prop-inline">
+                <select class="prop-control" data-prop="style">${options.join('')}</select>
+                <button class="btn btn-secondary" data-action="style-from-element"
+                        title="New style from this element's look">＋</button>
+                <button class="btn btn-secondary" data-action="manage-styles" title="Edit styles (Project settings)">✎</button>
+            </div>
+        </div>`;
+}
+
+/**
+ * "＋" next to Style: a new style with the selected element's own style
+ * values; the element then uses it (and stops storing those values).
+ */
+export function styleFromSelected() {
+    const el = activeElements()[state.selectedElementIndex];
+    if (!el || !STYLE_KEYS[el.type]) return false;
+    const base = el.type === 'text' ? 'text-style' : `${el.type}-style`;
+    let i = styleNames(el.type).length + 1;
+    while (styleNames(el.type).includes(`${base}${i}`)) i++;
+    const name = `${base}${i}`;
+    const values = {};
+    STYLE_KEYS[el.type].forEach(k => {
+        if (el[k] !== undefined && el[k] !== '') {
+            values[k] = el[k];
+            delete el[k];
+        }
+    });
+    // Values the element inherited from a previous style stay with it.
+    const previous = el.style ? getStyle(el.type, el.style) : null;
+    if (previous) Object.entries(previous).forEach(([k, v]) => { if (values[k] === undefined) values[k] = v; });
+    createStyle(el.type, name, values);
+    el.style = name;
+    markDirty();
+    renderEditor();
+    document.dispatchEvent(new CustomEvent('open-project-settings', { detail: { tab: 'styles', styleType: el.type, style: name } }));
+    return true;
+}
+
+/** "✎" next to Style: the Styles tab for this element's type/style. */
+export function manageStyles() {
+    const el = activeElements()[state.selectedElementIndex];
+    if (!el) return false;
+    document.dispatchEvent(new CustomEvent('open-project-settings', {
+        detail: { tab: 'styles', styleType: el.type, style: el.style || null },
+    }));
+    return true;
 }
 
 /** "Make macro" field shown under any selection. */
@@ -236,10 +304,10 @@ const propertiesPanel = document.getElementById('properties-body');
 function onPropertyControl(e) {
     const control = e.target;
     if (!control.dataset || !control.dataset.prop) return;
-    // Dropdowns and checkboxes apply on change (then the panel is redrawn,
-    // since they can enable/disable other fields); text/number/color
-    // inputs apply live while typing.
-    const isChoice = control.tagName === 'SELECT' || control.type === 'checkbox';
+    // Dropdowns, checkboxes and color fields apply on change (then the
+    // panel is redrawn, since they can enable/disable other fields);
+    // text/number inputs apply live while typing.
+    const isChoice = control.tagName === 'SELECT' || control.type === 'checkbox' || control.classList.contains('color-field');
     if (e.type !== (isChoice ? 'change' : 'input')) return;
     const value = control.type === 'checkbox' ? (control.checked ? 'yes' : 'no') : control.value;
     updateProp(control.dataset.prop, value);
@@ -437,7 +505,7 @@ function renderLevel(container, elements, path, depth) {
         }
         const shell = document.createElement('div');
         shell.className = 'canvas-element element-group group-entered';
-        applyCommonBoxStyles(shell, el);
+        applyCommonBoxStyles(shell, forDrawing(el));
         const frame = createGroupFrame(el);
         shell.appendChild(frame);
         container.appendChild(shell);
@@ -479,7 +547,7 @@ function appendHandles(container, domEl, el, def, elIndex) {
     };
 
     const repaint = () => {
-        const view = withDefaults(el);
+        const view = forDrawing(el);
         applyCommonBoxStyles(domEl, view);
         def.renderDom(domEl, view, { context: 'canvas', elIndex });
         paint();
@@ -532,8 +600,9 @@ function renderInteractiveElements(container, elements) {
             domEl.classList.add('selected');
         }
 
-        // Drawn with project defaults filled in; geometry edits use `el`.
-        const view = withDefaults(el);
+        // Drawn with defaults/style filled in and colors resolved;
+        // geometry edits use `el`.
+        const view = forDrawing(el);
         applyCommonBoxStyles(domEl, view);
 
         if (def) {
@@ -734,12 +803,12 @@ function renderPropertiesPanel() {
             <div class="prop-divider"></div>
             <div class="prop-group">
                 <label>Background Color (All Selected)</label>
-                <input type="color" class="prop-control prop-color" value="${firstEl.bg === 'transparent' ? '#ffffff' : firstEl.bg}" data-prop="bg">
+                ${colorField({ 'data-prop': 'bg' }, firstEl.bg)}
             </div>
             <div class="prop-row">
                 <div class="prop-group">
                     <label>Border</label>
-                    <input type="color" class="prop-control prop-color" value="${firstEl.borderCol === 'transparent' ? '#000000' : firstEl.borderCol}" data-prop="borderCol">
+                    ${colorField({ 'data-prop': 'borderCol' }, firstEl.borderCol)}
                 </div>
                 <div class="prop-group">
                     <label>Thickness</label>
@@ -764,6 +833,7 @@ function renderPropertiesPanel() {
             <label>Object Type</label>
             <input type="text" class="prop-control prop-readonly" value="${escapeHtml(typeLabel)}" disabled>
         </div>
+        ${styleSection(rawEl)}
         <div class="prop-row">
             <div class="prop-group">
                 <label>X Position</label>
@@ -794,12 +864,12 @@ function renderPropertiesPanel() {
         <div class="prop-divider"></div>
         <div class="prop-group">
             <label>Background Color</label>
-            <input type="color" class="prop-control prop-color" value="${el.bg === 'transparent' ? '#ffffff' : el.bg}" data-prop="bg">
+            ${colorField({ 'data-prop': 'bg' }, el.bg)}
         </div>
         <div class="prop-row">
             <div class="prop-group">
                 <label>Border</label>
-                <input type="color" class="prop-control prop-color" value="${el.borderCol === 'transparent' ? '#000000' : el.borderCol}" data-prop="borderCol">
+                ${colorField({ 'data-prop': 'borderCol' }, el.borderCol)}
             </div>
             <div class="prop-group">
                 <label>Thickness</label>

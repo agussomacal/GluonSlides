@@ -56,6 +56,22 @@ Because the format is deterministic (fixed property order, stable IDs, no timest
 
 Older projects store every value in each element; *Use project defaults for existing elements* (in the dialog) makes elements whose values are just the standard ones follow the defaults, keeping values you changed on purpose. Elements inside macros inherit the defaults too.
 
+### Styles and theme colors
+
+**Named styles** (Project settings → *Styles*) are reusable looks such as *title* or *caption*, for text, shapes and lines. Pick one in the properties panel (**Style**); **＋** next to it turns the selected element's look into a new style. Changing a style updates every element using it. The cascade is: element's own value → its style → project default → built-in. Field tags in the panel show where an inherited value comes from (the style's name, or *default*).
+
+**Theme colors** (Project settings → *Colors*) are the project's palette. Every color field offers them first, then *None* and *＋ Custom…*. Elements refer to them by name, so changing a theme color updates all its uses; renaming one updates the references, and removing one keeps the look (its uses get the color itself). **Opacity** is a separate slider in each color field, so no extra semi-transparent colors are needed.
+
+```
+.palette primary:#1d4ed8 accent:#f59e0b dark:#0f172a light:#f1f5f9
+.style.text {title} fontFamily:Montserrat fontSize:64 fontColor:@primary
+.element.text id:3 style:title x:100 y:80 width:1200 height:120
+	Results
+.element.shape id:4 x:100 y:300 width:400 height:300 bg:@accent/40
+```
+
+`@accent` is a theme color, `/40` means 40% opacity.
+
 ### Fonts
 
 The font list of a text box (searchable, each name shown in its own font) has:

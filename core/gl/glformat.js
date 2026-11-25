@@ -10,7 +10,7 @@ export const GL_FORMAT_VERSION = 2;
 
 const BODY_INDENT = '\t';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
-const DIRECTIVE_RE = /^\.(project|slide|element|import|define|macro|defaults)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const DIRECTIVE_RE = /^\.(project|slide|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -198,10 +198,21 @@ export function serializeGl(project) {
     (project.imports || []).forEach(file => lines.push(`.import {${encodeBraceArg(file)}}`));
     lines.push(`.project${headerArgs} ${header}`);
 
+    // Theme colors, e.g. .palette primary:#1d4ed8 accent:#f59e0b
+    if (Array.isArray(project.palette) && project.palette.length) {
+        lines.push(`.palette ${formatGlParams(Object.fromEntries(project.palette.map(p => [p.name, p.color])))}`);
+    }
     // Project-wide style defaults, e.g. .defaults.text fontFamily:"EB Garamond"
     Object.keys(project.defaults || {}).sort().forEach(type => {
         const params = formatGlParams(project.defaults[type] || {});
         if (params) lines.push(`.defaults.${type} ${params}`);
+    });
+    // Named styles, e.g. .style.text {title} fontSize:64
+    Object.keys(project.styles || {}).sort().forEach(type => {
+        Object.entries(project.styles[type] || {}).forEach(([name, values]) => {
+            const params = formatGlParams(values || {});
+            lines.push(`.style.${type} {${encodeBraceArg(name)}}${params ? ' ' + params : ''}`);
+        });
     });
 
     // Macros defined in the project file itself (others live in imports).
@@ -264,10 +275,11 @@ function serializeElementDirective(el) {
     const head = [];
     if (el.id !== undefined && el.id !== null) head.push(`id:${encodeParamValue(el.id)}`);
     if (el.name) head.push(`name:${encodeParamValue(el.name)}`);
+    if (el.style) head.push(`style:${encodeParamValue(el.style)}`);
 
     if (!spec.registered) {
         const raw = Object.keys(el)
-            .filter(k => !['type', 'id', 'name'].includes(k) && el[k] !== undefined && el[k] !== null)
+            .filter(k => !['type', 'id', 'name', 'style'].includes(k) && el[k] !== undefined && el[k] !== null)
             .filter(k => !(typeof el[k] === 'string' && el[k].startsWith('data:')))
             .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`);
         return `.element.${el.type} ${[...head, ...raw].join(' ')}`.trimEnd();
@@ -331,6 +343,26 @@ export function parseGl(text) {
             currentSlide = null;
             return null;
         }
+        if (kind === 'palette') {
+            project.palette = Object.entries(params).map(([name, color]) => ({ name, color }));
+            currentSlide = null;
+            return null;
+        }
+        if (kind === 'style') {
+            if (!subtype || !braceArg.value) {
+                throw new Error(`Line ${lineNo}: .style needs a type and a name, e.g. .style.text {title} fontSize:60`);
+            }
+            const spec = getElementGlSpec(subtype);
+            const typed = {};
+            for (const [k, v] of Object.entries(params)) {
+                const n = Number(v);
+                typed[k] = spec.numericProps.has(k) && Number.isFinite(n) ? n : v;
+            }
+            project.styles = project.styles || {};
+            project.styles[subtype] = { ...(project.styles[subtype] || {}), [braceArg.value]: typed };
+            currentSlide = null;
+            return null;
+        }
         if (kind === 'defaults') {
             if (!subtype) throw new Error(`Line ${lineNo}: .defaults needs an element type, e.g. .defaults.text`);
             const spec = getElementGlSpec(subtype);
@@ -365,6 +397,8 @@ export function parseGl(text) {
     project.imports = library.imports;
     project.macros = finishDefines(library.defines);
     project.defaults = project.defaults || {};
+    project.styles = project.styles || {};
+    if (project.palette === undefined) project.palette = null; // project uses the starter palette
 
     if (project.slides.length === 0) {
         const preview = rawLines
@@ -577,6 +611,7 @@ function buildElement(type, params) {
     const rawId = params.id !== undefined && params.id !== '' ? Number(params.id) : NaN;
     const el = {type, id: Number.isFinite(rawId) ? rawId : null};
     if (params.name) el.name = params.name;
+    if (params.style) el.style = params.style;
     const spec = getElementGlSpec(type);
 
     const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => k !== 'id');

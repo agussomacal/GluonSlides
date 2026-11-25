@@ -6,6 +6,7 @@
 
 import { state, markDirty, flashSaveIndicator, pyApi } from '../../core/state.js';
 import { fontStack, fontGroups, importProjectFonts, fontLicense } from '../../core/fonts.js';
+import { colorField } from '../../ui/colorPicker.js';
 import { ElementRegistry } from '../../core/registry.js';
 import {
     renderMarkdownAndKatex,
@@ -226,7 +227,7 @@ const TextElement = {
                 </div>
                 <div class="prop-group">
                     <label>Text Color</label>
-                    <input type="color" class="prop-control prop-color" value="${el.fontColor}" style="height: 34px; padding: 2px;" data-prop="fontColor">
+                    ${colorField({ 'data-prop': 'fontColor' }, el.fontColor, { allowNone: false })}
                 </div>
             </div>
             <div class="prop-row">

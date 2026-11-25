@@ -206,6 +206,7 @@ function usedFamilies() {
     // Text that inherits the project's default font uses it too.
     const projectFont = state.defaults && state.defaults.text && state.defaults.text.fontFamily;
     if (projectFont) used.add(String(projectFont));
+    Object.values((state.styles && state.styles.text) || {}).forEach(st => { if (st.fontFamily) used.add(String(st.fontFamily)); });
     return [...used].filter(f => !GENERIC.has(f));
 }
 

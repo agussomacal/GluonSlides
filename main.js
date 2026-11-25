@@ -16,6 +16,7 @@ import { initKeyboardShortcuts } from './core/clipboard.js';
 import { initStyledSelects } from './ui/selectMenu.js';
 import { loadSystemFonts } from './core/fonts.js';
 import { openProjectSettings } from './ui/projectSettings.js';
+import { initColorPicker } from './ui/colorPicker.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
@@ -23,7 +24,7 @@ import './elements/index.js';
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
     makeMacroFromPanel, detachSelectedMacros, editSelectedDefinition, resetSelectedOverride,
-    resetSelectedInstance, gotoSelectedDefinition,
+    resetSelectedInstance, gotoSelectedDefinition, styleFromSelected, manageStyles,
 } from './editor/editor.js';
 import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
@@ -64,6 +65,8 @@ const clickActions = {
     'goto-macro-definition': gotoSelectedDefinition,
     'reset-override': resetSelectedOverride,
     'reset-instance': resetSelectedInstance,
+    'style-from-element': styleFromSelected,
+    'manage-styles': manageStyles,
 };
 
 const valueActions = {
@@ -93,6 +96,11 @@ document.addEventListener('change', runValueAction('change'));
 
 initGlInspector();
 initStyledSelects();
+initColorPicker();
+document.addEventListener('open-project-settings', (e) => {
+    const d = e.detail || {};
+    openProjectSettings(d.tab, { styleType: d.styleType, style: d.style });
+});
 bindMarkDirtyAndRender(renderEditor);
 syncProjectChrome();
 startAutosave();

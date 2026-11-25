@@ -47,8 +47,12 @@ export const state = {
     // children, source } and the library files the project imports.
     macros: {},
     imports: [],
-    // Project-wide style defaults per element type (core/defaults.js).
+    // Project-wide style defaults per element type (core/defaults.js),
+    // named styles per type, and the theme colors (core/colors.js;
+    // null = the starter palette).
     defaults: {},
+    styles: {},
+    palette: null,
     _loadedLibraries: {},   // file -> text as last loaded/saved
 
     rawTexMacros: DEFAULT_TEX_MACROS,
@@ -439,6 +443,8 @@ export function currentSnapshot() {
         macros: state.macros,
         macrosComplete: true,
         defaults: state.defaults,
+        styles: state.styles,
+        palette: state.palette,
         slides: state.slides,
     });
 }
@@ -451,6 +457,8 @@ export function serializeProject() {
         imports: state.imports,
         macros: Object.values(state.macros).filter(m => m.source === 'project'),
         defaults: state.defaults,
+        styles: state.styles,
+        palette: state.palette,
         slideWidth: state.slideWidth,
         slideHeight: state.slideHeight,
         gridSize: state.gridSize,
@@ -493,6 +501,8 @@ export function resetProjectState({ name = 'Untitled Project', path = null, fold
     state.macros = {};
     state.imports = [];
     state.defaults = {};
+    state.styles = {};
+    state.palette = null;
     state._loadedLibraries = {};
     state._libraryImports = {};
     applyProjectData({
@@ -532,6 +542,8 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     if (name) state.projectName = name;
     applyMacroData(data);
     if (data.defaults !== undefined) state.defaults = structuredClone(data.defaults || {});
+    if (data.styles !== undefined) state.styles = structuredClone(data.styles || {});
+    if (data.palette !== undefined) state.palette = data.palette ? structuredClone(data.palette) : null;
     ensureIds();
 
     const lastIdx = Math.max(0, state.slides.length - 1);

@@ -25,6 +25,7 @@
 import { state, markDirty } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml } from '../../core/render.js';
+import { colorField } from '../../ui/colorPicker.js';
 
 const MIN_BOX = 1;              // a horizontal line still gets a 1px-tall box
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
@@ -140,7 +141,8 @@ function svgMarkup(el, { interactive = false } = {}) {
     const d = pathData(pts, { smooth: el.curve === 'smooth', closed });
     const stroke = el.stroke || '#0f172a';
     const sw = Number(el.strokeWidth) || 1;
-    const fill = closed && el.fill && el.fill !== 'none' ? el.fill : 'none';
+    // "None" in the color picker is stored as transparent: same as no fill.
+    const fill = closed && el.fill && el.fill !== 'none' && el.fill !== 'transparent' ? el.fill : 'none';
 
     let defs = '';
     let markers = '';
@@ -336,10 +338,6 @@ const PathElement = {
         return true;
     },
 
-    actions: {
-        clearFill: (elIndex, arg, el) => { el.fill = 'none'; },
-    },
-
     properties(el) {
         const closed = el.closed === 'yes';
         const opt = (value, current, label) => `<option value="${value}" ${current === value ? 'selected' : ''}>${label}</option>`;
@@ -352,7 +350,7 @@ const PathElement = {
             <div class="prop-row">
                 <div class="prop-group">
                     <label>Stroke</label>
-                    <input type="color" class="prop-control prop-color" value="${escapeHtml(el.stroke || '#000000')}" data-prop="stroke">
+                    ${colorField({ 'data-prop': 'stroke' }, el.stroke, { allowNone: false })}
                 </div>
                 <div class="prop-group">
                     <label>Width (px)</label>
@@ -374,15 +372,9 @@ const PathElement = {
                 </div>
             </div>
             ${closed ? `
-            <div class="prop-row">
-                <div class="prop-group">
-                    <label>Fill</label>
-                    <input type="color" class="prop-control prop-color" value="${el.fill && el.fill !== 'none' ? escapeHtml(el.fill) : '#cccccc'}" data-prop="fill">
-                </div>
-                <div class="prop-group">
-                    <label>&nbsp;</label>
-                    <button class="btn btn-secondary" data-element-action="clearFill" ${!el.fill || el.fill === 'none' ? 'disabled' : ''}>No fill</button>
-                </div>
+            <div class="prop-group">
+                <label>Fill</label>
+                ${colorField({ 'data-prop': 'fill' }, el.fill || 'none')}
             </div>` : `
             <div class="prop-row">
                 <div class="prop-group"><label>Start</label>${markerSelect('start')}</div>

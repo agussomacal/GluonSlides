@@ -13,7 +13,8 @@
 
 import { state } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
-import { STYLE_KEYS } from '../../core/defaults.js';
+import { STYLE_KEYS, styleNames } from '../../core/defaults.js';
+import { palette } from '../../core/colors.js';
 
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
 
@@ -68,12 +69,16 @@ function findNamed(elements, name) {
 function lineContext(cm, lineNo, text) {
     const keys = new Set([...text.matchAll(/(?:^|\s)([A-Za-z]\w*):/g)].map(m => m[1]));
     let m;
-    if ((m = text.match(/^\.element\.([\w-]+)/))) return { params: ['id', 'name', ...elementProps(m[1])], keys };
+    if ((m = text.match(/^\.element\.([\w-]+)/))) {
+        return { params: ['id', 'name', ...(STYLE_KEYS[m[1]] ? ['style'] : []), ...elementProps(m[1])], keys, type: m[1] };
+    }
     if (text.match(/^\.macro\./)) return { params: ['id', 'name', ...elementProps('macro')], keys };
     if (text.startsWith('.project')) return { params: PROJECT_PARAMS, keys };
     if (text.startsWith('.slide')) return { params: ['id'], keys };
     if (text.startsWith('.define')) return { params: ['width', 'height'], keys };
     if ((m = text.match(/^\.defaults\.([\w-]+)/))) return { params: STYLE_KEYS[m[1]] || [], keys };
+    if ((m = text.match(/^\.style\.([\w-]+)/))) return { params: STYLE_KEYS[m[1]] || [], keys };
+    if (text.startsWith('.palette')) return { params: [], keys };
     if ((m = text.match(/^::([\w-]+)/))) {
         const macro = state.macros && state.macros[enclosingMacro(cm, lineNo)];
         const target = macro && findNamed(macro.children, m[1]);
@@ -98,6 +103,8 @@ function directiveCandidates() {
         { text: '.import {', displayText: '.import {macros.gl}' },
         { text: '.project {', displayText: '.project {Name} ...' },
         ...Object.keys(STYLE_KEYS).map(t => ({ text: `.defaults.${t} `, displayText: `.defaults.${t}  (project defaults)` })),
+        ...Object.keys(STYLE_KEYS).map(t => ({ text: `.style.${t} {`, displayText: `.style.${t} {name}  (named style)` })),
+        { text: '.palette ', displayText: '.palette name:#hex ...  (theme colors)' },
     ];
     ElementRegistry.types()
         .filter(def => def.type !== 'macro')
@@ -147,7 +154,10 @@ export function glHints(cm) {
     if (/^[A-Za-z]\w*:/.test(word)) {
         const key = word.slice(0, word.indexOf(':'));
         const typed = word.slice(key.length + 1);
-        const values = VALUES[key] || (COLOR_KEYS.has(key) ? ['transparent', ...documentColors(cm)] : []);
+        let values = VALUES[key] || (COLOR_KEYS.has(key)
+            ? ['transparent', ...palette().map(p => `@${p.name}`), ...documentColors(cm)]
+            : []);
+        if (key === 'style') values = styleNames(ctx.type || '');
         const list = values.filter(v => matches(v, typed) || typed === '').filter(v => v !== typed)
             .map(v => ({ text: `${key}:${v} `, displayText: v }));
         return result(list, cur.ch - word.length);
@@ -156,7 +166,7 @@ export function glHints(cm) {
         const list = ctx.params
             .filter((k, i, all) => all.indexOf(k) === i && !ctx.keys.has(k))
             .filter(k => k.toLowerCase().startsWith(word.toLowerCase()))
-            .map(k => ({ text: `${k}:`, displayText: k, chainValues: Boolean(VALUES[k] || COLOR_KEYS.has(k)) }));
+            .map(k => ({ text: `${k}:`, displayText: k, chainValues: Boolean(VALUES[k] || COLOR_KEYS.has(k) || k === 'style') }));
         return result(list, cur.ch - word.length);
     }
     return null;

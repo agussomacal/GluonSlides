@@ -1,89 +1,207 @@
 // ============================================================
-// ui/projectSettings.js — "⚙ Project settings": the project's style
-// defaults (core/defaults.js). Every element that does not set a
-// property itself inherits it from here; changes apply at once.
+// ui/projectSettings.js — "⚙ Project settings", three tabs:
+//
+//   Defaults  the project's style defaults per element type
+//   Styles    named styles (Title, Caption...) that elements can use
+//   Colors    the theme colors (palette) offered by every color field
+//
+// Everything applies at once; every element that inherits a value
+// follows (cascade: element > style > project default > built-in).
 // ============================================================
 
-import { state, pyApi, markDirty, flashSaveIndicator } from '../core/state.js';
-import { defaultValue, projectStyle, setProjectDefault, adoptDefaults } from '../core/defaults.js';
+import { pyApi, markDirty, flashSaveIndicator } from '../core/state.js';
+import {
+    defaultValue, projectStyle, setProjectDefault, adoptDefaults,
+    styleNames, getStyle, createStyle, setStyleValue, renameStyle, deleteStyle, styleUsage, STYLE_NAME_RE,
+} from '../core/defaults.js';
+import {
+    palette, setPalette, paletteUsage, renamePaletteColor, removePaletteColor, COLOR_NAME_RE,
+} from '../core/colors.js';
 import { escapeHtml } from '../core/render.js';
 import { renderEditor } from '../editor/editor.js';
 import { fontOptions, showFontLicense } from '../elements/text/text.js';
+import { colorField } from './colorPicker.js';
 
 const MODAL_ID = 'project-settings-modal';
+const TYPES = [
+    { type: 'text', label: 'Text' },
+    { type: 'shape', label: 'Shapes' },
+    { type: 'path', label: 'Lines & curves' },
+];
+
+const ui = { tab: 'defaults', styleType: 'text', style: null, message: '' };
 
 const opt = (value, current, label) => `<option value="${value}" ${String(current) === value ? 'selected' : ''}>${label}</option>`;
-const hex = (v, fallback) => (/^#[0-9a-fA-F]{6}$/.test(String(v)) ? v : fallback);
 
-/** One setting: label (+ ↺ when the project overrides the built-in value) and control. */
-function field(type, key, label, control) {
-    const overridden = projectStyle(type)[key] !== undefined;
+// ---------- Fields (shared by the Defaults and Styles tabs) ----------
+//
+// A target says what a field edits:
+//   { kind: 'default', type }        -> data-default="type.key"
+//   { kind: 'style', type, name }    -> data-style-field="key"
+
+function attrsFor(target, key) {
+    return target.kind === 'default' ? { 'data-default': `${target.type}.${key}` } : { 'data-style-field': key };
+}
+
+function attrHtml(target, key) {
+    return Object.entries(attrsFor(target, key)).map(([k, v]) => `${k}="${escapeHtml(v)}"`).join(' ');
+}
+
+/** The value a field shows, and whether the target sets it itself. */
+function valueOf(target, key) {
+    if (target.kind === 'default') {
+        return { value: defaultValue(target.type, key), own: projectStyle(target.type)[key] !== undefined };
+    }
+    const style = getStyle(target.type, target.name) || {};
+    const own = style[key] !== undefined && style[key] !== '';
+    return { value: own ? style[key] : defaultValue(target.type, key), own };
+}
+
+function field(target, key, label, control) {
+    const { own } = valueOf(target, key);
+    const resetTitle = target.kind === 'default' ? 'Back to the built-in default' : 'Use the project default';
+    const tag = own
+        ? `<button type="button" class="prop-reset" data-unset="${key}" title="${resetTitle}">↺</button>`
+        : (target.kind === 'style' ? '<span class="prop-default-tag" title="From the project defaults">default</span>' : '');
     return `
         <div class="prop-group">
-            <label><span class="prop-label-text" title="${label}">${label}</span>${overridden
-                ? ` <button type="button" class="prop-reset" data-unset="${type}.${key}" title="Back to the built-in default">↺</button>`
-                : ''}</label>
+            <label><span class="prop-label-text" title="${label}">${label}</span>${tag}</label>
             ${control}
         </div>`;
 }
 
-function color(type, key, fallback) {
-    return `<input type="color" class="prop-control prop-color" data-default="${type}.${key}" value="${hex(defaultValue(type, key), fallback)}">`;
+const color = (t, key, opts) => colorField(attrsFor(t, key), valueOf(t, key).value, opts);
+const number = (t, key, attrs = '') => `<input type="number" class="prop-control" ${attrHtml(t, key)} value="${escapeHtml(valueOf(t, key).value ?? '')}" ${attrs}>`;
+const select = (t, key, options) => `<select class="prop-control" ${attrHtml(t, key)}>${options.map(([v, l]) => opt(v, valueOf(t, key).value, l)).join('')}</select>`;
+
+/** The fields for one element type (defaults or a style). */
+function typeFields(t) {
+    if (t.type === 'text') {
+        const font = valueOf(t, 'fontFamily').value || 'sans-serif';
+        return `
+            ${field(t, 'fontFamily', 'Font', `
+                <select class="prop-control" ${attrHtml(t, 'fontFamily')}>${fontOptions(font)}</select>
+                <div class="font-license" data-family="${escapeHtml(font)}"></div>`)}
+            <div class="prop-row">
+                ${field(t, 'fontSize', 'Size (px)', number(t, 'fontSize', 'min="4" step="1"'))}
+                ${field(t, 'fontColor', 'Color', color(t, 'fontColor', { allowNone: false }))}
+            </div>
+            <div class="prop-row">
+                ${field(t, 'textAlign', 'Horizontal', select(t, 'textAlign', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']]))}
+                ${field(t, 'verticalAlign', 'Vertical', select(t, 'verticalAlign', [['top', 'Top'], ['center', 'Center'], ['bottom', 'Bottom']]))}
+            </div>
+            <div class="prop-row">
+                ${field(t, 'bg', 'Background', color(t, 'bg'))}
+                ${field(t, 'borderCol', 'Border', color(t, 'borderCol'))}
+            </div>`;
+    }
+    if (t.type === 'shape') {
+        return `
+            <div class="prop-row">
+                ${field(t, 'bg', 'Fill', color(t, 'bg'))}
+                ${field(t, 'borderCol', 'Border', color(t, 'borderCol'))}
+            </div>
+            <div class="prop-row">
+                ${field(t, 'borderWidth', 'Thickness', number(t, 'borderWidth', 'min="0" step="1"'))}
+                ${field(t, 'borderStyle', 'Border style', select(t, 'borderStyle', [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted'], ['none', 'None']]))}
+            </div>`;
+    }
+    return `
+        <div class="prop-row">
+            ${field(t, 'stroke', 'Stroke', color(t, 'stroke', { allowNone: false }))}
+            ${field(t, 'strokeWidth', 'Width (px)', number(t, 'strokeWidth', 'min="0.5" step="0.5"'))}
+        </div>
+        <div class="prop-row">
+            ${field(t, 'dash', 'Line style', select(t, 'dash', [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']]))}
+            ${field(t, 'fill', 'Fill (closed)', color(t, 'fill'))}
+        </div>`;
 }
 
-function number(type, key, attrs = '') {
-    return `<input type="number" class="prop-control" data-default="${type}.${key}" value="${escapeHtml(defaultValue(type, key) ?? '')}" ${attrs}>`;
+// ---------- Tabs ----------
+
+function defaultsTab() {
+    return `
+        <p class="prop-hint">Every element that doesn't set a property itself (or through its style) uses these. An element can override any value in the properties panel; ↺ there returns it to the default.</p>
+        ${TYPES.map(({ type, label }) => `
+            <div class="settings-section-title">${label}</div>
+            ${typeFields({ kind: 'default', type })}`).join('')}
+
+        <div class="settings-section-title">Existing elements</div>
+        <p class="prop-hint">Older projects store every value in each element, so they don't follow the defaults. This makes elements whose values are just the standard ones follow the defaults (and their style); values you changed on purpose are kept.</p>
+        <button class="btn btn-secondary" data-settings-action="adopt">Use project defaults for existing elements</button>
+        <div class="prop-hint settings-result">${escapeHtml(ui.message)}</div>`;
+}
+
+function stylesTab() {
+    const names = styleNames(ui.styleType);
+    if (ui.style && !names.includes(ui.style)) ui.style = null;
+    if (!ui.style && names.length) ui.style = names[0];
+    const typeTabs = TYPES.map(({ type, label }) => `
+        <button type="button" class="seg${type === ui.styleType ? ' active' : ''}" data-style-type="${type}">${label}</button>`).join('');
+    const list = names.map(name => {
+        const n = styleUsage(ui.styleType, name);
+        return `<button type="button" class="style-chip${name === ui.style ? ' active' : ''}" data-pick-style="${escapeHtml(name)}">
+            ${escapeHtml(name)} <span class="style-count" title="Elements using it">${n}</span></button>`;
+    }).join('');
+    const editor = ui.style ? `
+        <div class="style-editor">
+            <div class="prop-row">
+                <div class="prop-group">
+                    <label>Name</label>
+                    <input type="text" class="prop-control" data-rename-style value="${escapeHtml(ui.style)}" spellcheck="false">
+                </div>
+                <div class="prop-group style-delete">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-secondary" data-settings-action="delete-style">Delete</button>
+                </div>
+            </div>
+            <p class="prop-hint">Fields tagged <em>default</em> come from the project defaults; set one to make it part of the style.</p>
+            ${typeFields({ kind: 'style', type: ui.styleType, name: ui.style })}
+        </div>` : `<p class="prop-hint">No ${TYPES.find(t => t.type === ui.styleType).label.toLowerCase()} styles yet.</p>`;
+    return `
+        <p class="prop-hint">Named looks such as <em>Title</em> or <em>Caption</em>. Pick one for an element in the properties panel (Style); changing a style updates every element using it.</p>
+        <div class="seg-row">${typeTabs}</div>
+        <div class="style-list">${list}</div>
+        <div class="prop-inline new-style">
+            <input type="text" class="prop-control" data-new-style placeholder="New style name, e.g. title" spellcheck="false">
+            <button class="btn btn-secondary" data-settings-action="new-style">＋ Add style</button>
+        </div>
+        <div class="prop-error">${escapeHtml(ui.message)}</div>
+        ${editor}`;
+}
+
+function colorsTab() {
+    const rows = palette().map((p, i) => {
+        const n = paletteUsage(p.name);
+        return `
+            <div class="palette-row" data-index="${i}">
+                <input type="color" value="${escapeHtml(p.color)}" data-palette-color title="Change the color">
+                <input type="text" class="prop-control" value="${escapeHtml(p.name)}" data-palette-name spellcheck="false">
+                <span class="palette-usage" title="Color properties using it">${n ? `${n} use${n === 1 ? '' : 's'}` : 'unused'}</span>
+                <button type="button" class="prop-reset" data-palette-remove title="Remove (its uses keep the color)">✕</button>
+            </div>`;
+    }).join('');
+    return `
+        <p class="prop-hint">Theme colors are offered first by every color field. Elements refer to them by name (<code>@accent</code>), so changing a color here updates everything that uses it. Opacity is chosen per use, in the color field.</p>
+        <div class="palette-list">${rows}</div>
+        <button class="btn btn-secondary" data-settings-action="add-color">＋ Add color</button>
+        <div class="prop-error">${escapeHtml(ui.message)}</div>`;
 }
 
 function bodyHtml() {
-    const v = (type, key) => defaultValue(type, key);
+    const tabs = [['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors']].map(([id, label]) => `
+        <button type="button" class="settings-tab${ui.tab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`).join('');
+    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab() : defaultsTab();
     return `
         <h2>Project settings</h2>
-        <p>Defaults for this project. Every element that doesn't set a property itself uses these, so a change here updates all of them. An element can still override any value in the properties panel (↺ there returns it to the default).</p>
-
-        <div class="settings-section-title">Text</div>
-        ${field('text', 'fontFamily', 'Font', `
-            <select class="prop-control" data-default="text.fontFamily">${fontOptions(v('text', 'fontFamily') || 'sans-serif')}</select>
-            <div class="font-license" data-family="${escapeHtml(v('text', 'fontFamily') || 'sans-serif')}"></div>`)}
-        <div class="prop-row">
-            ${field('text', 'fontSize', 'Size (px)', number('text', 'fontSize', 'min="4" step="1"'))}
-            ${field('text', 'fontColor', 'Color', color('text', 'fontColor', '#0f172a'))}
-        </div>
-        <div class="prop-row">
-            ${field('text', 'textAlign', 'H-alignment', `<select class="prop-control" data-default="text.textAlign">
-                ${opt('left', v('text', 'textAlign'), 'Left')}${opt('center', v('text', 'textAlign'), 'Center')}${opt('right', v('text', 'textAlign'), 'Right')}</select>`)}
-            ${field('text', 'verticalAlign', 'V-alignment', `<select class="prop-control" data-default="text.verticalAlign">
-                ${opt('top', v('text', 'verticalAlign'), 'Top')}${opt('center', v('text', 'verticalAlign'), 'Center')}${opt('bottom', v('text', 'verticalAlign'), 'Bottom')}</select>`)}
-        </div>
-
-        <div class="settings-section-title">Shapes</div>
-        <div class="prop-row">
-            ${field('shape', 'bg', 'Fill', color('shape', 'bg', '#cbd5e1'))}
-            ${field('shape', 'borderCol', 'Border color', color('shape', 'borderCol', '#475569'))}
-        </div>
-        <div class="prop-row">
-            ${field('shape', 'borderWidth', 'Border width', number('shape', 'borderWidth', 'min="0" step="1"'))}
-            ${field('shape', 'borderStyle', 'Border style', `<select class="prop-control" data-default="shape.borderStyle">
-                ${opt('solid', v('shape', 'borderStyle'), 'Solid')}${opt('dashed', v('shape', 'borderStyle'), 'Dashed')}${opt('dotted', v('shape', 'borderStyle'), 'Dotted')}${opt('none', v('shape', 'borderStyle'), 'None')}</select>`)}
-        </div>
-
-        <div class="settings-section-title">Lines &amp; curves</div>
-        <div class="prop-row">
-            ${field('path', 'stroke', 'Stroke', color('path', 'stroke', '#0f172a'))}
-            ${field('path', 'strokeWidth', 'Width (px)', number('path', 'strokeWidth', 'min="0.5" step="0.5"'))}
-        </div>
-        ${field('path', 'dash', 'Line style', `<select class="prop-control" data-default="path.dash">
-            ${opt('solid', v('path', 'dash'), 'Solid')}${opt('dashed', v('path', 'dash'), 'Dashed')}${opt('dotted', v('path', 'dash'), 'Dotted')}</select>`)}
-
-        <div class="settings-section-title">Existing elements</div>
-        <p class="prop-hint">Older projects store every value in each element, so they don't follow the defaults. This makes elements whose values are just the standard ones follow the project defaults; values you changed on purpose are kept.</p>
-        <button class="btn btn-secondary" data-settings-action="adopt">Use project defaults for existing elements</button>
-        <div class="prop-hint settings-result" id="settings-adopt-result"></div>
-
+        <div class="settings-tabs">${tabs}</div>
+        <div class="settings-content">${content}</div>
         <div class="modal-actions">
             <button class="btn btn-primary" data-settings-action="close">Done</button>
         </div>`;
 }
+
+// ---------- Behaviour ----------
 
 function modal() {
     let el = document.getElementById(MODAL_ID);
@@ -100,52 +218,127 @@ function modal() {
 
 function render() {
     const m = modal();
-    m.querySelector('.project-settings').innerHTML = bodyHtml();
-    const family = defaultValue('text', 'fontFamily') || 'sans-serif';
-    showFontLicense(family, m.querySelector('.font-license'));
+    const box = m.querySelector('.project-settings');
+    const scroll = box.querySelector('.settings-content')?.scrollTop || 0;
+    box.innerHTML = bodyHtml();
+    const content = box.querySelector('.settings-content');
+    if (content) content.scrollTop = scroll;
+    box.querySelectorAll('.font-license').forEach(b => showFontLicense(b.dataset.family, b));
+    ui.message = '';
 }
 
-/** Applies a change and redraws the slides (and this dialog). */
-function apply(type, key, value, { redrawDialog = false } = {}) {
-    setProjectDefault(type, key, value);
+/** Applies a change to the project and redraws the slides. */
+function commit({ redrawDialog = true } = {}) {
     markDirty();
     renderEditor();
     if (redrawDialog) render();
 }
 
-function addResetButton(control, type, key) {
+function setField(target, value) {
+    if (target.dataset.default) {
+        const [type, key] = target.dataset.default.split('.');
+        setProjectDefault(type, key, value);
+    } else if (target.dataset.styleField && ui.style) {
+        setStyleValue(ui.styleType, ui.style, target.dataset.styleField, value);
+    }
+}
+
+function addResetButton(control) {
     const label = control.closest('.prop-group')?.querySelector('label');
     if (!label || label.querySelector('[data-unset]')) return;
-    label.insertAdjacentHTML('beforeend',
-        ` <button type="button" class="prop-reset" data-unset="${type}.${key}" title="Back to the built-in default">↺</button>`);
+    label.querySelector('.prop-default-tag')?.remove();
+    const key = control.dataset.default ? control.dataset.default.split('.')[1] : control.dataset.styleField;
+    label.insertAdjacentHTML('beforeend', ` <button type="button" class="prop-reset" data-unset="${key}" title="Reset">↺</button>`);
 }
 
 function wire(m) {
     const onChange = (e) => {
-        const target = e.target.closest('[data-default]');
-        if (!target) return;
-        const [type, key] = target.dataset.default.split('.');
-        const isChoice = target.tagName === 'SELECT';
-        if (e.type !== (isChoice ? 'change' : 'input')) return;
-        let value = target.value;
-        if (target.type === 'number') {
-            if (value === '' || !Number.isFinite(Number(value))) return;
-            value = Number(value);
+        const target = e.target.closest('[data-default], [data-style-field]');
+        if (target) {
+            const isChoice = target.tagName === 'SELECT' || target.classList.contains('color-field');
+            if (e.type !== (isChoice ? 'change' : 'input')) return;
+            let value = target.value;
+            if (target.type === 'number') {
+                if (value === '' || !Number.isFinite(Number(value))) return;
+                value = Number(value);
+            }
+            setField(target, value);
+            // Selects/colors redraw the dialog; typed values only gain their ↺
+            // (a redraw would replace buttons under the mouse, e.g. Done).
+            commit({ redrawDialog: isChoice });
+            if (!isChoice) addResetButton(target);
+            return;
         }
-        // Selects redraw the dialog (↺ / licence notice). Typed values
-        // only gain their ↺: redrawing would replace the buttons under the
-        // mouse (e.g. Done) when the field loses focus.
-        apply(type, key, value, { redrawDialog: isChoice });
-        if (!isChoice) addResetButton(target, type, key);
+        // Colors tab: a palette color changed (live) or renamed (on change).
+        const row = e.target.closest('.palette-row');
+        if (row) {
+            const i = Number(row.dataset.index);
+            const entries = palette().map(p => ({ ...p }));
+            if (e.target.matches('[data-palette-color]') && e.type === 'input') {
+                entries[i].color = e.target.value;
+                setPalette(entries);
+                commit({ redrawDialog: false });
+            }
+            if (e.target.matches('[data-palette-name]') && e.type === 'change') {
+                const name = e.target.value.trim();
+                if (name === entries[i].name) return;
+                if (!COLOR_NAME_RE.test(name) || entries.some(p => p.name === name)) {
+                    ui.message = 'Color names use letters, digits, - or _ and must be unique.';
+                } else {
+                    renamePaletteColor(entries[i].name, name);
+                }
+                commit();
+            }
+            return;
+        }
+        if (e.target.matches('[data-rename-style]') && e.type === 'change') {
+            const name = e.target.value.trim();
+            if (name !== ui.style) {
+                if (renameStyle(ui.styleType, ui.style, name)) ui.style = name;
+                else ui.message = 'Style names use letters, digits, - or _ and must be unique.';
+                commit();
+            }
+        }
     };
     m.addEventListener('input', onChange);
     m.addEventListener('change', onChange);
 
-    m.addEventListener('click', async (e) => {
+    m.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.matches('[data-new-style]')) {
+            e.preventDefault();
+            m.querySelector('[data-settings-action="new-style"]').click();
+        }
+    });
+
+    m.addEventListener('click', (e) => {
+        const tab = e.target.closest('[data-tab]');
+        if (tab) {
+            ui.tab = tab.dataset.tab;
+            render();
+            return;
+        }
+        const segment = e.target.closest('[data-style-type]');
+        if (segment) {
+            ui.styleType = segment.dataset.styleType;
+            ui.style = null;
+            render();
+            return;
+        }
+        const pick = e.target.closest('[data-pick-style]');
+        if (pick) {
+            ui.style = pick.dataset.pickStyle;
+            render();
+            return;
+        }
         const unset = e.target.closest('[data-unset]');
         if (unset) {
-            const [type, key] = unset.dataset.unset.split('.');
-            apply(type, key, null, { redrawDialog: true });
+            const key = unset.dataset.unset;
+            if (ui.tab === 'styles' && ui.style) setStyleValue(ui.styleType, ui.style, key, null);
+            else {
+                const control = unset.closest('.prop-group').querySelector('[data-default]');
+                setProjectDefault(control.dataset.default.split('.')[0], key, null);
+            }
+            commit();
             return;
         }
         const lic = e.target.closest('[data-element-action="openFontLicense"]');
@@ -154,39 +347,73 @@ function wire(m) {
             if (api) api.open_url(lic.dataset.arg);
             return;
         }
+        const remove = e.target.closest('[data-palette-remove]');
+        if (remove) {
+            const i = Number(remove.closest('.palette-row').dataset.index);
+            removePaletteColor(palette()[i].name);
+            commit();
+            return;
+        }
         const action = e.target.closest('[data-settings-action]');
         if (!action) {
             if (e.target === m) close(); // click on the backdrop
             return;
         }
-        if (action.dataset.settingsAction === 'close') close();
-        if (action.dataset.settingsAction === 'adopt') {
+        switch (action.dataset.settingsAction) {
+        case 'close':
+            close();
+            break;
+        case 'adopt': {
             const n = adoptDefaults();
-            markDirty();
-            renderEditor();
-            const out = m.querySelector('#settings-adopt-result');
-            out.textContent = n
+            ui.message = n
                 ? `${n} stored value${n === 1 ? '' : 's'} removed: those elements now follow the defaults.`
                 : 'Nothing to change: elements already follow the defaults (or use their own values).';
             flashSaveIndicator('Elements follow the project defaults ✓');
+            commit();
+            break;
+        }
+        case 'new-style': {
+            const input = m.querySelector('[data-new-style]');
+            const name = (input.value || '').trim();
+            if (!STYLE_NAME_RE.test(name)) ui.message = 'Style names use letters, digits, - or _ (starting with a letter).';
+            else if (!createStyle(ui.styleType, name)) ui.message = `A style named "${name}" already exists.`;
+            else ui.style = name;
+            commit();
+            break;
+        }
+        case 'delete-style':
+            deleteStyle(ui.styleType, ui.style);
+            ui.style = null;
+            commit();
+            break;
+        case 'add-color': {
+            const entries = palette().map(p => ({ ...p }));
+            let i = entries.length + 1;
+            while (entries.some(p => p.name === `color${i}`)) i++;
+            entries.push({ name: `color${i}`, color: '#888888' });
+            setPalette(entries);
+            commit();
+            break;
+        }
+        default:
+            break;
         }
     });
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && m.classList.contains('show')) close();
+        if (e.key === 'Escape' && m.classList.contains('show') && !document.getElementById('color-popover')) close();
     });
 }
 
-export function openProjectSettings() {
+/** Opens the dialog, optionally on a tab ('defaults' | 'styles' | 'colors'), and a style. */
+export function openProjectSettings(tab = null, { styleType = null, style = null } = {}) {
+    if (typeof tab === 'string') ui.tab = tab;
+    if (styleType) ui.styleType = styleType;
+    if (style) ui.style = style;
     render();
     modal().classList.add('show');
 }
 
 function close() {
     modal().classList.remove('show');
-}
-
-// Kept for tests/debugging: the state the dialog edits.
-export function projectDefaults() {
-    return state.defaults;
 }
