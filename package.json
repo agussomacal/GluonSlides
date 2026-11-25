@@ -1,0 +1,12 @@
+{
+  "name": "gluonslides-tests",
+  "private": true,
+  "description": "Development tooling for GluonSlides (the app itself needs no Node.js). See tests/README.md.",
+  "scripts": {
+    "test": "node tests/e2e/run.mjs",
+    "test:backend": ".venv/bin/python -m unittest discover -s tests/backend -t . -v"
+  },
+  "devDependencies": {
+    "playwright-core": "1.52.0"
+  }
+}

@@ -1,0 +1,16 @@
+# Gluon slide project — saved by Slide Studio
+# Elements: .element.text | .element.shape | .element.figure
+# The indented/plain lines after an .element.* line are its body.
+.project {Old project} version:2 width:1920 height:1080 grid:20 darkmode:yes nextid:6
+
+.slide {One} id:1
+.element.text id:1 x:100 y:100 width:800 height:200 fontSize:42 fontFamily:sans-serif fontColor:#f8fafc textAlign:center verticalAlign:center bg:transparent borderCol:transparent borderWidth:0 borderStyle:solid
+Body text written without indentation,
+as older versions of the app saved it.
+- a list item
+.element.shape id:2 x:100 y:400 width:300 height:200 bg:#334155 borderCol:#64748b borderWidth:2 borderStyle:solid
+
+.slide {Two} id:3
+.element.text id:4 x:100 y:100 width:800 height:200 fontSize:32 fontFamily:serif fontColor:#f8fafc textAlign:left verticalAlign:top bg:transparent borderCol:transparent borderWidth:0 borderStyle:solid
+	Indented body
+.element.figure id:5 x:1000 y:100 width:400 height:300 filePath:figures/plot.png originalPath:/home/me/plot.png bg:transparent borderCol:transparent borderWidth:0 borderStyle:dashed

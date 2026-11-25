@@ -3,3 +3,5 @@ __pycache__/
 .idea/
 recents.json
 gl_inspector_settings.json
+node_modules/
+tests/e2e/output/

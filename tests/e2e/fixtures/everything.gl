@@ -1,0 +1,38 @@
+# Test project using every feature of the .gl format (see tests/README.md).
+.import {macros.gl}
+.project {Everything} version:2 width:1920 height:1080 grid:20 darkmode:no citestyle:numeric nextid:40
+.palette primary:#1d4ed8 accent:#f59e0b dark:#0f172a light:#f1f5f9
+.defaults.path stroke:@dark strokeWidth:4
+.defaults.text fontFamily:"EB Garamond" fontSize:32
+.style.text {title} fontSize:64 fontColor:@primary
+.style.shape {card} bg:@light borderCol:@primary
+
+.define {badge} width:100 height:100
+	.element.shape name:dot x:0 y:0 width:100 height:100 kind:ellipse bg:@accent
+	.element.text name:label x:0 y:30 width:100 height:40 fontSize:20
+		New
+
+.slide {Title} id:1
+.element.text id:2 style:title x:100 y:80 width:1200 height:120
+	Results with **Markdown** and math $E = mc^2$
+	.a line starting with a dot (escaped in the file)
+
+	# a heading after a blank line
+.element.shape id:3 style:card x:100 y:300 width:400 height:300 radius:24
+.element.shape id:4 x:600 y:300 width:300 height:300 kind:ellipse lockAspect:yes bg:@accent/40
+.element.path id:5 x:100 y:700 width:800 height:200 curve:smooth end:arrow
+	0 1
+	0.5 0
+	1 0.6
+
+.slide {Groups and macros} id:6
+.element.group id:7 x:100 y:100 width:800 height:400 frameWidth:400 frameHeight:200
+	.element.shape id:8 x:0 y:0 width:400 height:200 bg:@light
+	.element.text id:9 x:20 y:20 width:360 height:80
+		Inside a group
+.macro.badge id:10 x:1000 y:100 width:200 height:200
+.macro.badge id:11 x:1300 y:100 width:100 height:100
+	::label
+		Hot
+	::dot bg:@primary/80
+	.element.shape x:0 y:90 width:100 height:10 bg:@dark

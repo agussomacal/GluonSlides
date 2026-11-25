@@ -290,6 +290,16 @@ On first start, missing JS/CSS libraries from `dependencies.yaml` are downloaded
 
 Create a project (pick a folder — you get `MyDeck.gl` plus a `macros.tex` for your LaTeX macros), add elements from the toolbar, and export with the HTML/PDF buttons. Autosave runs continuously; your project file always reflects the current canvas.
 
+## Tests
+
+```bash
+npm install            # once: the browser driver for the end-to-end tests
+npm test               # end-to-end tests: the editor driven in a headless Chrome
+npm run test:backend   # Python backend tests
+```
+
+See [tests/README.md](tests/README.md) for what each kind of test covers and how to add one.
+
 ## License
 
 See [LICENSE](LICENSE).
