@@ -46,6 +46,8 @@
     function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
     function stepsOf(i) { return Math.max(1, Number(slides[i].dataset.steps) || 1); }
     function inFrame() { return window.parent !== window; }
+    /** The project slide a presented slide comes from (continuation pages share it). */
+    function sourceOf(i) { const v = Number(slides[i].dataset.source); return Number.isFinite(v) ? v : i; }
 
     function readNotes() {
         const node = document.getElementById('gluon-notes');
@@ -55,6 +57,28 @@
     const first = slides[0];
     const slideW = parseFloat(first.style.width) || first.offsetWidth || 1920;
     const slideH = parseFloat(first.style.height) || first.offsetHeight || 1080;
+
+    // ---------- Printing: one page per build step ----------
+    // Printed (and the vector PDF) like it is presented: a slide with
+    // three steps gives three pages, each with what was visible then.
+    (function buildPrintPages() {
+        const container = document.createElement('div');
+        container.className = 'print-pages';
+        slides.forEach((slide) => {
+            const steps = Math.max(1, Number(slide.dataset.steps) || 1);
+            for (let k = 1; k <= steps; k++) {
+                const page = slide.cloneNode(true);
+                page.removeAttribute('id');
+                page.classList.remove('active');
+                page.classList.add('print-page');
+                page.querySelectorAll('[data-step]').forEach(el => {
+                    if (Number(el.dataset.step) > k) el.remove();
+                });
+                container.appendChild(page);
+            }
+        });
+        document.body.appendChild(container);
+    })();
 
     // ---------- Overlays: black/white screen, short messages ----------
 
@@ -255,7 +279,7 @@
         if (presenter) renderPresenter(); else renderAudience();
         try { history.replaceState(null, '', presenter ? `#presenter-${current + 1}.${step}` : `#${current + 1}.${step}`); } catch (e) { /* srcdoc frames */ }
         if (!notify) return;
-        const position = { slide: current, step, steps: stepsOf(current), total, blank };
+        const position = { slide: current, source: sourceOf(current), step, steps: stepsOf(current), total, blank };
         const msg = presenter
             ? { type: 'gluon-control', action: 'goto', ...position }
             : { type: 'gluon-position', ...position };
@@ -306,7 +330,7 @@
     function openPresenter() {
         if (presenter) return;
         if (inFrame()) {
-            window.parent.postMessage({ type: 'gluon-presenter-request', slide: current, step }, '*');
+            window.parent.postMessage({ type: 'gluon-presenter-request', slide: current, source: sourceOf(current), step }, '*');
             return;
         }
         const url = location.href.split('#')[0] + `#presenter-${current + 1}.${step}`;
@@ -392,7 +416,7 @@
 
     window.GluonViewer = {
         next, prev, go, mode: presenter ? 'presenter' : 'audience',
-        position: () => ({ slide: current, step, steps: stepsOf(current), total, blank }),
+        position: () => ({ slide: current, source: sourceOf(current), step, steps: stepsOf(current), total, blank }),
     };
 
     if (presenter) {

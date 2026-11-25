@@ -78,7 +78,9 @@ export async function startPresentation({ fromStart = false, presenter } = {}) {
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
 
     const startSlide = fromStart ? 0 : state.currentSlideIndex;
-    lastPosition = { slide: startSlide, step: 1 };
+    // source: slide of the project; at: index among the presented slides
+    // (long reference lists add continuation pages).
+    lastPosition = { source: startSlide, at: null, step: 1 };
 
     overlay = document.createElement('div');
     overlay.id = 'present-overlay';
@@ -89,7 +91,7 @@ export async function startPresentation({ fromStart = false, presenter } = {}) {
 
     try {
         const usePresenter = presenter !== undefined ? presenter : await hasSecondScreen();
-        if (usePresenter) await openPresenterView(startSlide, 1);
+        if (usePresenter) await openPresenterView({ source: startSlide });
         else {
             mode = 'audience';
             await showFrame(await getExportHtmlString({ startSlide, localAssets: true }));
@@ -101,18 +103,19 @@ export async function startPresentation({ fromStart = false, presenter } = {}) {
 }
 
 /** Switches to (or starts) the presenter view with an audience window. */
-async function openPresenterView(slide, step) {
+async function openPresenterView({ source = 0, at = null, step = 1 } = {}) {
     mode = 'presenter';
-    lastPosition = { slide, step };
+    lastPosition = { source, at, step };
+    const start = { startSlide: source, startAt: at, startStep: step, localAssets: true };
     const api = pyApi();
     if (api && typeof api.open_audience_window === 'function') {
         // The audience never gets the notes.
-        const audienceHtml = await getExportHtmlString({ startSlide: slide, startStep: step, localAssets: true, notes: false });
+        const audienceHtml = await getExportHtmlString({ ...start, notes: false });
         const res = await api.open_audience_window(audienceHtml);
         audienceOpen = Boolean(res && res.success);
     }
     if (!overlay) return; // ended meanwhile
-    await showFrame(await getExportHtmlString({ startSlide: slide, startStep: step, localAssets: true, mode: 'presenter' }));
+    await showFrame(await getExportHtmlString({ ...start, mode: 'presenter' }));
     if (!audienceOpen) {
         // Rehearsal: no audience window (e.g. in a browser), the presenter view alone.
         frame()?.addEventListener('load', () => frame()?.contentWindow.postMessage({ type: 'gluon-audience-closed', text: 'Rehearsal: no audience window' }, '*'), { once: true });
@@ -131,10 +134,16 @@ export function stopPresentation() {
         if (api && api.close_audience_window) api.close_audience_window();
     }
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
-    if (lastPosition && lastPosition.slide !== state.currentSlideIndex) selectSlide(lastPosition.slide);
+    if (lastPosition && lastPosition.source !== state.currentSlideIndex) selectSlide(lastPosition.source);
 }
 
 // ---------- Messages ----------
+
+/** { source, at, step } from a viewer message ({ slide, source?, step }). */
+function positionOf(m) {
+    const at = Number(m.slide) || 0;
+    return { source: Number.isFinite(Number(m.source)) ? Number(m.source) : at, at, step: Number(m.step) || 1 };
+}
 
 /** From the frame in this window (slides or presenter view). */
 window.addEventListener('message', (e) => {
@@ -142,16 +151,16 @@ window.addEventListener('message', (e) => {
     if (!f || e.source !== f.contentWindow || !e.data) return;
     const m = e.data;
     if (m.type === 'gluon-position') {
-        lastPosition = { slide: m.slide, step: m.step };
+        lastPosition = positionOf(m);
     } else if (m.type === 'gluon-control') {
         // Presenter view moved: the audience window follows.
-        if (m.action === 'goto') lastPosition = { slide: m.slide, step: m.step };
+        if (m.action === 'goto') lastPosition = positionOf(m);
         const api = pyApi();
         if (audienceOpen && api && api.audience_control) api.audience_control(m);
     } else if (m.type === 'gluon-exit') {
         stopPresentation();
     } else if (m.type === 'gluon-presenter-request' && mode === 'audience') {
-        openPresenterView(Number(m.slide) || 0, Number(m.step) || 1);
+        openPresenterView({ source: positionOf(m).source, at: Number(m.slide) || 0, step: Number(m.step) || 1 });
     }
 });
 
@@ -161,7 +170,7 @@ window.addEventListener('gluon-remote', (e) => {
     if (!overlay) return;
     if (m.type === 'gluon-exit') { stopPresentation(); return; }
     if (m.type === 'gluon-audience-closed') audienceOpen = false;
-    if (m.type === 'gluon-position') lastPosition = { slide: m.slide, step: m.step };
+    if (m.type === 'gluon-position') lastPosition = positionOf(m);
     if (m.type === 'gluon-position' || m.type === 'gluon-audience-closed') {
         const f = frame();
         if (f && f.contentWindow) f.contentWindow.postMessage(m, '*');

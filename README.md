@@ -168,6 +168,9 @@ Editing on the canvas:
 | `\cite[p.~5]{key}` | [1, p. 5] | (Smith, 2020, p. 5) |
 | `\fullcite{key}` | the full reference | |
 | `\printbibliography` | the list of every cited work, in order of first citation | |
+| `\printbibliography[9-]`, `[1-8]`, `[5]` | part of the list (numbers in citation order) | |
+
+**Long reference lists:** when the list does not fit in its text box, the box shows what fits (with a "continues on +N slides" badge) and the rest continues on copies of that slide (same title, logo and layout) when presenting and in the HTML and PDF exports. Nothing extra is saved in the `.gl` file, and the split follows the bibliography as it changes. To choose the split yourself, put `\printbibliography[1-8]` on one slide and `\printbibliography[9-]` on another.
 
 The selector next to the button switches the style between numeric and author–year; it is stored in the project header as `citestyle:numeric` or `citestyle:authoryear`. References are formatted from the BibTeX fields (authors as "Gödel, K.", year, title, journal or book, volume(number), pages), with LaTeX accents and symbols decoded (`G{\"o}del` → Gödel, `--` → –). Citations are resolved only when drawing and exporting: the `.gl` file keeps the commands as you typed them.
 
@@ -197,7 +200,7 @@ The selector next to the button switches the style between numeric and author–
 | F | full screen (in the exported HTML) |
 | T / R, + / − | presenter view: pause / reset the timer, notes size |
 
-**Builds:** select an object and set **Appears at step** in the properties panel: at step 2 it appears on the first click, at step 3 on the second, and so on (like Beamer's `\pause`). A purple badge on the canvas shows the step. Going back to a previous slide shows it complete. PDF exports show every object.
+**Builds:** select an object and set **Appears at step** in the properties panel: at step 2 it appears on the first click, at step 3 on the second, and so on (like Beamer's `\pause`). A purple badge on the canvas shows the step. Going back to a previous slide shows it complete. The PDF export works like the slide show: each step becomes a page of its own (a slide with three steps gives three pages), so the PDF can be presented the same way.
 
 **Speaker notes:** with nothing selected, the properties panel shows the current slide's notes.
 

@@ -65,8 +65,8 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 | `project-defaults` | Project defaults: inheritance, the settings dialog, overriding and ↺, converting old projects, undo, export, macros |
 | `panel-labels` | Labels stay on one line, so fields never move when a value becomes overridden |
 | `styles-colors` | Named styles and theme colors: the color picker, opacity, editing/renaming/removing colors, styles from elements, cascade, file format, export |
-| `presenting` | Build steps (field, badge, saving), speaker notes, Present mode (keys, steps, black screen, go to slide, Esc back on the right slide, F5/Shift+F5), the exported viewer and that printing shows every step; the presenter view: two screens, S to switch, both windows following each other, Black only for the audience, timer, the audience page (`present/audience.html`), and S in the exported HTML |
-| `citations` | BibTeX accents and names, `\cite` / `\citet` / `\citep` with page notes in both styles, the reference list, unknown keys (highlight, ⚠ count, dialog, export warning), `\cite{` autocomplete on the canvas and in the inspector |
+| `presenting` | Build steps (field, badge, saving), speaker notes, Present mode (keys, steps, black screen, go to slide, Esc back on the right slide, F5/Shift+F5), the exported viewer, printing and the PDF (one page per step, also in the image-based fallback); the presenter view: two screens, S to switch, both windows following each other, Black only for the audience, timer, the audience page (`present/audience.html`), and S in the exported HTML |
+| `citations` | BibTeX accents and names, `\cite` / `\citet` / `\citep` with page notes in both styles, the reference list, unknown keys (highlight, ⚠ count, dialog, export warning), `\cite{` autocomplete on the canvas and in the inspector, long reference lists continuing on extra slides (canvas badge, export, PDF, presenting) and `\printbibliography[from-to]` |
 | `file-format` | The `.gl` files in `fixtures/` (and your local `Slides/` projects, if present) parse, keep their content and round-trip; friendly errors |
 
 ### Fixtures

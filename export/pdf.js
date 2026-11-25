@@ -7,6 +7,8 @@ import {state, pyApi} from '../core/state.js';
 import {exportElementMarkup} from '../core/render.js';
 import {getExportHtmlString} from './html.js';
 import {exportFontCss} from '../core/fonts.js';
+import {elementStep, slideStepCount} from '../core/steps.js';
+import {expandSlides} from '../core/bibPages.js';
 
 // ---------- Raster fallback helpers ----------
 
@@ -60,7 +62,8 @@ function getEmbeddedKatexCss() {
     return _embeddedKatexCssPromise;
 }
 
-function slideMarkupForPdf(s) {
+/** A slide at build step `step` (elements of later steps left out). */
+function slideMarkupForPdf(s, step = Infinity) {
     const activeSlideBg = state.isDarkMode ? '#1e293b' : '#ffffff';
     const slideStyle = `width: ${state.slideWidth}px; height: ${state.slideHeight}px;`
         + `background: ${activeSlideBg}; position: relative;`
@@ -68,7 +71,7 @@ function slideMarkupForPdf(s) {
 
     let markup = `<div class="slide" style="${slideStyle}">`;
     s.elements.forEach(el => {
-        markup += exportElementMarkup(el);
+        if (elementStep(el) <= step) markup += exportElementMarkup(el);
     });
     markup += `</div>`;
     return markup;
@@ -121,9 +124,13 @@ async function exportAsRasterPdf(projectFolder, pdfFilename) {
     const embeddedCss = `${await getEmbeddedKatexCss()}\n${await exportFontCss()}`;
     await document.fonts.ready;
 
+    // Like the vector PDF: continuation pages of long reference lists,
+    // and one page per build step.
     const imageDataList = [];
-    for (let idx = 0; idx < state.slides.length; idx++) {
-        imageDataList.push(await rasterizeSlide(slideMarkupForPdf(state.slides[idx]), embeddedCss, 2));
+    for (const { slide } of expandSlides()) {
+        for (let step = 1; step <= slideStepCount(slide); step++) {
+            imageDataList.push(await rasterizeSlide(slideMarkupForPdf(slide, step), embeddedCss, 2));
+        }
     }
 
     return api.save_direct_pdf_from_images(projectFolder, pdfFilename, imageDataList);

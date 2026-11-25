@@ -135,11 +135,31 @@ const scale = await viewer.$eval('.slide.active', n => n.getBoundingClientRect()
 check('export: slide scaled to fit the window', Math.abs(scale - 1000) < 2, String(scale));
 await viewer.keyboard.press('ArrowRight');
 check('export: → reveals the next step', (await viewer.evaluate(() => window.GluonViewer.position())).step === 2);
+// Printing (the vector PDF): one page per build step, like presenting.
 await viewer.emulateMedia({ media: 'print' });
-const printHidden = await viewer.$$eval('.slide', ns => ns.filter(n => getComputedStyle(n).display === 'none').length
-    + [...document.querySelectorAll('[data-step]')].filter(n => getComputedStyle(n).visibility === 'hidden').length);
-check('export: printing (PDF) shows every slide and step', printHidden === 0, String(printHidden));
+const printed = await viewer.$$eval('.slide', ns => ns.filter(n => n.getClientRects().length > 0).map(n => [...n.querySelectorAll('[data-step]')].map(x => x.dataset.step).join('+') || '-'));
+check('export: printing gives one page per step (3 steps + 1 slide = 4 pages)', printed.join(' | ') === '- | 2 | 2+3 | -', printed.join(' | '));
+const pdf = await viewer.pdf({ printBackground: true, preferCSSPageSize: true });
+const pdfPages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+check('export: the PDF has 4 pages', pdfPages === 4, String(pdfPages));
 await viewer.close();
+
+// Raster PDF (when no headless browser is found): same pages
+const rasterPages = await app(async () => {
+    const { state } = await import('/core/state.js');
+    let pages = null;
+    window.pywebview = { api: {
+        save_text_file: () => Promise.resolve({ success: true, path: '/tmp/x.html' }),
+        print_html_to_pdf: () => Promise.resolve({ success: false, error: 'no browser' }),
+        save_direct_pdf_from_images: (folder, name, images) => { pages = images.length; return Promise.resolve({ success: true, path: '/tmp/x.pdf' }); },
+    } };
+    state.projectFolder = '/tmp';
+    await (await import('/export/pdf.js')).exportProjectPdf();
+    delete window.pywebview;
+    state.projectFolder = null;
+    return pages;
+});
+check('raster PDF: one image per step too', rasterPages === 4, String(rasterPages));
 
 // ---------- Presenter view in the app, with an audience window ----------
 // The fake bridge plays backend/presentation.py: the "audience window" is

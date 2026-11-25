@@ -21,6 +21,8 @@ export const CITATION_STYLES = ['numeric', 'authoryear'];
 /** Citation commands; group 1 = command, 2 = optional [note], 3 = keys. */
 const CITE_SOURCE = String.raw`\\(cite|citep|citet|parencite|textcite)\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}`;
 const TEXTUAL = new Set(['citet', 'textcite']);
+/** \printbibliography with an optional [from-to] part of the list. */
+const PRINT_BIB_RE = /\\printbibliography(?:\s*\[\s*(\d+)?\s*(-)?\s*(\d+)?\s*\])?/g;
 /** Every command whose braces hold keys (for collecting and autocomplete). */
 const KEYS_SOURCE = String.raw`\\(?:cite|citep|citet|parencite|textcite|fullcite)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}`;
 /** Text just before the cursor inside an unfinished command: group 1 = the key being typed. */
@@ -368,17 +370,20 @@ export function resolveCitations(rawText) {
 
     const bib = getBibMap();
 
-    if (/\\printbibliography/.test(text)) {
-        const lines = (state._citationOrder || []).map(key => {
+    // \printbibliography, or a part of the list: [9-], [1-8], [5] (1-based, citation order).
+    text = text.replace(PRINT_BIB_RE, (_, from, dash, to) => {
+        const order = state._citationOrder || [];
+        if (!order.length) return '_No citations in this presentation._';
+        const start = Math.max(1, Number(from) || 1);
+        const end = Math.min(order.length, to ? Number(to) : (dash || !from ? order.length : start));
+        const lines = order.slice(start - 1, end).map(key => {
             const entry = bib[key];
             const label = state.citestyle === 'authoryear' ? '-' : `${citationNumber(key)}.`;
             return entry ? `${label} ${formatFullReference(key, entry)}` : `${label} ${missingMark(key)}`;
         });
-        const list = lines.length > 0
-            ? '**References**\n\n' + lines.join('\n')
-            : '_No citations in this presentation._';
-        text = text.replace(/\\printbibliography/g, list);
-    }
+        if (!lines.length) return '';
+        return `**${start > 1 ? 'References (continued)' : 'References'}**\n\n${lines.join('\n')}`;
+    });
 
     text = text.replace(/\\fullcite\s*\{([^}]*)\}/g, (_, keys) =>
         keys.split(',').map(k => {

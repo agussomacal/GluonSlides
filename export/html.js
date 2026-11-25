@@ -10,6 +10,7 @@ import { state } from '../core/state.js';
 import { escapeHtml, exportElementMarkup } from '../core/render.js';
 import { exportFontCss } from '../core/fonts.js';
 import { elementStep, slideStepCount } from '../core/steps.js';
+import { expandSlides } from '../core/bibPages.js';
 
 const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/';
 
@@ -23,29 +24,31 @@ async function fetchText(url, what) {
 }
 
 /** One slide: its elements, the ones that build up marked with data-step. */
-function slideMarkup(slide, idx, { forPrint = false } = {}) {
+function slideMarkup(slide, idx, source = idx) {
     const bg = state.isDarkMode ? '#1e293b' : '#ffffff';
     const style = `width: ${state.slideWidth}px; height: ${state.slideHeight}px;`
         + `background: ${bg}; position: absolute;`
         + `box-shadow: 0 25px 50px rgba(0,0,0,0.5); border-radius: 4px; overflow: hidden;`;
-    let markup = `<div class="slide ${idx === 0 ? 'active' : ''}" id="slide-${idx}" data-steps="${slideStepCount(slide)}" style="${style}">`;
+    // data-source: the slide in the project (continuation pages share it).
+    let markup = `<div class="slide ${idx === 0 ? 'active' : ''}" id="slide-${idx}" data-source="${source}" data-steps="${slideStepCount(slide)}" style="${style}">`;
     (slide.elements || []).forEach(el => {
         const html = exportElementMarkup(el);
         const n = elementStep(el);
-        markup += n > 1 && !forPrint ? html.replace(/^<div /, `<div data-step="${n}" `) : html;
+        markup += n > 1 ? html.replace(/^<div /, `<div data-step="${n}" `) : html;
     });
     return markup + `</div>`;
 }
 
 /**
  * The whole presentation as one HTML file.
- *   startSlide  slide (and step) shown first (in-app Present mode)
+ *   startSlide  slide of the project (and step) shown first (in-app Present mode)
+ *   startAt     or: index in the presented slides (with continuation pages)
  *   localAssets KaTeX fonts from the app's libs/ instead of the CDN
  *               (the in-app frame works offline)
  *   mode        'audience' (the slides) or 'presenter' (presenter view)
  *   notes       include the speaker notes (for the presenter view)
  */
-export async function getExportHtmlString({ startSlide = 0, startStep = 1, localAssets = false, mode = 'audience', notes = true } = {}) {
+export async function getExportHtmlString({ startSlide = 0, startAt = null, startStep = 1, localAssets = false, mode = 'audience', notes = true } = {}) {
     let katexCss = await fetchText('libs/katex.min.css', 'KaTeX CSS');
     katexCss = katexCss.replace(/url\((?!["']?(?:data:|https?:))/g, `url(${localAssets ? 'libs/' : KATEX_CDN}`);
     // Same stylesheet the editor uses — viewer matches canvas by construction.
@@ -60,10 +63,13 @@ export async function getExportHtmlString({ startSlide = 0, startStep = 1, local
         console.warn('Could not embed fonts for export:', e);
     }
 
-    const slidesMarkup = state.slides.map((s, idx) => slideMarkup(s, idx)).join('');
+    // Slides as presented: long reference lists continue on extra pages.
+    const pages = expandSlides();
+    const slidesMarkup = pages.map((p, idx) => slideMarkup(p.slide, idx, p.source)).join('');
     // Speaker notes for the presenter view; "<" escaped so the JSON can't end the script.
-    const notesJson = JSON.stringify(state.slides.map(s => (notes && s.notes) || '')).replace(/</g, '\\u003c');
-    const start = Math.max(0, Math.min(state.slides.length - 1, Number(startSlide) || 0));
+    const notesJson = JSON.stringify(pages.map(p => (notes && p.slide.notes) || '')).replace(/</g, '\\u003c');
+    const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));
+    const start = Math.max(0, Math.min(pages.length - 1, wanted));
 
     return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${escapeHtml(state.projectName || 'Presentation')}</title>
         <style>${katexCss}</style>
@@ -84,6 +90,7 @@ export async function getExportHtmlString({ startSlide = 0, startStep = 1, local
             .gluon-counter.visible { opacity: 1; }
             .nav-hint { position: fixed; bottom: 20px; color: #94a3b8; font-size: 14px; pointer-events: none; z-index: 1000; transition: opacity 0.6s; }
             .nav-hint.hidden { opacity: 0; }
+            .print-pages { display: none; }
 
             /* Presenter view (present/viewer.js) */
             body.gluon-presenter { display: block; background: #0b1120; color: #e2e8f0; font-family: system-ui, sans-serif; }
@@ -114,7 +121,10 @@ export async function getExportHtmlString({ startSlide = 0, startStep = 1, local
             @page { size: ${state.slideWidth}px ${state.slideHeight}px; margin: 0; }
             @media print {
                 body { height: auto; display: block; background: #ffffff; }
+                /* Printing (vector PDF): one page per build step, made by the viewer. */
                 .slide-wrapper { width: auto; height: auto; display: block; position: static; }
+                body:has(> .print-pages) .slide-wrapper { display: none !important; }
+                .print-pages { display: block !important; }
                 .slide { display: block !important; position: relative !important; left: 0 !important; top: 0 !important; margin: 0 !important; transform: none !important; box-shadow: none !important; border-radius: 0 !important; page-break-after: always; break-after: page; }
                 .slide:last-child { page-break-after: auto; break-after: auto; }
                 .step-hidden { opacity: 1 !important; visibility: visible !important; }

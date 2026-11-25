@@ -14,6 +14,7 @@ import {
     applyAlignmentStyles,
     escapeHtml,
 } from '../../core/render.js';
+import { hasAutoBibliography, bibliographyPages, bibliographyPageContent } from '../../core/bibPages.js';
 
 /**
  * Fills the licence notice under the font list (looked up async):
@@ -166,7 +167,8 @@ const TextElement = {
         }
 
         if (ctx.context === 'thumb') {
-            renderContentSafely(domEl, el.content);
+            // Like the canvas: only the part of a long reference list that fits.
+            renderContentSafely(domEl, hasAutoBibliography(el) ? bibliographyPageContent({ ...el }, 0) : el.content);
             return;
         }
 
@@ -179,7 +181,17 @@ const TextElement = {
             }
         } else {
             domEl.contentEditable = 'false';
-            renderContentSafely(domEl, el.content);
+            // A reference list too long for the box: show the part that
+            // fits; the rest continues on extra slides when presenting.
+            const pages = hasAutoBibliography(el) ? bibliographyPages({ ...el }) : null;
+            if (pages && pages.length > 1) {
+                domEl.dataset.bibMore = String(pages.length - 1);
+                domEl.title = `The reference list continues on ${pages.length - 1} more slide${pages.length > 2 ? 's' : ''} when presenting and exporting.`;
+                renderContentSafely(domEl, bibliographyPageContent({ ...el }, 0));
+            } else {
+                delete domEl.dataset.bibMore;
+                renderContentSafely(domEl, el.content);
+            }
         }
     },
 

@@ -1646,3 +1646,19 @@ select.toolbar-select option:checked {
 .cite-menu-item.active .cite-menu-label {
     color: #dbeafe;
 }
+
+/* A reference list that continues on extra slides (core/bibPages.js). */
+.canvas-element[data-bib-more]::before {
+    content: "↪ continues on +" attr(data-bib-more) " slide(s)";
+    position: absolute;
+    right: calc(4px * var(--ui-unit, 1));
+    bottom: calc(4px * var(--ui-unit, 1));
+    padding: 0 calc(8px * var(--ui-unit, 1));
+    border-radius: calc(10px * var(--ui-unit, 1));
+    background: #0369a1;
+    color: #ffffff;
+    font: 600 calc(12px * var(--ui-unit, 1)) / calc(20px * var(--ui-unit, 1)) system-ui, sans-serif;
+    pointer-events: none;
+    z-index: 5;
+    white-space: nowrap;
+}
