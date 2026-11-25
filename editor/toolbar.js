@@ -23,13 +23,28 @@ function entriesByCategory() {
     ElementRegistry.types()
         .filter(def => def.toolbar !== false)
         .forEach(def => {
-            const category = def.category || def.type;
-            if (!groups.has(category)) groups.set(category, []);
-            const variants = Array.isArray(def.variants) && def.variants.length
-                ? def.variants.map(v => ({ type: def.type, variant: v.id, label: v.label, icon: v.icon || def.icon }))
-                : [{ type: def.type, variant: null, label: def.label.replace(/^Add\s+/i, ''), icon: def.icon }];
-            groups.get(category).push(...variants);
+            // A variant may sit in another category than its type
+            // (e.g. closed paths under Shapes).
+            const entries = Array.isArray(def.variants) && def.variants.length
+                ? def.variants.map(v => ({
+                    type: def.type, variant: v.id, label: v.label, icon: v.icon || def.icon,
+                    category: v.category || def.category || def.type,
+                }))
+                : [{
+                    type: def.type, variant: null, label: def.label.replace(/^Add\s+/i, ''), icon: def.icon,
+                    category: def.category || def.type,
+                }];
+            entries.forEach(entry => {
+                entry.borrowed = entry.category !== (def.category || def.type);
+                if (!groups.has(entry.category)) groups.set(entry.category, []);
+                groups.get(entry.category).push(entry);
+            });
         });
+    // A category lists its own types first, then variants borrowed from
+    // other types (independent of module load order).
+    for (const [id, entries] of groups) {
+        groups.set(id, [...entries.filter(e => !e.borrowed), ...entries.filter(e => e.borrowed)]);
+    }
     return groups;
 }
 
@@ -79,6 +94,7 @@ export function renderAddElementToolbar(container, onAdd) {
             </button>
             <div class="toolbar-menu" role="menu">
                 ${entries.map((e, i) => `
+                    ${i > 0 && e.type !== entries[i - 1].type ? '<div class="toolbar-menu-divider"></div>' : ''}
                     <button type="button" role="menuitem" data-index="${i}">
                         <span class="toolbar-menu-icon">${e.icon}</span> ${escapeHtml(e.label)}
                     </button>`).join('')}

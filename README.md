@@ -45,7 +45,22 @@ Because the format is deterministic (fixed property order, stable IDs, no timest
 
 ### Shapes
 
-The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot. They are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.
+The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.
+
+### Lines & curves
+
+The **Lines & curves ▾** menu draws open paths: lines, arrows, curves, curved arrows and freehand strokes. Their closed versions (polygon, closed curve, freehand shape) are in **Shapes ▾**; they are the same element with `closed:yes` and a fill. Pick one, then draw on the slide: drag for lines and arrows (Shift: 45° angles); click to place each point of a curve or polygon and double-click (or Enter) to finish, or click the first point to close; hold the mouse button and draw for freehand. A dashed preview shows every placed point while you draw. Esc cancels.
+
+They are all `.element.path`. The points are the body, one per line, as fractions (0–1) of the element's box, so resizing the box reshapes the path:
+
+```
+.element.path id:9 x:200 y:200 width:500 height:300 curve:smooth end:arrow stroke:#0f172a strokeWidth:4
+	0 0.8
+	0.3 0.1
+	1 0.2
+```
+
+Optional parameters: `curve:smooth` (a spline through every point; default straight), `closed:yes` with `fill:#hex`, `dash:dashed|dotted`, `start`/`end:arrow|dot`. A selected path shows its points: drag them to reshape, double-click the line to add a point, double-click a point to remove it; corner handles scale the whole path (Shift keeps proportions). Freehand strokes are simplified to a few points and drawn as smooth curves, so they can be edited the same way.
 
 ### Groups
 

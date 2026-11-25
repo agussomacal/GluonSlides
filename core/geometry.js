@@ -71,7 +71,7 @@ export function updateResizeCursor(domEl, el, mouseEvent) {
  * Full drag/resize interaction for one element or a group of selected elements.
  * `groupItems` is an optional array of `{ el, domEl }` for all selected elements.
  */
-export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
+export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { allowResize = true } = {}) {
     const { sx, sy } = computeScale(domEl, el);
     const { stepX, stepY } = gridSteps();
 
@@ -84,7 +84,7 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null) {
     const localX = (e.clientX - rect.left) / sx;
     const localY = (e.clientY - rect.top) / sy;
     const { isLeft, isRight, isTop, isBottom } = edgeHits(el, localX, localY);
-    const isResizing = isLeft || isRight || isTop || isBottom;
+    const isResizing = allowResize && (isLeft || isRight || isTop || isBottom);
 
     const activeGroup = (!isResizing && Array.isArray(groupItems) && groupItems.length > 1)
         ? groupItems.map(item => ({

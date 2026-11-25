@@ -34,6 +34,7 @@ import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
 import { initMarqueeSelection } from './marquee.js';
 import { renderAddElementToolbar } from './toolbar.js';
+import { initDrawingTools, startTool } from './tools.js';
 import { createGroupFrame, groupScale } from '../elements/group/group.js';
 import { enterGroup, exitGroup, groupSelection, ungroupSelection, isEditingGroup } from './groupOps.js';
 
@@ -51,15 +52,22 @@ export function renderToolbarButtons() {
 /** Adds an element of `type`, optionally using one of its toolbar variants. */
 export function addElement(type, variantId = null) {
     if (!state.slides[state.currentSlideIndex]) return;
-    const elements = activeElements(); // inside the group being edited, if any
-    const inGroup = isEditingGroup();
-
     const def = ElementRegistry.get(type);
     if (!def) {
         console.error(`No element registered for type '${type}'`);
         return;
     }
+    // Variants that are drawn (lines, curves, freehand) start a tool instead.
+    if (startTool(type, variantId)) return;
 
+    const elements = activeElements(); // inside the group being edited, if any
+    const stagger = elements.length * 30;
+    const offset = isEditingGroup() ? 20 : 200;
+    insertNewElement(def, variantId, { x: offset + stagger, y: offset + stagger });
+}
+
+/** Builds an element from defaults + variant preset + `props`, adds and selects it. */
+function insertNewElement(def, variantId, props) {
     const variant = variantId && Array.isArray(def.variants)
         ? def.variants.find(v => v.id === variantId)
         : null;
@@ -67,16 +75,14 @@ export function addElement(type, variantId = null) {
         ? variant.preset(state.slideWidth / 1920)
         : (variant && variant.preset) || {};
 
-    const stagger = elements.length * 30;
-    const offset = inGroup ? 20 : 200;
     const el = {
         ...def.defaults({}),
         ...preset,
+        ...props,
         id: allocateElementId(), // stable, monotonic, never reused
-        x: offset + stagger,
-        y: offset + stagger,
     };
 
+    const elements = activeElements();
     elements.push(el);
     setSelectedElementIndices([elements.length - 1], elements.length - 1);
     setSelectedSlideIndices([state.currentSlideIndex]);
@@ -163,7 +169,12 @@ propertiesPanel.addEventListener('click', (e) => {
     const elIndex = state.selectedElementIndex;
     const el = elIndex !== null ? activeElements()[elIndex] : null;
     if (!el) return;
-    ElementRegistry.callAction(el.type, btn.dataset.elementAction, elIndex, btn.dataset.arg);
+    const result = ElementRegistry.callAction(el.type, btn.dataset.elementAction, elIndex, btn.dataset.arg, el);
+    // Synchronous actions edit `el` directly; async ones save themselves.
+    if (!(result instanceof Promise)) {
+        markDirty();
+        renderEditor();
+    }
 });
 
 export function moveSelectedElementsByArrow(key, altKey = false) {
@@ -320,6 +331,79 @@ function renderLevel(container, elements, path, depth) {
     });
 }
 
+// ---------- Element handles (path points / corners) ----------
+
+/**
+ * Draws the element's handles (def.handles) and wires dragging them
+ * (def.dragHandle). Double-clicking a point handle removes the point.
+ */
+function appendHandles(container, domEl, el, def, elIndex) {
+    const rect = container.getBoundingClientRect();
+    const unit = (container.offsetWidth || 1) / (rect.width || 1); // container units per screen px
+
+    const paint = () => {
+        domEl.querySelectorAll('.el-handle').forEach(h => h.remove());
+        def.handles(el).forEach(h => {
+            const node = document.createElement('div');
+            node.className = `el-handle el-handle-${h.kind}`;
+            node.dataset.handle = h.id;
+            node.style.left = `${h.x}px`;
+            node.style.top = `${h.y}px`;
+            node.style.setProperty('--handle-size', `${12 * unit}px`);
+            node.addEventListener('mousedown', (e) => startHandleDrag(e, h.id));
+            if (h.kind === 'point' && typeof def.removePoint === 'function') {
+                node.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    if (def.removePoint(el, Number(h.id.slice(1)))) {
+                        markDirty();
+                        renderEditor();
+                    }
+                });
+            }
+            domEl.appendChild(node);
+        });
+    };
+
+    const repaint = () => {
+        applyCommonBoxStyles(domEl, el);
+        def.renderDom(domEl, el, { context: 'canvas', elIndex });
+        paint();
+    };
+
+    function startHandleDrag(e, id) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const start = { x: el.x, y: el.y, width: el.width, height: el.height };
+        const { stepX, stepY } = gridSteps();
+        let moved = false;
+        const onMove = (m) => {
+            const r = container.getBoundingClientRect();
+            let px = (m.clientX - r.left) * ((container.offsetWidth || 1) / (r.width || 1));
+            let py = (m.clientY - r.top) * ((container.offsetHeight || 1) / (r.height || 1));
+            if (!m.altKey && !m.shiftKey && state.gridSize > 0) {
+                px = snapToGridPoint(px, stepX);
+                py = snapToGridPoint(py, stepY);
+            }
+            moved = true;
+            def.dragHandle(el, id, px, py, { shiftKey: m.shiftKey, start });
+            repaint();
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (moved) {
+                markDirty();
+                renderEditor();
+            }
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }
+
+    paint();
+}
+
 function renderInteractiveElements(container, elements) {
     const selectedSet = new Set(getSelectedElementIndices());
     const renderedItems = [];
@@ -339,10 +423,16 @@ function renderInteractiveElements(container, elements) {
             def.renderDom(domEl, el, { context: 'canvas', elIndex });
         }
 
+        // Elements with handles (paths) are reshaped with those, not box edges.
+        const boxResize = !def || def.boxResize !== false;
+        if (def && typeof def.handles === 'function' && selectedSet.size === 1 && selectedSet.has(elIndex)) {
+            appendHandles(container, domEl, el, def, elIndex);
+        }
+
         renderedItems.push({ el, domEl, elIndex });
 
         domEl.onmousemove = (e) => {
-            if (domEl.classList.contains('editing-mode')) return;
+            if (domEl.classList.contains('editing-mode') || !boxResize) return;
             updateResizeCursor(domEl, el, e);
         };
 
@@ -395,7 +485,7 @@ function renderInteractiveElements(container, elements) {
                 renderPropertiesPanel();
                 const freshDom = activeContainer().querySelector(`:scope > [data-element-id="${el.id}"]`);
                 if (!freshDom) return;
-                startDragOrResize(freshDom, el, e, dragCallbacks);
+                startDragOrResize(freshDom, el, e, dragCallbacks, null, { allowResize: boxResize });
                 return;
             }
 
@@ -404,7 +494,7 @@ function renderInteractiveElements(container, elements) {
                 .filter(item => getSelectedElementIndices().includes(item.elIndex))
                 .map(item => ({ el: item.el, domEl: item.domEl }));
 
-            startDragOrResize(domEl, el, e, dragCallbacks, groupItems);
+            startDragOrResize(domEl, el, e, dragCallbacks, groupItems, { allowResize: boxResize });
         };
 
         container.appendChild(domEl);
@@ -501,7 +591,9 @@ function renderPropertiesPanel() {
     const activeIdx = selectedIndices[0];
     const el = elements[activeIdx];
     const def = ElementRegistry.get(el.type);
-    const typeLabel = def ? def.label.replace(/^Add\s+/i, '') : el.type;
+    const typeLabel = def && typeof def.typeLabel === 'function'
+        ? def.typeLabel(el)
+        : (def ? def.label.replace(/^Add\s+/i, '') : el.type);
 
     let html = groupBanner + `
         <div class="prop-group">
@@ -534,7 +626,7 @@ function renderPropertiesPanel() {
         html += def.properties(el, activeIdx);
     }
 
-    html += `
+    if (!def || def.boxStyle !== false) html += `
         <div class="prop-divider"></div>
         <div class="prop-group">
             <label>Background Color</label>
@@ -600,6 +692,15 @@ export function leaveGroup() {
     renderEditor();
     return true;
 }
+
+// Drawing tools for lines, curves and freehand strokes.
+initDrawingTools({
+    workspace: document.getElementById('workspace-area'),
+    getContainer: activeContainer,
+    onCreate(type, variantId, props) {
+        insertNewElement(ElementRegistry.get(type), variantId, props);
+    },
+});
 
 // Drag on empty canvas space to select every element the box touches.
 initMarqueeSelection({

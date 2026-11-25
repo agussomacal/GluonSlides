@@ -529,6 +529,12 @@ body {
     background: rgba(255, 255, 255, 0.08);
 }
 
+.toolbar-menu-divider {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--border-color);
+}
+
 .toolbar-menu-icon {
     width: 20px;
     text-align: center;
@@ -570,6 +576,88 @@ body {
     transform: scale(0.5);
     transform-origin: center center;
     transition: background-color 0.2s, color 0.2s;
+}
+
+/* Paths: point / corner handles (editor.js appendHandles) */
+.el-handle {
+    position: absolute;
+    width: var(--handle-size, 12px);
+    height: var(--handle-size, 12px);
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    background: #ffffff;
+    border: 2px solid var(--accent-color);
+    pointer-events: auto;   /* the path box itself ignores the mouse */
+    cursor: grab;
+    z-index: 5;
+}
+
+.el-handle-point {
+    border-radius: 50%;
+}
+
+.el-handle-corner {
+    background: var(--accent-color);
+    cursor: nwse-resize;
+}
+
+.el-handle[data-handle="ne"],
+.el-handle[data-handle="sw"] {
+    cursor: nesw-resize;
+}
+
+.element-path .path-hit {
+    cursor: move;
+}
+
+/* Drawing tools (editor/tools.js) */
+.workspace.tool-active,
+.workspace.tool-active * {
+    cursor: crosshair !important;
+}
+
+.tool-preview {
+    position: absolute;
+    left: 0;
+    top: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 20;
+}
+
+.tool-preview path {
+    fill: none;
+    stroke: var(--accent-color);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tool-preview .tool-preview-close {
+    opacity: 0.6;
+}
+
+.tool-preview circle {
+    fill: #ffffff;
+    stroke: var(--accent-color);
+}
+
+.tool-preview circle.closing {
+    fill: var(--accent-color);
+}
+
+.tool-hint {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #f8fafc;
+    font-size: 12px;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 /* Rubber-band selection (editor/marquee.js) */

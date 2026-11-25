@@ -20,8 +20,16 @@
 //                  entries for this type; preset(scale) returns props
 //                  merged over defaults() (scale = slideWidth / 1920).
 //   exportStyle(el): optional extra CSS for the exported wrapper box
+//   typeLabel(el): optional name for the properties panel's Object Type
+//   boxResize    : optional; false disables resizing by box edges
+//   boxStyle     : optional; false hides the background/border fields
+//   handles(el)  : optional [{ id, kind, x, y }] drawn when selected
+//                  (box-local units); dragHandle(el, id, px, py, opts)
+//                  moves one (parent units); removePoint(el, i) optional
+//   variants[].create : 'drag' | 'points' | 'freehand' — drawn with
+//                  editor/tools.js; then fromPoints(points) gives props
 //   toolbar      : optional; false hides the toolbar "add" button
-//   actions      : optional { name: fn(elIndex, arg) }. A button in
+//   actions      : optional { name: fn(elIndex, arg, el) }. A button in
 //                  properties() HTML with data-element-action="name"
 //                  (and optional data-arg="...") runs it on click.
 //
@@ -61,10 +69,10 @@ export const ElementRegistry = {
     },
 
     /** Runs an element action (from a data-element-action button). */
-    callAction(type, action, elIndex, payload) {
+    callAction(type, action, elIndex, payload, el) {
         const def = definitions.get(type);
         if (def && def.actions && typeof def.actions[action] === 'function') {
-            return def.actions[action](elIndex, payload);
+            return def.actions[action](elIndex, payload, el);
         }
         console.warn(`Unknown element action: ${type}.${action}`);
     },
