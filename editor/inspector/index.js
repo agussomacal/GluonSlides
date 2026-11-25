@@ -25,6 +25,7 @@ import {
     setEditingGroup,
     activeElements,
     findElementPath,
+    whenApiReady,
 } from '../../core/state.js';
 import { looksLikeGl } from '../../core/gl/glformat.js';
 import { syncProjectChrome } from '../../core/render.js';
@@ -443,6 +444,8 @@ export function initGlInspector() {
     buildDrawer();
     initContextMenu({ onGoTo: openGlInspector });
     loadSettings().then(applySettings);
+    // Settings saved in the user config arrive once the bridge is ready.
+    whenApiReady(60000).then(api => { if (api) loadSettings().then(applySettings); });
 
     document.addEventListener('click', (e) => {
         const popover = settingsPopover.element;

@@ -49,6 +49,7 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 
 | Suite | What it checks |
 |---|---|
+| `welcome` | The start window: recent projects appear however and whenever the Python bridge becomes ready (empty bridge at start, missed ready event, slow or failing first call, no bridge at all), opening a recent project, Open before the bridge is ready, names shown as text |
 | `selection` | Rubber-band selection (drag on empty space, Ctrl to add), clicking to deselect, autosave timing |
 | `groups` | Grouping (Ctrl+G), resizing scales the contents, double-click to edit inside, drag in a stretched group, Esc, ungroup bakes the scale, undo, export, paste |
 | `properties-panel` | Every kind of control in the properties panel (numbers, colors, selects, checkboxes), multi-selection, figure buttons; no inline handlers or globals |

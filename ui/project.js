@@ -5,7 +5,7 @@
 // ============================================================
 
 import {
-    state, pyApi, parseTexMacros, markDirty, flushPendingSave,
+    state, pyApi, whenApiReady, parseTexMacros, markDirty, flushPendingSave,
     serializeProject, deserializeProject, currentSnapshot, resetHistory,
     resetProjectState, DEFAULT_TEX_MACROS,
 } from '../core/state.js';
@@ -33,10 +33,14 @@ export function showView(viewId) {
 
 // ---------- Recents ----------
 
-function renderRecents() {
+function renderRecents(message = null) {
     const ul = document.getElementById('project-list');
     if (!ul) return;
     ul.innerHTML = '';
+    if (message) {
+        ul.innerHTML = `<li class="project-item project-item-message">${escapeHtml(message)}</li>`;
+        return;
+    }
 
     const recents = Array.isArray(state.recents) ? state.recents.filter(r => r && r.path) : [];
     recents.forEach(r => {
@@ -52,16 +56,39 @@ function renderRecents() {
     }
 }
 
-export async function initRecents() {
-    const api = pyApi();
-    if (api) {
+const RECENTS_QUICK_WAIT_MS = 3000;   // then show "No recent projects" meanwhile
+const RECENTS_LONG_WAIT_MS = 60000;   // keep waiting for a slow bridge this long
+
+/** get_recent_projects, retried a few times if the bridge hiccups. */
+async function fetchRecents(api) {
+    for (let attempt = 1; attempt <= 4; attempt++) {
         try {
             const res = await api.get_recent_projects();
-            if (res && res.success && Array.isArray(res.projects)) state.recents = res.projects;
+            if (res && res.success && Array.isArray(res.projects)) return res.projects;
         } catch (e) {
-            console.error('Could not load recent projects:', e);
+            console.warn(`Could not load recent projects (attempt ${attempt}):`, e);
         }
+        await new Promise(r => setTimeout(r, 250 * attempt));
     }
+    return null;
+}
+
+/**
+ * Shows the recent projects. Waits for the Python bridge, which may
+ * become ready only after the page has started (see whenApiReady).
+ */
+export async function initRecents() {
+    const hasList = Array.isArray(state.recents) && state.recents.length > 0;
+    if (!hasList) renderRecents('Loading recent projects…');
+
+    let api = await whenApiReady(RECENTS_QUICK_WAIT_MS);
+    if (!api) {
+        renderRecents(); // "No recent projects found" (e.g. browser preview)...
+        api = await whenApiReady(RECENTS_LONG_WAIT_MS); // ...but a slow bridge still counts
+        if (!api) return;
+    }
+    const projects = await fetchRecents(api);
+    if (projects) state.recents = projects;
     renderRecents();
 }
 
@@ -144,7 +171,7 @@ function enterEditor() {
  */
 export async function createProject(name) {
     clearFigureCache();
-    const api = pyApi();
+    const api = await whenApiReady(RECENTS_QUICK_WAIT_MS);
     if (!api) {
         resetProjectState({ name: name || 'Untitled Project' });
         enterEditor();
@@ -171,7 +198,12 @@ export async function createProject(name) {
 export async function openProjectByPath(path, content) {
     try {
         if (!content) {
-            const res = await pyApi().load_project_at(path);
+            const api = await whenApiReady();
+            if (!api) {
+                alert('Could not open project: the app is not ready yet. Please try again.');
+                return;
+            }
+            const res = await api.load_project_at(path);
             if (!res || !res.success) {
                 alert(`Could not open project: ${res ? res.error : 'Unknown error'}`);
                 return;
@@ -198,7 +230,9 @@ export async function openProjectByPath(path, content) {
 }
 
 export async function openProjectFromFile() {
-    const api = pyApi();
+    // Pressed right after start: wait for the bridge instead of falling
+    // back to the browser-preview sample.
+    const api = await whenApiReady(RECENTS_QUICK_WAIT_MS);
     if (!api) {
         openSampleProject();
         return;

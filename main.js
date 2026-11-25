@@ -8,7 +8,7 @@
 //   export/               HTML / PDF export
 // ============================================================
 
-import { startAutosave, flushPendingSave } from './core/state.js';
+import { startAutosave, flushPendingSave, whenApiReady } from './core/state.js';
 import {
     bindMarkDirtyAndRender, changeGridSize, changeSlideSizePreset, syncProjectChrome,
 } from './core/render.js';
@@ -110,16 +110,9 @@ initKeyboardShortcuts();
 // autosave (every few seconds) is the real safety net.
 window.addEventListener('beforeunload', flushPendingSave);
 
-function onApiReady() {
-    initRecents();
-    loadSystemFonts(); // "This computer" section of the font list
-}
-
-if (window.pywebview) {
-    onApiReady();
-} else {
-    // pywebview injects its API asynchronously; in a plain browser
-    // (preview) the event never fires and recents stay empty.
-    window.addEventListener('pywebviewready', onApiReady, { once: true });
-    initRecents();
-}
+// The Python bridge may become ready only after this module runs
+// (pywebview adds its functions asynchronously): both wait for it.
+initRecents();
+whenApiReady(60000).then(api => {
+    if (api) loadSystemFonts(); // "This computer" section of the font list
+});

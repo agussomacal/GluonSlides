@@ -3,7 +3,7 @@
 // dialogs. Each modal is a `.modal-backdrop` in index.html.
 // ============================================================
 
-import { state, pyApi } from '../core/state.js';
+import { state, pyApi, whenApiReady } from '../core/state.js';
 import { createProject, setMacros, setBibliography } from './project.js';
 
 const $ = (id) => document.getElementById(id);
@@ -40,7 +40,7 @@ export function validateNewProjectForm() {
 }
 
 export async function chooseNewProjectFolder() {
-    const api = pyApi();
+    const api = await whenApiReady(3000);
     if (!api) {
         $('new-project-folder').textContent = '(dialog unavailable in browser preview)';
         validateNewProjectForm();

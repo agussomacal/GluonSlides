@@ -75,7 +75,38 @@ export const state = {
 
 /** Returns the pywebview API object or null in browser preview. */
 export function pyApi() {
-    return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
+    const api = window.pywebview && window.pywebview.api;
+    // pywebview first creates `window.pywebview` with an EMPTY `api`
+    // object and only later adds the functions (then fires
+    // `pywebviewready`): an api without functions is not ready yet.
+    return api && Object.values(api).some(v => typeof v === 'function') ? api : null;
+}
+
+/**
+ * Resolves with the Python API once it is ready, or with null after
+ * `timeoutMs` (e.g. in a plain browser, where there is no bridge).
+ * Listens for `pywebviewready` and also checks regularly, so a ready
+ * event fired before anyone listened is not missed.
+ */
+export function whenApiReady(timeoutMs = 10000) {
+    const ready = pyApi();
+    if (ready) return Promise.resolve(ready);
+    return new Promise((resolve) => {
+        let finished = false;
+        const finish = (api) => {
+            if (finished) return;
+            finished = true;
+            clearInterval(poll);
+            clearTimeout(timer);
+            window.removeEventListener('pywebviewready', onEvent);
+            resolve(api);
+        };
+        const check = () => { const api = pyApi(); if (api) finish(api); };
+        const onEvent = () => check();
+        window.addEventListener('pywebviewready', onEvent);
+        const poll = setInterval(check, 100);
+        const timer = setTimeout(() => finish(null), timeoutMs);
+    });
 }
 
 // ---------- IDs ----------
