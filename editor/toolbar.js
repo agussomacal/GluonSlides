@@ -12,6 +12,7 @@ import { escapeHtml } from '../core/render.js';
 // Unknown categories are appended after these, in registration order.
 const CATEGORIES = [
     { id: 'text', label: 'Text', icon: '📝' },
+    { id: 'fields', label: 'Fields', icon: '#', menu: true }, // slide number, footer, date...
     { id: 'shapes', label: 'Shapes', icon: '⬛' },
     { id: 'lines', label: 'Lines & curves', icon: '〰️' },
     { id: 'media', label: 'Media', icon: '🖼️' },
@@ -98,7 +99,7 @@ export function renderAddElementToolbar(container, onAdd) {
             <div class="toolbar-menu" role="menu">
                 ${entries.map((e, i) => `
                     ${i > 0 && e.type !== entries[i - 1].type ? '<div class="toolbar-menu-divider"></div>' : ''}
-                    <button type="button" role="menuitem" data-index="${i}">
+                    <button type="button" role="menuitem" data-index="${i}" data-variant="${escapeHtml(e.variant || '')}">
                         <span class="toolbar-menu-icon">${e.icon}</span> ${escapeHtml(e.label)}
                     </button>`).join('')}
             </div>`;

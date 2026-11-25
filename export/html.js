@@ -11,6 +11,7 @@ import { escapeHtml, exportElementMarkup } from '../core/render.js';
 import { exportFontCss } from '../core/fonts.js';
 import { elementStep, slideStepCount } from '../core/steps.js';
 import { expandSlides } from '../core/bibPages.js';
+import { withSlideContext, invalidateNumbering } from '../core/fields.js';
 
 const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/';
 
@@ -64,8 +65,11 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
     }
 
     // Slides as presented: long reference lists continue on extra pages.
+    invalidateNumbering();
     const pages = expandSlides();
-    const slidesMarkup = pages.map((p, idx) => slideMarkup(p.slide, idx, p.source)).join('');
+    // Fields (\slidenumber ...) count the slides as presented.
+    const slidesMarkup = pages.map((p, idx) => withSlideContext({ source: p.source, number: idx + 1, total: pages.length },
+        () => slideMarkup(p.slide, idx, p.source))).join('');
     // Speaker notes for the presenter view; "<" escaped so the JSON can't end the script.
     const notesJson = JSON.stringify(pages.map(p => (notes && p.slide.notes) || '')).replace(/</g, '\\u003c');
     const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));

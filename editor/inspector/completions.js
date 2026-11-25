@@ -16,8 +16,9 @@ import { ElementRegistry } from '../../core/registry.js';
 import { STYLE_KEYS, styleNames } from '../../core/defaults.js';
 import { palette } from '../../core/colors.js';
 import { citationCandidates, OPEN_CITE_RE } from '../../core/citations.js';
+import { commandCandidates, OPEN_COMMAND_RE } from '../../core/fields.js';
 
-const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
+const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid', 'author', 'date'];
 
 // Known values for enumerated parameters.
 const VALUES = {
@@ -100,6 +101,7 @@ function documentColors(cm) {
 function directiveCandidates() {
     const list = [
         { text: '.slide {', displayText: '.slide {Title} id:' },
+        { text: '.section {', displayText: '.section {Name}  (the following slides)' },
         { text: '.notes', displayText: '.notes  (speaker notes, indented below)' },
         { text: '.define {', displayText: '.define {name} width: height:' },
         { text: '.import {', displayText: '.import {macros.gl}' },
@@ -143,6 +145,14 @@ export function glHints(cm) {
             .filter(c => c.key !== typed || close)
             .map(c => ({ text: c.key + close, displayText: `${c.key}  —  ${c.label}` }));
         return result(list, cur.ch - typed.length);
+    }
+
+    // "\" in body text: fields and bibliography commands.
+    const command = indent.length > 0 && before.match(OPEN_COMMAND_RE);
+    if (command) {
+        const list = commandCandidates(command[1])
+            .map(c => ({ text: c.insert, displayText: `\\${c.name}  —  ${c.label}`, chainValues: c.insert.endsWith('{') }));
+        return result(list, cur.ch - command[1].length);
     }
 
     // Directive at the start of a line.

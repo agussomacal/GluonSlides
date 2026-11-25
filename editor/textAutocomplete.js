@@ -1,13 +1,16 @@
 // ============================================================
-// editor/citeAutocomplete.js — Bibliography keys while typing in a
-// text box on the canvas: after \cite{ (or \citet{, \fullcite{ ...,
-// or a comma inside one) a list of matching entries appears under the
-// cursor. ↑/↓ choose, Enter or Tab inserts the key (and the closing
-// brace when it is missing), Esc closes the list, typing filters it.
+// editor/textAutocomplete.js — Suggestions while typing in a text box
+// on the canvas, in a list under the cursor:
+//   after "\"           the commands: fields (\slidenumber ...) and
+//                       bibliography commands (\cite ...)
+//   after \cite{ or ,   the bibliography keys (inserted with the
+//                       closing brace when it is missing)
+// ↑/↓ choose, Enter or Tab inserts, Esc closes, typing filters.
 // The .gl inspector has the same suggestions (inspector/completions.js).
 // ============================================================
 
 import { citationCandidates, OPEN_CITE_RE } from '../core/citations.js';
+import { commandCandidates, OPEN_COMMAND_RE } from '../core/fields.js';
 import { escapeHtml } from '../core/render.js';
 
 const MAX_ITEMS = 8;
@@ -68,10 +71,20 @@ function render(caretRect) {
 
 function update(box) {
     const around = textAround(box);
-    const m = around && around.before.match(OPEN_CITE_RE);
-    if (!m) { close(); return; }
-    typed = m[1];
-    items = citationCandidates(typed).filter(c => c.key !== typed).slice(0, MAX_ITEMS);
+    if (!around) { close(); return; }
+    const cite = around.before.match(OPEN_CITE_RE);
+    const command = !cite && around.before.match(OPEN_COMMAND_RE);
+    if (cite) {
+        typed = cite[1];
+        items = citationCandidates(typed).filter(c => c.key !== typed).slice(0, MAX_ITEMS)
+            .map(c => ({ ...c, insert: c.key + (/^\s*[},]/.test(around.after) ? '' : '}') }));
+    } else if (command) {
+        typed = command[1];
+        items = commandCandidates(typed).map(c => ({ key: `\\${c.name}`, label: c.label, insert: c.insert }));
+    } else {
+        close();
+        return;
+    }
     if (!items.length) { close(); return; }
     editing = box;
     activeIndex = Math.min(activeIndex, items.length - 1);
@@ -88,13 +101,12 @@ function accept(index) {
     const item = items[index];
     const box = editing;
     if (!item || !box) return;
-    const around = textAround(box);
     const sel = window.getSelection();
     for (let i = 0; i < typed.length; i++) sel.modify('extend', 'backward', 'character');
-    const closeBrace = around && /^\s*[},]/.test(around.after) ? '' : '}';
-    // insertText keeps undo working and fires `input` (saves the text).
-    document.execCommand('insertText', false, item.key + closeBrace);
     close();
+    // insertText keeps undo working and fires `input` (saves the text, and
+    // opens the key list after "\cite{").
+    document.execCommand('insertText', false, item.insert);
 }
 
 document.addEventListener('input', (e) => {

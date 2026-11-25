@@ -6,6 +6,7 @@
 
 import { state, markDirty } from './state.js';
 import { resolveCitations } from './citations.js';
+import { resolveFields } from './fields.js';
 import { ElementRegistry } from './registry.js';
 import { fontStack } from './fonts.js';
 import { forDrawing } from './defaults.js';
@@ -31,7 +32,8 @@ export function renderMarkdownAndKatex(element, rawText) {
     // keeps the raw \cite{...} markers for round-trip fidelity.
     let processed;
     try {
-        processed = resolveCitations(rawText);
+        // Fields first (\slidenumber ...), then citations.
+        processed = resolveCitations(resolveFields(rawText));
     } catch (e) {
         console.error('Citation resolution error:', e);
         processed = rawText;

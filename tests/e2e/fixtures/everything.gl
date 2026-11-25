@@ -1,6 +1,6 @@
 # Test project using every feature of the .gl format (see tests/README.md).
 .import {macros.gl}
-.project {Everything} version:2 width:1920 height:1080 grid:20 darkmode:no citestyle:numeric nextid:40
+.project {Everything} version:2 width:1920 height:1080 grid:20 darkmode:no citestyle:numeric nextid:40 author:"Ada Lovelace" date:today
 .palette primary:#1d4ed8 accent:#f59e0b dark:#0f172a light:#f1f5f9
 .defaults.path stroke:@dark strokeWidth:4
 .defaults.text fontFamily:"EB Garamond" fontSize:32
@@ -27,6 +27,8 @@
 	0 1
 	0.5 0
 	1 0.6
+
+.section {Building blocks}
 
 .slide {Groups and macros} id:6
 .element.group id:7 x:100 y:100 width:800 height:400 frameWidth:400 frameHeight:200

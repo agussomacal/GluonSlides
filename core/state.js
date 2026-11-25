@@ -476,6 +476,8 @@ export function currentSnapshot() {
         defaults: state.defaults,
         styles: state.styles,
         palette: state.palette,
+        author: state.author,
+        date: state.date,
         slides: state.slides,
     });
 }
@@ -496,6 +498,8 @@ export function serializeProject() {
         isDarkMode: state.isDarkMode,
         nextId: state.nextId,
         citestyle: state.citestyle,
+        author: state.author,
+        date: state.date,
         slides: state.slides,
     });
 }
@@ -569,6 +573,8 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     state.isDarkMode = !!data.isDarkMode;
     state.citestyle = data.citestyle === 'authoryear' ? 'authoryear' : 'numeric';
     state.nextId = Math.max(1, num(data.nextId, 1));
+    state.author = data.author || '';
+    state.date = data.date || '';
     const name = data.name || data.projectName;
     if (name) state.projectName = name;
     applyMacroData(data);

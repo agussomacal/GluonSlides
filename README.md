@@ -185,6 +185,32 @@ The selector next to the button switches the style between numeric and author–
 	\printbibliography
 ```
 
+### Fields and sections
+
+Text can contain **fields**, commands replaced by their value on each slide (on the canvas, in thumbnails, when presenting and in exports; the `.gl` file keeps the command):
+
+| Field | Shows |
+|---|---|
+| `\slidenumber` / `\totalslides` | 7 / 24 (as presented: continuation pages of long reference lists count, build steps don't) |
+| `\slidetitle` | the slide's name |
+| `\sectiontitle` | the slide's section |
+| `\presentationtitle`, `\author`, `\date` | the project name, and the author and date from **Project settings → Presentation** (`date:today` always shows the current day) |
+| `\tableofcontents` | the sections, the current one in bold |
+
+They mix with normal text and Markdown (`**\slidenumber**`, `Page \slidenumber of \totalslides`) and take the text box's font and style. **Fields ▾** in the toolbar adds a text box with a field already placed where it usually goes (slide number bottom right, a footer, a title page, a table of contents...), and typing `\` in a text box or in the inspector suggests them.
+
+**Sections** group slides. With nothing selected, the properties panel shows the slide's **Section**: a name typed there applies from this slide on (to the following slides that were in the same section), so it both starts a new section and renames one. The sidebar shows a header per section; click it to fold the section's slides. In the file a section starts with `.section {Name}` (a bare `.section` ends it):
+
+```
+.project {Thesis defence} ... author:"Ada Lovelace" date:2026-06-30
+
+.section {Introduction}
+
+.slide {Motivation} id:3
+.element.text id:4 x:40 y:1010 width:1840 height:50 fontSize:20
+	\presentationtitle · \sectiontitle · \slidenumber / \totalslides
+```
+
 ### Presenting, builds and speaker notes
 
 **▶ Present** (top right of the toolbar, or **Shift+F5**) starts the slide show from the current slide; **F5** starts from the first one. It shows exactly what the HTML export shows, full screen. **Esc** returns to the editor on the slide where you stopped.

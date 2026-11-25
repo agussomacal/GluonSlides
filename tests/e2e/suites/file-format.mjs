@@ -64,6 +64,9 @@ check('macro instance with overrides + extra', s2[2].type === 'macro' && s2[2].r
     && JSON.stringify(s2[2].overrides) === JSON.stringify([{ target: 'label', props: {}, body: 'Hot' }, { target: 'dot', props: { bg: '@primary/80' } }])
     && s2[2].extras.length === 1);
 check('speaker notes', p.slides[0].notes === 'Speaker notes: start with the **result**.\n.a notes line starting with a dot' && p.slides[1].notes === undefined, JSON.stringify(p.slides[0].notes));
+check('sections', p.slides[0].section === undefined && p.slides[1].section === 'Building blocks');
+check('author and date', p.author === 'Ada Lovelace' && p.date === 'today');
+check('sections and header written back', all.saved.includes('.section {Building blocks}\n\n.slide {Groups and macros}') && all.saved.includes('author:"Ada Lovelace" date:today'));
 check('build steps', s1[0].step === undefined && s1[2].step === 2 && s1[3].step === 3);
 check('notes and steps written back', all.saved.includes('.slide {Title} id:1\n.notes\n\tSpeaker notes') && all.saved.includes('id:4 step:2 x:600'));
 check('escaped dot written back escaped', all.saved.includes('\t\\.a line starting with a dot'));

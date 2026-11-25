@@ -34,8 +34,9 @@ import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } fro
 import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
 import { slideStepCount } from '../core/steps.js';
+import { withSlideContext, contextForSlide, invalidateNumbering, sectionNames } from '../core/fields.js';
 import { initMarqueeSelection } from './marquee.js';
-import './citeAutocomplete.js'; // \cite{ suggestions while typing on the canvas
+import './textAutocomplete.js'; // \ and \cite{ suggestions while typing on the canvas
 import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
 import { makeMacroFromSelection, detachSelected, resetSelectedInstances } from './macroOps.js';
@@ -90,7 +91,8 @@ function insertNewElement(def, variantId, props) {
         // variant sets them (e.g. a dot's fill).
         ...withoutStyle(def.type, def.defaults({})),
         ...preset,
-        ...props,
+        // Placed variants (e.g. a slide number) keep their own position.
+        ...(variant && variant.placed ? Object.fromEntries(Object.entries(props).filter(([k]) => k !== 'x' && k !== 'y')) : props),
         id: allocateElementId(), // stable, monotonic, never reused
     };
 
@@ -274,8 +276,15 @@ function stepSection(el) {
 /** Shown when nothing is selected: the current slide's speaker notes. */
 function slideSection(slide) {
     const steps = slideStepCount(slide);
+    const names = sectionNames();
     return `
         <div class="prop-divider"></div>
+        <div class="prop-group">
+            <label for="slide-section" title="Typing here sets the section of this slide and of the following slides that were in the same section">Section (from this slide on)</label>
+            <input type="text" id="slide-section" class="prop-control" list="slide-section-names" data-slide-prop="section"
+                   value="${escapeHtml(slide.section || '')}" placeholder="none — e.g. Introduction" spellcheck="false">
+            <datalist id="slide-section-names">${names.map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
+        </div>
         <div class="prop-group">
             <label for="slide-notes">Speaker notes</label>
             <textarea id="slide-notes" class="prop-control slide-notes" rows="8" data-slide-prop="notes"
@@ -364,10 +373,29 @@ propertiesPanel.addEventListener('input', (e) => {
     const key = e.target.dataset && e.target.dataset.slideProp;
     const slide = state.slides[state.currentSlideIndex];
     if (!key || !slide) return;
+    if (key === 'section') {
+        setSectionFrom(state.currentSlideIndex, e.target.value.trim());
+        markDirty();
+        renderThumbnailSectionHeaders();
+        return;
+    }
     if (e.target.value.trim() === '') delete slide[key];
     else slide[key] = e.target.value;
     markDirty();
 });
+
+/**
+ * Sections are runs of slides (.section in the file). Setting one on a
+ * slide changes it for that slide and the following slides that were
+ * in the same section, i.e. "a new section starts here" / renaming.
+ */
+function setSectionFrom(index, name) {
+    const old = state.slides[index].section || '';
+    for (let i = index; i < state.slides.length && (state.slides[i].section || '') === old; i++) {
+        if (name) state.slides[i].section = name;
+        else delete state.slides[i].section;
+    }
+}
 propertiesPanel.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.id === 'make-macro-name') {
         e.preventDefault();
@@ -1219,6 +1247,7 @@ function syncToolbarSelectsNow() {
 
 export function renderEditor() {
     beginCitationPass();
+    invalidateNumbering(); // slides may have changed: recount \slidenumber
     updateDimensionsCSS();
     renderToolbarButtons();
     syncGridSizeSelect();
@@ -1232,9 +1261,14 @@ export function renderEditor() {
     const selectedSlideSet = new Set(getSelectedSlideIndices());
 
     state.slides.forEach((slide, idx) => {
+        const section = slide.section || '';
+        if (section && section !== (idx > 0 ? (state.slides[idx - 1].section || '') : '')) {
+            thumbList.appendChild(sectionHeader(section, idx));
+        }
         const container = document.createElement('div');
         container.className = `thumb-container ${idx === state.currentSlideIndex ? 'active' : ''} ${selectedSlideSet.has(idx) ? 'selected' : ''}`;
         container.dataset.slideId = String(slide.id);
+        if (section && collapsedSections.has(section)) container.classList.add('in-collapsed-section');
         attachSlideDragReorder(container, idx, thumbList);
 
         const labelRow = document.createElement('div');
@@ -1247,9 +1281,10 @@ export function renderEditor() {
         const scaler = document.createElement('div');
         scaler.className = 'thumb-canvas-scaler';
 
-        slide.elements.forEach(el => {
+        // Fields (\slidenumber ...) show this slide's values.
+        withSlideContext(contextForSlide(idx), () => slide.elements.forEach(el => {
             scaler.appendChild(buildThumbElement(el));
-        });
+        }));
 
         thumb.appendChild(scaler);
         container.appendChild(labelRow);
@@ -1274,13 +1309,52 @@ export function renderEditor() {
     document.dispatchEvent(new CustomEvent('editor-rendered'));
 }
 
+// ---------- Sections in the sidebar ----------
+
+const collapsedSections = new Set(); // UI only, not saved
+
+function sectionHeader(name, firstIndex) {
+    const header = document.createElement('div');
+    header.className = `thumb-section${collapsedSections.has(name) ? ' collapsed' : ''}`;
+    header.dataset.section = name;
+    let count = 0;
+    for (let i = firstIndex; i < state.slides.length && state.slides[i].section === name; i++) count++;
+    header.innerHTML = `<span class="thumb-section-caret">▾</span><span class="thumb-section-name">${escapeHtml(name)}</span><span class="thumb-section-count">${count}</span>`;
+    header.title = 'Click to fold or unfold this section';
+    header.addEventListener('click', () => {
+        if (collapsedSections.has(name)) collapsedSections.delete(name);
+        else collapsedSections.add(name);
+        renderEditor();
+    });
+    return header;
+}
+
+/** Section headers changed (typing a section name): redraw the sidebar soon. */
+let sectionRedrawTimer = null;
+function renderThumbnailSectionHeaders() {
+    clearTimeout(sectionRedrawTimer);
+    sectionRedrawTimer = setTimeout(() => {
+        const input = document.getElementById('slide-section');
+        const hadFocus = document.activeElement === input;
+        const caret = hadFocus ? input.selectionStart : null;
+        renderEditor();
+        const again = document.getElementById('slide-section');
+        if (hadFocus && again) {
+            again.focus();
+            again.setSelectionRange(caret, caret);
+        }
+    }, 400);
+}
+
 // ---------- Slide operations ----------
 
 export function addSlide() {
     const usedTitles = new Set(state.slides.map(s => s.title));
     let n = state.slides.length + 1;
     while (usedTitles.has(`Slide ${n}`)) n++;
-    state.slides.push({ id: allocateSlideId(), title: `Slide ${n}`, elements: [] });
+    const last = state.slides[state.slides.length - 1];
+    // A new slide (added at the end) continues the last section.
+    state.slides.push({ id: allocateSlideId(), title: `Slide ${n}`, elements: [], ...(last && last.section ? { section: last.section } : {}) });
     const newIdx = state.slides.length - 1;
     state.currentSlideIndex = newIdx;
     setSelectedSlideIndices([newIdx]);

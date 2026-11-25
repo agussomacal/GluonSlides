@@ -12,7 +12,9 @@ const BODY_INDENT = '\t';
 // Holder returned for a .notes block so parseBlock hands it the body.
 const NOTES_TYPE = '__slide_notes__';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
-const DIRECTIVE_RE = /^\.(project|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+/** Header values written only when set: shown by the \author and \date fields. */
+export const PROJECT_TEXT_PARAMS = ['author', 'date'];
+const DIRECTIVE_RE = /^\.(project|section|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -198,7 +200,9 @@ export function serializeGl(project) {
         .map(k => `${k}:${encodeParamValue(headerParams[k])}`)
         .join(' ');
     (project.imports || []).forEach(file => lines.push(`.import {${encodeBraceArg(file)}}`));
-    lines.push(`.project${headerArgs} ${header}`);
+    // Optional header values, written only when set (for \author, \date).
+    const extra = PROJECT_TEXT_PARAMS.filter(k => project[k]).map(k => ` ${k}:${encodeParamValue(project[k])}`).join('');
+    lines.push(`.project${headerArgs} ${header}${extra}`);
 
     // Theme colors, e.g. .palette primary:#1d4ed8 accent:#f59e0b
     if (Array.isArray(project.palette) && project.palette.length) {
@@ -223,8 +227,16 @@ export function serializeGl(project) {
         lines.push(...serializeGlDefine(def));
     });
 
+    let section = '';
     (working.slides || []).forEach(slide => {
         const title = slide.title ? ` {${encodeBraceArg(slide.title)}}` : '';
+        // Sections: `.section {Name}` before the first slide of each one
+        // (a bare `.section` ends the previous one).
+        if ((slide.section || '') !== section) {
+            section = slide.section || '';
+            lines.push('');
+            lines.push(section ? `.section {${encodeBraceArg(section)}}` : '.section');
+        }
         lines.push('');
         lines.push(`.slide${title} id:${encodeParamValue(slide.id ?? '')}`);
         // Speaker notes: an indented block right after the .slide line.
@@ -338,6 +350,7 @@ export function parseGl(text) {
         slides: [],
     };
     let currentSlide = null;
+    let section = ''; // set by .section, applies to the following slides
     const rawLines = normalizeGlText(text).split('\n');
     const library = { imports: [], defines: [] };
 
@@ -384,6 +397,11 @@ export function parseGl(text) {
             currentSlide = null;
             return null;
         }
+        if (kind === 'section') {
+            section = braceArg.value || '';
+            currentSlide = null;
+            return null;
+        }
         if (kind === 'slide') {
             const parsedId = params.id !== undefined && params.id !== ''
                 ? (Number.isFinite(Number(params.id)) ? Number(params.id) : params.id)
@@ -393,6 +411,7 @@ export function parseGl(text) {
                 title: braceArg.value || `Slide ${project.slides.length + 1}`,
                 elements: [],
             };
+            if (section) currentSlide.section = section;
             project.slides.push(currentSlide);
             return null;
         }
@@ -623,6 +642,7 @@ function applyProjectParams(project, name, params) {
     if (params.darkmode !== undefined) project.isDarkMode = params.darkmode === 'yes';
     if (params.citestyle !== undefined) project.citestyle = params.citestyle === 'authoryear' ? 'authoryear' : 'numeric';
     if (params.nextid) project.nextId = Math.max(1, Number(params.nextid) || 1);
+    PROJECT_TEXT_PARAMS.forEach(k => { if (params[k]) project[k] = params[k]; });
 }
 
 function buildElement(type, params) {

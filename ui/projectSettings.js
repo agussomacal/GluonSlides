@@ -1,6 +1,7 @@
 // ============================================================
-// ui/projectSettings.js — "⚙ Project settings", three tabs:
+// ui/projectSettings.js — "⚙ Project settings", four tabs:
 //
+//   Presentation  author and date (for the \author / \date fields)
 //   Defaults  the project's style defaults per element type
 //   Styles    named styles (Title, Caption...) that elements can use
 //   Colors    the theme colors (palette) offered by every color field
@@ -9,7 +10,8 @@
 // follows (cascade: element > style > project default > built-in).
 // ============================================================
 
-import { pyApi, markDirty, flashSaveIndicator } from '../core/state.js';
+import { state, pyApi, markDirty, flashSaveIndicator } from '../core/state.js';
+import { formatDate } from '../core/fields.js';
 import {
     defaultValue, projectStyle, setProjectDefault, adoptDefaults,
     styleNames, getStyle, createStyle, setStyleValue, renameStyle, deleteStyle, styleUsage, STYLE_NAME_RE,
@@ -188,10 +190,42 @@ function colorsTab() {
         <div class="prop-error">${escapeHtml(ui.message)}</div>`;
 }
 
+function datePreview(date) {
+    return date
+        ? `Shows as: <strong>${escapeHtml(formatDate(date))}</strong>`
+        : '<code>today</code> always shows the current day; a date like 2026-03-14 is written out in full.';
+}
+
+/** Presentation tab: header values shown by the \author and \date fields. */
+function presentationTab() {
+    const date = state.date || '';
+    return `
+        <p class="prop-hint">Shown wherever a text box uses the field: <code>\\presentationtitle</code>, <code>\\author</code>, <code>\\date</code>
+            (also <code>\\slidenumber</code>, <code>\\totalslides</code>, <code>\\slidetitle</code>, <code>\\sectiontitle</code>, <code>\\tableofcontents</code>).
+            Fields ▾ in the toolbar adds them; typing <code>\\</code> in a text box suggests them.</p>
+        <div class="prop-group">
+            <label>Title</label>
+            <input type="text" class="prop-control prop-readonly" disabled value="${escapeHtml(state.projectName || '')}" title="The project's name">
+        </div>
+        <div class="prop-group">
+            <label for="project-author">Author</label>
+            <input type="text" id="project-author" class="prop-control" data-project-field="author" value="${escapeHtml(state.author || '')}" placeholder="e.g. Ada Lovelace, University of London">
+        </div>
+        <div class="prop-group">
+            <label for="project-date">Date</label>
+            <div class="prop-inline">
+                <input type="text" id="project-date" class="prop-control" data-project-field="date" value="${escapeHtml(date)}" placeholder="today, 2026-03-14, or any text">
+                <button class="btn btn-secondary" data-settings-action="date-today" title="Always the current day">Today</button>
+            </div>
+            <p class="prop-hint" data-date-preview>${datePreview(date)}</p>
+        </div>`;
+}
+
 function bodyHtml() {
-    const tabs = [['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors']].map(([id, label]) => `
+    const tabs = [['presentation', 'Presentation'], ['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors']].map(([id, label]) => `
         <button type="button" class="settings-tab${ui.tab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`).join('');
-    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab() : defaultsTab();
+    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab()
+        : ui.tab === 'presentation' ? presentationTab() : defaultsTab();
     return `
         <h2>Project settings</h2>
         <div class="settings-tabs">${tabs}</div>
@@ -253,6 +287,17 @@ function addResetButton(control) {
 
 function wire(m) {
     const onChange = (e) => {
+        // Presentation tab: author / date. Never redrawn while typing or on
+        // blur (a redraw would replace the button being clicked, e.g. Today).
+        const field = e.target.closest('[data-project-field]');
+        if (field) {
+            if (e.type !== 'input') return;
+            state[field.dataset.projectField] = field.value.trim();
+            commit({ redrawDialog: false });
+            const preview = m.querySelector('[data-date-preview]');
+            if (preview && field.dataset.projectField === 'date') preview.innerHTML = datePreview(state.date);
+            return;
+        }
         const target = e.target.closest('[data-default], [data-style-field]');
         if (target) {
             const isChoice = target.tagName === 'SELECT' || target.classList.contains('color-field');
@@ -363,6 +408,10 @@ function wire(m) {
         case 'close':
             close();
             break;
+        case 'date-today':
+            state.date = 'today';
+            commit();
+            break;
         case 'adopt': {
             const n = adoptDefaults();
             ui.message = n
@@ -405,7 +454,7 @@ function wire(m) {
     });
 }
 
-/** Opens the dialog, optionally on a tab ('defaults' | 'styles' | 'colors'), and a style. */
+/** Opens the dialog, optionally on a tab ('presentation' | 'defaults' | 'styles' | 'colors'), and a style. */
 export function openProjectSettings(tab = null, { styleType = null, style = null } = {}) {
     if (typeof tab === 'string') ui.tab = tab;
     if (styleType) ui.styleType = styleType;

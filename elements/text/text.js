@@ -93,12 +93,60 @@ function renderContentSafely(domEl, rawText) {
     }
 }
 
+/**
+ * A text box preset holding `content`; geometry is given for a 1920×1080
+ * slide and scaled to the project's size (so a footer stays at the bottom
+ * of a 4:3 slide too).
+ */
+function fieldBox(content, _s, { x, y, width, height, fontSize, textAlign = 'center', verticalAlign = 'center' }) {
+    const sx = state.slideWidth / 1920;
+    const sy = state.slideHeight / 1080;
+    return {
+        content,
+        x: Math.round(x * sx), y: Math.round(y * sy),
+        width: Math.round(width * sx), height: Math.round(height * sy),
+        fontSize: Math.round(fontSize * Math.min(sx, sy)), textAlign, verticalAlign,
+    };
+}
+
 const TextElement = {
     type: 'text',
     label: 'Add Text Box',
     icon: '📝',
     className: 'element-text',
     category: 'text',
+
+    // Toolbar: "Text Box", and Fields ▾ with text boxes holding an
+    // automatic field (core/fields.js), placed where that field usually
+    // goes (`placed`: the preset's position is kept, not the usual stagger).
+    variants: [
+        { id: 'box', label: 'Text Box', icon: '📝', preset: () => ({}) },
+        {
+            id: 'slidenumber', category: 'fields', label: 'Slide number', icon: '#', placed: true,
+            preset: (s) => fieldBox('\\slidenumber', s, { x: 1680, y: 990, width: 200, height: 60, fontSize: 24, textAlign: 'right' }),
+        },
+        {
+            id: 'footer', category: 'fields', label: 'Footer (title · section · number)', icon: '▁', placed: true,
+            preset: (s) => fieldBox('\\presentationtitle · \\sectiontitle · \\slidenumber / \\totalslides', s,
+                { x: 40, y: 1010, width: 1840, height: 50, fontSize: 20, textAlign: 'center' }),
+        },
+        {
+            id: 'slidetitle', category: 'fields', label: 'Slide title', icon: 'T', placed: true,
+            preset: (s) => fieldBox('# \\slidetitle', s, { x: 80, y: 40, width: 1760, height: 130, fontSize: 32, textAlign: 'left' }),
+        },
+        {
+            id: 'sectiontitle', category: 'fields', label: 'Section title', icon: '§', placed: true,
+            preset: (s) => fieldBox('\\sectiontitle', s, { x: 80, y: 990, width: 900, height: 60, fontSize: 24, textAlign: 'left' }),
+        },
+        {
+            id: 'titlepage', category: 'fields', label: 'Title, author and date', icon: '🎓', placed: true,
+            preset: (s) => fieldBox('# \\presentationtitle\n\n\\author\n\n\\date', s, { x: 260, y: 300, width: 1400, height: 480, fontSize: 36 }),
+        },
+        {
+            id: 'toc', category: 'fields', label: 'Table of contents', icon: '☰', placed: true,
+            preset: (s) => fieldBox('\\tableofcontents', s, { x: 200, y: 220, width: 1520, height: 700, fontSize: 36, textAlign: 'left', verticalAlign: 'top' }),
+        },
+    ],
 
     gl: {
         props: [

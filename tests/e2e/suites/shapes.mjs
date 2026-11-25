@@ -13,7 +13,7 @@ await page.evaluate(async () => { const m = await import('/core/state.js'); m.st
 
 // Toolbar layout
 const toolbar = await page.$$eval('[data-role="add-element"]', ns => ns.map(n => n.dataset.type || `[${n.dataset.category}]`));
-check('toolbar: Text, [shapes], [lines], Figure', JSON.stringify(toolbar) === '["text","[shapes]","[lines]","figure"]', JSON.stringify(toolbar));
+check('toolbar: Text, [fields], [shapes], [lines], Figure', JSON.stringify(toolbar) === '["text","[fields]","[shapes]","[lines]","figure"]', JSON.stringify(toolbar));
 await page.click('[data-category="shapes"] > .toolbar-btn');
 const items = await page.$$eval('[data-category="shapes"] .toolbar-menu button', ns => ns.map(n => n.textContent.trim()));
 check('shapes menu entries', items.length === 8, items.join(' | '));

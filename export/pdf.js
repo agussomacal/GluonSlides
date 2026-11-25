@@ -9,6 +9,7 @@ import {getExportHtmlString} from './html.js';
 import {exportFontCss} from '../core/fonts.js';
 import {elementStep, slideStepCount} from '../core/steps.js';
 import {expandSlides} from '../core/bibPages.js';
+import {withSlideContext, invalidateNumbering} from '../core/fields.js';
 
 // ---------- Raster fallback helpers ----------
 
@@ -127,9 +128,14 @@ async function exportAsRasterPdf(projectFolder, pdfFilename) {
     // Like the vector PDF: continuation pages of long reference lists,
     // and one page per build step.
     const imageDataList = [];
-    for (const { slide } of expandSlides()) {
+    invalidateNumbering();
+    const pages = expandSlides();
+    for (let i = 0; i < pages.length; i++) {
+        const { slide, source } = pages[i];
+        const ctx = { source, number: i + 1, total: pages.length };
         for (let step = 1; step <= slideStepCount(slide); step++) {
-            imageDataList.push(await rasterizeSlide(slideMarkupForPdf(slide, step), embeddedCss, 2));
+            const markup = withSlideContext(ctx, () => slideMarkupForPdf(slide, step));
+            imageDataList.push(await rasterizeSlide(markup, embeddedCss, 2));
         }
     }
 
