@@ -85,6 +85,12 @@ The font list of a text box (searchable, each name shown in its own font) has:
 
 Exports embed every font the presentation uses (not the generic defaults), so the HTML and PDF look the same on any computer. The licence of a chosen font is shown under the font list (with a warning when it is not an open licence); fonts whose licence forbids embedding are never embedded, and exports tell you which fonts were left out or are not openly licensed. In `.gl`, names with spaces are quoted: `fontFamily:"EB Garamond"`.
 
+### Figures: pasting and linked files
+
+**Ctrl+V** with an image in the clipboard (a screenshot, an image copied from a browser or another program) saves it into the project's `figures/` folder as `pasted-<date-time>.png` and adds it to the slide, centred and in proportion. Objects copied inside the app still paste as objects.
+
+A figure imported from a file elsewhere (**📁 Browse** or dropping a file) is copied into `figures/` and stays **linked** to the original: when the original changes, for example a plot your analysis script just regenerated, the copy is updated and the slide redrawn within a few seconds, without touching anything. The figure's panel has *Update when the original file changes* (on for new imports) and **↻ Reload from the original**. In the file this is `sync:yes` on the figure, next to its `filePath` (the project's copy) and `originalPath`.
+
 ### Shapes
 
 The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.

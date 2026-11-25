@@ -95,3 +95,67 @@ def import_figure(project_folder, source_path):
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+_EXT_FOR_MIME = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "image/svg+xml": ".svg"}
+
+
+def save_figure_data(project_folder, data_uri, name_hint=""):
+    """Save a pasted image (data URI) as <project>/figures/<name>.<ext> and load it back."""
+    try:
+        if not project_folder or not os.path.isdir(project_folder):
+            return {"success": False, "error": "No project folder set."}
+        header, _, payload = str(data_uri or "").partition(",")
+        mime = header[5:].split(";")[0] if header.startswith("data:") else ""
+        if mime not in _EXT_FOR_MIME or ";base64" not in header:
+            return {"success": False, "error": f"Not a supported image ({mime or 'unknown type'})."}
+        data = base64.b64decode(payload, validate=False)
+
+        stem = os.path.splitext(os.path.basename(str(name_hint or "")))[0]
+        stem = "".join(c if c.isalnum() or c in "-_" else "-" for c in stem).strip("-") or "pasted"
+        fig_dir = os.path.join(project_folder, "figures")
+        os.makedirs(fig_dir, exist_ok=True)
+        ext = _EXT_FOR_MIME[mime]
+        dest = os.path.join(fig_dir, stem + ext)
+        counter = 1
+        while os.path.exists(dest):
+            dest = os.path.join(fig_dir, f"{stem}_{counter}{ext}")
+            counter += 1
+        with open(dest, "wb") as f:
+            f.write(data)
+        rel_path = os.path.relpath(dest, project_folder)
+        return {"success": True, "path": dest, "relative_path": rel_path, "data_uri": data_uri}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def refresh_linked_figures(project_folder, figures):
+    """Re-copy figures whose original file changed since it was imported.
+
+    `figures` is a list of {"filePath", "originalPath"} (filePath relative
+    to the project, as in the .gl file). An original that is newer, or of
+    a different size, than the project's copy is copied over it (copy2
+    keeps its time, so an unchanged original is never copied twice).
+    Returns the updated ones with their new data URI.
+    """
+    updated = []
+    try:
+        for item in figures or []:
+            original = (item or {}).get("originalPath") or ""
+            local_rel = (item or {}).get("filePath") or ""
+            if not original or not local_rel or not os.path.isabs(original) or not os.path.isfile(original):
+                continue
+            local = os.path.join(project_folder or "", local_rel)
+            if os.path.abspath(local) == os.path.abspath(original):
+                continue
+            src, dst = os.stat(original), (os.stat(local) if os.path.isfile(local) else None)
+            if dst is not None and int(src.st_mtime) == int(dst.st_mtime) and src.st_size == dst.st_size:
+                continue
+            os.makedirs(os.path.dirname(local), exist_ok=True)
+            shutil.copy2(original, local)
+            loaded = load_figure_data_uri(project_folder, local_rel)
+            if loaded.get("success"):
+                updated.append({"filePath": local_rel, "data_uri": loaded["data_uri"]})
+        return {"success": True, "updated": updated}
+    except Exception as e:
+        return {"success": False, "error": str(e), "updated": updated}

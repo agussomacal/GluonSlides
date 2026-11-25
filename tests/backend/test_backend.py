@@ -112,6 +112,45 @@ class FiguresTest(TempDirTest):
         self.assertFalse(figures.load_figure_data_uri(self.tmp, "figures/missing.png")["success"])
 
 
+    def test_save_pasted_image(self):
+        uri = "data:image/png;base64," + base64.b64encode(png_bytes()).decode()
+        first = figures.save_figure_data(self.tmp, uri, "pasted-20260101")
+        second = figures.save_figure_data(self.tmp, uri, "pasted-20260101")
+        self.assertTrue(first["success"], first.get("error"))
+        self.assertEqual(first["relative_path"], os.path.join("figures", "pasted-20260101.png"))
+        self.assertEqual(second["relative_path"], os.path.join("figures", "pasted-20260101_1.png"))
+        self.assertEqual(Path(self.tmp, first["relative_path"]).read_bytes(), png_bytes())
+        # Odd names are cleaned; other content types refused.
+        odd = figures.save_figure_data(self.tmp, uri, "../../etc/pass wd.png")
+        self.assertEqual(odd["relative_path"], os.path.join("figures", "pass-wd.png"))
+        self.assertFalse(figures.save_figure_data(self.tmp, "data:text/html;base64,PGI+", "x")["success"])
+        self.assertFalse(figures.save_figure_data("", uri, "x")["success"])
+
+    def test_linked_figure_follows_its_original(self):
+        src_dir = os.path.join(self.tmp, "analysis")
+        os.makedirs(src_dir)
+        original = os.path.join(src_dir, "plot.png")
+        Path(original).write_bytes(png_bytes("red"))
+        project = os.path.join(self.tmp, "project")
+        os.makedirs(project)
+        rel = figures.import_figure(project, original)["relative_path"]
+        item = [{"filePath": rel, "originalPath": original}]
+
+        self.assertEqual(figures.refresh_linked_figures(project, item)["updated"], [])  # unchanged
+
+        Path(original).write_bytes(png_bytes("blue", size=(8, 8)))  # the script made a new plot
+        later = os.stat(original).st_mtime + 5
+        os.utime(original, (later, later))
+        res = figures.refresh_linked_figures(project, item)
+        self.assertEqual([u["filePath"] for u in res["updated"]], [rel])
+        self.assertTrue(res["updated"][0]["data_uri"].startswith("data:image/png;base64,"))
+        self.assertEqual(Path(project, rel).read_bytes(), Path(original).read_bytes())
+
+        self.assertEqual(figures.refresh_linked_figures(project, item)["updated"], [])  # copied once
+        os.remove(original)
+        self.assertEqual(figures.refresh_linked_figures(project, item)["updated"], [])  # missing original: kept
+
+
 class PdfTest(TempDirTest):
     """The raster PDF fallback (images -> PDF pages)."""
 

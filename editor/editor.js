@@ -82,6 +82,13 @@ export function addElement(type, variantId = null) {
     insertNewElement(def, variantId, { x: offset + stagger, y: offset + stagger });
 }
 
+/** Adds an element of `type` with `props` (e.g. a pasted image), selected. */
+export function insertElement(type, props) {
+    const def = ElementRegistry.get(type);
+    if (!def || !currentSlide()) return;
+    insertNewElement(def, null, props);
+}
+
 /** Builds an element from defaults + variant preset + `props`, adds and selects it. */
 function insertNewElement(def, variantId, props) {
     const variant = variantId && Array.isArray(def.variants)

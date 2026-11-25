@@ -69,6 +69,7 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 | `citations` | BibTeX accents and names, `\cite` / `\citet` / `\citep` with page notes in both styles, the reference list, unknown keys (highlight, ⚠ count, dialog, export warning), `\cite{` autocomplete on the canvas and in the inspector, long reference lists continuing on extra slides (canvas badge, export, PDF, presenting) and `\printbibliography[from-to]` |
 | `fields` | Fields (`\slidenumber`, `\sectiontitle`, `\tableofcontents`...) per slide on the canvas, thumbnails and exports, numbering with continuation pages, sections (`.section`, Section field, sidebar headers and folding), Fields ▾, Project settings → Presentation, `\` autocomplete on the canvas and in the inspector |
 | `masters` | Master slides: creating and editing one on the canvas, drawn under every slide (canvas, thumbnails, export), fields with each slide's values, `master:none` and several masters, rename/delete, the `.gl` format, undo, slide shortcuts off while editing one |
+| `figures` | Pasting an image (saved into `figures/`, centred, in proportion), copy/paste of objects unaffected, linked figures redrawn when the original changes (periodic check, once per change), the sync option and ↻, figures on master slides loaded |
 | `file-format` | The `.gl` files in `fixtures/` (and your local `Slides/` projects, if present) parse, keep their content and round-trip; friendly errors |
 
 ### Fixtures
@@ -113,7 +114,7 @@ Plain Python `unittest` tests that call the backend modules directly, in tempora
 | Area | Checks |
 |---|---|
 | Project files | save/load round-trip, empty files, side files can't escape the project folder |
-| Figures | import into `figures/` with unique names, re-importing, loading as data URIs |
+| Figures | import into `figures/` with unique names, re-importing, loading as data URIs, saving pasted images, re-copying linked figures whose original changed |
 | PDF | the image-based PDF fallback produces one page per slide |
 | Fonts | style names, licences of built-in fonts, restricted fonts are not embeddable, project fonts, system font list |
 | User settings | recent projects (missing ones dropped), inspector settings — in a temporary config folder, never your real one |

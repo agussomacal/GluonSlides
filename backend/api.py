@@ -128,6 +128,14 @@ class Api:
         """Copy an external figure into the project's figures/ folder."""
         return figures.import_figure(project_folder, source_path)
 
+    def save_figure_data(self, project_folder, data_uri, name_hint=""):
+        """Save a pasted image into <project>/figures/."""
+        return figures.save_figure_data(project_folder, data_uri, name_hint)
+
+    def refresh_linked_figures(self, project_folder, items):
+        """Re-copy linked figures whose original file changed; returns the updated ones."""
+        return figures.refresh_linked_figures(project_folder, items)
+
     def select_figure_file(self):
         """Open dialog to pick a figure file; returns its path and data URI."""
         path = dialogs.ask_open(FIGURE_FILE_TYPES)

@@ -21,6 +21,7 @@ import { initColorPicker } from './ui/colorPicker.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
+import { startFigureSync } from './elements/figure/figure.js';
 
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
@@ -121,6 +122,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 
 // The Python bridge may become ready only after this module runs
 // (pywebview adds its functions asynchronously): both wait for it.
+startFigureSync(); // linked figures follow their original files
 initRecents();
 whenApiReady(60000).then(api => {
     if (api) loadSystemFonts(); // "This computer" section of the font list

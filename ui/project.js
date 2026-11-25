@@ -220,7 +220,7 @@ export async function openProjectByPath(path, content) {
             loadBibFromDisk(),
             loadImportedLibraries(), // element macros from e.g. macros.gl
         ]);
-        await hydrateFigures([...state.slides, ...macroSlides()], state.projectFolder);
+        await hydrateFigures([...state.slides, ...(state.masters || []), ...macroSlides()], state.projectFolder);
 
         addRecent(state.projectName, path);
         enterEditor();

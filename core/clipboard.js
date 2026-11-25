@@ -30,8 +30,10 @@ import {
     ungroupSelected,
     leaveGroup,
     leaveMaster,
+    insertElement,
 } from '../editor/editor.js';
 import { syncProjectChrome } from './render.js';
+import { addImageFile } from '../elements/figure/figure.js';
 
 const PASTE_OFFSET_PX = 40;
 
@@ -173,14 +175,14 @@ export function initKeyboardShortcuts() {
             if (copied.kind === 'elements') {
                 deleteSelectedElements(false);
                 flashSaveIndicator(copied.count > 1 ? `${copied.count} objects cut ✓` : 'Object cut ✓');
-                e.preventDefault();
+                markInternalCopy();
                 return;
             }
 
             if (copied.kind === 'slides') {
                 deleteSelectedSlides(false);
                 flashSaveIndicator(copied.count > 1 ? `${copied.count} slides cut ✓` : 'Slide cut ✓');
-                e.preventDefault();
+                markInternalCopy();
             }
             return;
         }
@@ -195,55 +197,116 @@ export function initKeyboardShortcuts() {
             } else if (copied.kind === 'slides') {
                 flashSaveIndicator(copied.count > 1 ? `${copied.count} slides copied ✓` : 'Slide copied ✓');
             }
-            e.preventDefault();
+            markInternalCopy(); // the browser's copy event follows (not prevented)
             return;
         }
 
         // 4. Ctrl/Cmd + V — paste copied element(s) or copied slide(s)
         if (hasCtrlOrCmd && e.key.toLowerCase() === 'v') {
-            if (Array.isArray(state.elementClipboard) && state.elementClipboard.length > 0 && slide) {
-                const pastedIndices = [];
-                state.elementClipboard.forEach(templateEl => {
-                    const newEl = JSON.parse(JSON.stringify(templateEl));
-                    // Paste mints a fresh ID: copy keeps the original's identity,
-                    // paste creates a distinct element so IDs stay unique.
-                    reassignIdsDeep(newEl);
-                    newEl.x += PASTE_OFFSET_PX;
-                    newEl.y += PASTE_OFFSET_PX;
-                    activeElements().push(newEl);
-                    pastedIndices.push(activeElements().length - 1);
-                });
-                setSelectedElementIndices(pastedIndices, pastedIndices[pastedIndices.length - 1]);
-                markDirty();
-                renderEditor();
-                flashSaveIndicator(pastedIndices.length > 1 ? `${pastedIndices.length} objects pasted ✓` : 'Object pasted ✓');
-                e.preventDefault();
-                return;
-            }
+            // The browser's paste event comes next: an image in the system
+            // clipboard wins (see the 'paste' listener); otherwise, a moment
+            // later, the objects or slides copied in the app are pasted.
+            clearTimeout(pendingPaste);
+            pendingPaste = setTimeout(() => { pendingPaste = null; pasteInternal(onMaster, slide); }, PASTE_WAIT_MS);
+        }
+    });
+    initImagePaste();
+}
 
-            if (!onMaster && Array.isArray(state.slideClipboard) && state.slideClipboard.length > 0) {
-                const insertAfter = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
-                const pastedSlideIndices = [];
-                state.slideClipboard.forEach((templateSlide, offset) => {
-                    const newSlide = JSON.parse(JSON.stringify(templateSlide));
-                    newSlide.id = allocateSlideId();
-                    newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
-                    // Pasted slides carry their elements with their original
-                    // IDs; those are remapped below to stay unique.
-                    newSlide.elements = (newSlide.elements || []).map(el => reassignIdsDeep(el));
-                    const targetIdx = insertAfter + 1 + offset;
-                    state.slides.splice(targetIdx, 0, newSlide);
-                    pastedSlideIndices.push(targetIdx);
-                });
+/** Pastes the objects or slides copied in the app (Ctrl+V without an image). */
+function pasteInternal(onMaster, slide) {
+    if (Array.isArray(state.elementClipboard) && state.elementClipboard.length > 0 && slide) {
+        const pastedIndices = [];
+        state.elementClipboard.forEach(templateEl => {
+            const newEl = JSON.parse(JSON.stringify(templateEl));
+            // Paste mints a fresh ID: copy keeps the original's identity,
+            // paste creates a distinct element so IDs stay unique.
+            reassignIdsDeep(newEl);
+            newEl.x += PASTE_OFFSET_PX;
+            newEl.y += PASTE_OFFSET_PX;
+            activeElements().push(newEl);
+            pastedIndices.push(activeElements().length - 1);
+        });
+        setSelectedElementIndices(pastedIndices, pastedIndices[pastedIndices.length - 1]);
+        markDirty();
+        renderEditor();
+        flashSaveIndicator(pastedIndices.length > 1 ? `${pastedIndices.length} objects pasted ✓` : 'Object pasted ✓');
+        return;
+    }
 
-                state.currentSlideIndex = pastedSlideIndices[0];
-                setSelectedSlideIndices(pastedSlideIndices);
-                setSelectedElementIndices([], null);
-                markDirty();
-                renderEditor();
-                flashSaveIndicator(pastedSlideIndices.length > 1 ? `${pastedSlideIndices.length} slides pasted ✓` : 'Slide pasted ✓');
-                e.preventDefault();
-            }
+    if (!onMaster && Array.isArray(state.slideClipboard) && state.slideClipboard.length > 0) {
+        const insertAfter = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
+        const pastedSlideIndices = [];
+        state.slideClipboard.forEach((templateSlide, offset) => {
+            const newSlide = JSON.parse(JSON.stringify(templateSlide));
+            newSlide.id = allocateSlideId();
+            newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
+            // Pasted slides carry their elements with their original
+            // IDs; those are remapped below to stay unique.
+            newSlide.elements = (newSlide.elements || []).map(el => reassignIdsDeep(el));
+            const targetIdx = insertAfter + 1 + offset;
+            state.slides.splice(targetIdx, 0, newSlide);
+            pastedSlideIndices.push(targetIdx);
+        });
+
+        state.currentSlideIndex = pastedSlideIndices[0];
+        setSelectedSlideIndices(pastedSlideIndices);
+        setSelectedElementIndices([], null);
+        markDirty();
+        renderEditor();
+        flashSaveIndicator(pastedSlideIndices.length > 1 ? `${pastedSlideIndices.length} slides pasted ✓` : 'Slide pasted ✓');
+    }
+}
+
+// ---------- System clipboard: images in, a marker out ----------
+
+const PASTE_WAIT_MS = 60;
+const INTERNAL_MARKER = 'GluonSlides objects';
+let pendingPaste = null;
+let internalCopyAt = 0;
+
+/** Ctrl+C/X in the app: the copy event (right after) replaces the system clipboard. */
+function markInternalCopy() {
+    internalCopyAt = Date.now();
+}
+
+/** An image file in a paste event's data, or null. */
+function clipboardImage(data) {
+    if (!data) return null;
+    const files = [...(data.files || [])].filter(f => f.type.startsWith('image/'));
+    if (files.length) return files[0];
+    const item = [...(data.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    return item ? item.getAsFile() : null;
+}
+
+function initImagePaste() {
+    // Objects copied in the app replace what the system clipboard held,
+    // so an older screenshot is not pasted instead of them.
+    const writeMarker = (e) => {
+        if (Date.now() - internalCopyAt > 500 || isTypingTarget(document.activeElement)) return;
+        internalCopyAt = 0;
+        if (e.clipboardData) {
+            e.clipboardData.setData('text/plain', INTERNAL_MARKER);
+            e.preventDefault();
+        }
+    };
+    document.addEventListener('copy', writeMarker);
+    document.addEventListener('cut', writeMarker);
+
+    document.addEventListener('paste', async (e) => {
+        if (isTypingTarget(document.activeElement)) return;
+        const editor = document.getElementById('editor-view');
+        if (!editor || !editor.classList.contains('active')) return;
+        const file = clipboardImage(e.clipboardData);
+        if (!file) return; // the app's own clipboard is pasted (pendingPaste)
+        e.preventDefault();
+        clearTimeout(pendingPaste);
+        pendingPaste = null;
+        try {
+            await addImageFile(file, props => insertElement('figure', props));
+            flashSaveIndicator('Image pasted ✓');
+        } catch (err) {
+            flashSaveIndicator(`Could not paste the image: ${err.message}`);
         }
     });
 }
