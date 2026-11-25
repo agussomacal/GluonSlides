@@ -43,6 +43,17 @@ The rules are simple:
 
 Because the format is deterministic (fixed property order, stable IDs, no timestamps), the file plays nicely with `git diff`, and every position change in the GUI translates into a tiny, reviewable edit. You can also hand-edit the file and reopen it — the parser reports friendly, actionable errors.
 
+### Fonts
+
+The font list of a text box (searchable, each name shown in its own font) has:
+
+- **Default:** sans-serif, serif, monospace (the reader's defaults).
+- **Built-in:** open fonts shipped with the app (downloaded once into `libs/fonts`): Inter, Roboto, Lato, Open Sans, Source Sans 3, Montserrat, Merriweather, Source Serif 4, EB Garamond, Playfair Display, Computer Modern (the LaTeX look), Fira Code, JetBrains Mono.
+- **Project fonts:** `.ttf`, `.otf`, `.woff` or `.woff2` files in the project's `fonts/` folder (**＋ Add font files…** copies them there), so they travel with the project.
+- **This computer:** fonts installed on your system.
+
+Exports embed every font the presentation uses (not the defaults), so the HTML and PDF look the same on any computer. Check the license of commercial fonts before embedding them. In `.gl`, names with spaces are quoted: `fontFamily:"EB Garamond"`.
+
 ### Shapes
 
 The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.

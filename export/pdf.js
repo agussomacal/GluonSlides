@@ -6,6 +6,7 @@
 import {state, pyApi} from '../core/state.js';
 import {exportElementMarkup} from '../core/render.js';
 import {getExportHtmlString} from './html.js';
+import {exportFontCss} from '../core/fonts.js';
 
 // ---------- Raster fallback helpers ----------
 
@@ -115,7 +116,9 @@ async function exportAsVectorPdf(htmlPath) {
 
 async function exportAsRasterPdf(projectFolder, pdfFilename) {
     const api = pyApi();
-    const embeddedCss = await getEmbeddedKatexCss();
+    // Slides are drawn as SVG images, which cannot use the page's fonts:
+    // embed the math fonts and the project's text fonts.
+    const embeddedCss = `${await getEmbeddedKatexCss()}\n${await exportFontCss()}`;
     await document.fonts.ready;
 
     const imageDataList = [];

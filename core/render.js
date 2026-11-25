@@ -7,6 +7,7 @@
 import { state, markDirty } from './state.js';
 import { resolveCitations } from './citations.js';
 import { ElementRegistry } from './registry.js';
+import { fontStack } from './fonts.js';
 
 // ---------- Markdown + KaTeX ----------
 
@@ -91,7 +92,7 @@ export function getVJustify(el) {
 }
 
 export function textElementSharedStyle(el) {
-    return `font-size:${el.fontSize}px; font-family:${el.fontFamily}; color:${el.fontColor};`
+    return `font-size:${el.fontSize}px; font-family:${fontStack(el.fontFamily).replace(/"/g, "'")}; color:${el.fontColor};`
         + `display:flex; flex-direction:column;`
         + `justify-content:${getVJustify(el)};`
         + `text-align:${getHAlign(el)};`;

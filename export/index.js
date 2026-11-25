@@ -6,6 +6,13 @@
 import { state, pyApi } from '../core/state.js';
 import { getExportHtmlString } from './html.js';
 import { exportProjectPdf } from './pdf.js';
+import { fontExportWarning } from '../core/fonts.js';
+
+/** Tells the user about fonts that were left out / may not be shareable. */
+function warnAboutFonts() {
+    const warning = fontExportWarning();
+    if (warning) alert(`Fonts in this export:\n\n${warning}`);
+}
 
 export async function projectExportHtml() {
     try {
@@ -20,6 +27,7 @@ export async function projectExportHtml() {
         const safeName = (state.projectName || 'presentation').replace(/[\s\\/:*?"<>|]+/g, '_');
         const res = await api.save_text_file(state.projectFolder, `${safeName}.html`, htmlContent);
         if (res.success) {
+            warnAboutFonts();
             api.open_file_with_system(res.path);
         } else {
             alert(`HTML export failed: ${res.error}`);
@@ -35,6 +43,7 @@ export async function projectExportPdf() {
         alert(`PDF export failed: ${res.error}`);
         return;
     }
+    warnAboutFonts();
     const api = pyApi();
     if (api && res.pdfPath) {
         api.open_file_with_system(res.pdfPath);

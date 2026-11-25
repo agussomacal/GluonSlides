@@ -29,36 +29,90 @@ function choose(select, value) {
     select.focus();
 }
 
+const SEARCH_THRESHOLD = 12; // longer lists get a search box (e.g. fonts)
+
+function visibleItems(menu) {
+    return [...menu.querySelectorAll('.select-menu-item:not([disabled])')].filter(i => !i.hidden);
+}
+
 function setActive(menu, index) {
-    const items = [...menu.querySelectorAll('.select-menu-item:not([disabled])')];
+    const items = visibleItems(menu);
+    menu.querySelectorAll('.select-menu-item.focused').forEach(i => i.classList.remove('focused'));
     if (!items.length) return;
     const i = Math.max(0, Math.min(items.length - 1, index));
-    items.forEach((item, k) => item.classList.toggle('focused', k === i));
+    items[i].classList.add('focused');
     items[i].scrollIntoView({ block: 'nearest' });
 }
 
 function focusedIndex(menu) {
-    return [...menu.querySelectorAll('.select-menu-item:not([disabled])')].findIndex(i => i.classList.contains('focused'));
+    return visibleItems(menu).findIndex(i => i.classList.contains('focused'));
+}
+
+function makeItem(select, opt) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'select-menu-item';
+    item.setAttribute('role', 'option');
+    item.textContent = opt.textContent.trim();
+    item.dataset.value = opt.value;
+    // e.g. a font name drawn in its own font
+    if (opt.dataset.preview) item.style.fontFamily = opt.dataset.preview;
+    if (opt.disabled) item.disabled = true;
+    if (opt.value === select.value) item.classList.add('selected', 'focused');
+    item.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus
+    item.addEventListener('click', () => choose(select, opt.value));
+    return item;
+}
+
+/** Shows only items matching `query`; hides section headers left empty. */
+function filterItems(menu, query) {
+    const q = query.trim().toLowerCase();
+    menu.querySelectorAll('.select-menu-item').forEach(item => {
+        item.hidden = q !== '' && !item.textContent.toLowerCase().includes(q);
+    });
+    menu.querySelectorAll('.select-menu-group').forEach(header => {
+        let next = header.nextElementSibling;
+        let any = false;
+        while (next && !next.classList.contains('select-menu-group')) {
+            if (!next.hidden) any = true;
+            next = next.nextElementSibling;
+        }
+        header.hidden = !any;
+    });
+    setActive(menu, 0);
 }
 
 function openFor(select) {
     close();
     const menu = document.createElement('div');
     menu.className = 'select-menu';
-    menu.setAttribute('role', 'listbox');
-    [...select.options].forEach(opt => {
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'select-menu-item';
-        item.setAttribute('role', 'option');
-        item.textContent = opt.textContent;
-        item.dataset.value = opt.value;
-        if (opt.disabled) item.disabled = true;
-        if (opt.value === select.value) item.classList.add('selected', 'focused');
-        item.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus on the select
-        item.addEventListener('click', () => choose(select, opt.value));
-        menu.appendChild(item);
-    });
+    const list = document.createElement('div');
+    list.className = 'select-menu-list';
+    list.setAttribute('role', 'listbox');
+
+    for (const child of select.children) {
+        if (child.tagName === 'OPTGROUP') {
+            const header = document.createElement('div');
+            header.className = 'select-menu-group';
+            header.textContent = child.label;
+            list.appendChild(header);
+            [...child.children].forEach(opt => list.appendChild(makeItem(select, opt)));
+        } else if (child.tagName === 'OPTION') {
+            list.appendChild(makeItem(select, child));
+        }
+    }
+
+    let search = null;
+    if (select.options.length > SEARCH_THRESHOLD) {
+        search = document.createElement('input');
+        search.type = 'text';
+        search.className = 'select-menu-search';
+        search.placeholder = 'Search…';
+        search.spellcheck = false;
+        search.addEventListener('input', () => filterItems(menu, search.value));
+        menu.appendChild(search);
+    }
+    menu.appendChild(list);
     document.body.appendChild(menu);
 
     // Below the select, or above it when there is no room.
@@ -72,9 +126,10 @@ function openFor(select) {
         menu.style.top = `${r.bottom + 4}px`;
     }
     select.classList.add('select-open');
-    open = { select, menu };
+    open = { select, menu, search };
     const sel = menu.querySelector('.selected');
     if (sel) sel.scrollIntoView({ block: 'nearest' });
+    if (search) search.focus();
 }
 
 export function initStyledSelects() {
@@ -103,7 +158,7 @@ export function initStyledSelects() {
             e.preventDefault();
             e.stopPropagation();
             setActive(menu, focusedIndex(menu) + (e.key === 'ArrowDown' ? 1 : -1));
-        } else if (e.key === 'Enter' || e.key === ' ') {
+        } else if (e.key === 'Enter' || (e.key === ' ' && !open.search)) {
             e.preventDefault();
             e.stopPropagation();
             const item = menu.querySelector('.select-menu-item.focused');

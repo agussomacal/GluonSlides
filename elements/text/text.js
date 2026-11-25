@@ -4,13 +4,63 @@
 // render failure can never leave the element without edit mode.
 // ============================================================
 
-import { state, markDirty } from '../../core/state.js';
+import { state, markDirty, flashSaveIndicator, pyApi } from '../../core/state.js';
+import { fontStack, fontGroups, importProjectFonts, fontLicense } from '../../core/fonts.js';
 import { ElementRegistry } from '../../core/registry.js';
 import {
     renderMarkdownAndKatex,
     renderMarkdownAndKatexToString,
     applyAlignmentStyles,
+    escapeHtml,
 } from '../../core/render.js';
+
+/**
+ * Fills the licence notice under the font list (looked up async):
+ * a quiet line for open licences, a warning otherwise, and a clear
+ * notice when the licence forbids embedding in exports.
+ */
+async function showFontLicense(family) {
+    const box = document.querySelector('.font-license');
+    if (!box || box.dataset.family !== family) return;
+    const lic = await fontLicense(family);
+    if (!box.isConnected || box.dataset.family !== family) return;
+    if (!lic) {
+        box.innerHTML = '';
+        return;
+    }
+    const link = lic.url
+        ? ` <button class="link-btn" data-element-action="openFontLicense" data-arg="${escapeHtml(lic.url)}">View licence</button>`
+        : '';
+    const name = lic.name ? escapeHtml(lic.name.length > 90 ? `${lic.name.slice(0, 90)}…` : lic.name) : '';
+    let level = 'ok';
+    let text;
+    if (lic.embeddable === false) {
+        level = 'blocked';
+        text = `⛔ This font's licence forbids embedding: exports will not include it and viewers will see a fallback font.`;
+    } else if (lic.open) {
+        text = `Licence: ${name || 'open licence'}`;
+    } else if (lic.unknown || !lic.name) {
+        level = 'warn';
+        text = '⚠ No licence information found in the font file. Check its licence before sharing exports (the font is embedded in them).';
+    } else {
+        level = 'warn';
+        text = `⚠ Not an open licence (${name}). Check it allows you to share this font before distributing exports.`;
+    }
+    box.className = `font-license font-license-${level}`;
+    box.innerHTML = `${text}${link}`;
+}
+
+/** <optgroup>s for the font dropdown; each name previewed in its font. */
+function fontOptions(current) {
+    const groups = fontGroups();
+    const known = groups.some(g => g.fonts.some(f => f.family === current));
+    if (!known) groups.unshift({ label: 'Current', fonts: [{ family: current, label: current }] });
+    return groups.map(g => `
+        <optgroup label="${escapeHtml(g.label)}">
+            ${g.fonts.map(f => `<option value="${escapeHtml(f.family)}" data-preview="${escapeHtml(fontStack(f.family))}"
+                ${f.family === current ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+        </optgroup>`).join('');
+}
 
 let liveUpdateTimer = null;
 
@@ -80,7 +130,7 @@ const TextElement = {
 
     renderDom(domEl, el, ctx) {
         domEl.style.fontSize = `${el.fontSize}px`;
-        domEl.style.fontFamily = el.fontFamily;
+        domEl.style.fontFamily = fontStack(el.fontFamily);
         domEl.style.color = el.fontColor;
         applyAlignmentStyles(domEl, el);
 
@@ -133,20 +183,42 @@ const TextElement = {
         }
     },
 
+    // Buttons in properties() call these via data-element-action.
+    actions: {
+        openFontLicense(elIndex, url) {
+            const api = pyApi();
+            if (api) return api.open_url(url);
+            window.open(url, '_blank', 'noopener');
+            return Promise.resolve();
+        },
+        async addFonts() {
+            const res = await importProjectFonts();
+            if (res && res.success) {
+                flashSaveIndicator('Fonts added ✓');
+                document.dispatchEvent(new CustomEvent('slide-content-changed'));
+            } else if (res && res.error && res.error !== 'Cancelled') {
+                flashSaveIndicator(res.error);
+            }
+        },
+    },
+
     exportInner(el) {
         return renderMarkdownAndKatexToString(el);
     },
 
     properties(el, elIndex) {
+        // The panel HTML is inserted right after this returns.
+        Promise.resolve().then(() => showFontLicense(el.fontFamily || 'sans-serif'));
         return `
             <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 4px;"></div>
             <div class="prop-group">
                 <label>Font Family</label>
                 <select class="prop-control" data-prop="fontFamily">
-                    <option value="sans-serif" ${el.fontFamily === 'sans-serif' ? 'selected' : ''}>Sans-Serif</option>
-                    <option value="serif" ${el.fontFamily === 'serif' ? 'selected' : ''}>Serif</option>
-                    <option value="monospace" ${el.fontFamily === 'monospace' ? 'selected' : ''}>Monospace</option>
+                    ${fontOptions(el.fontFamily || 'sans-serif')}
                 </select>
+                <div class="font-license" data-family="${escapeHtml(el.fontFamily || 'sans-serif')}"></div>
+                <button class="btn btn-secondary btn-small" data-element-action="addFonts"
+                        title="Copy .ttf / .otf / .woff / .woff2 files into the project's fonts/ folder">＋ Add font files…</button>
             </div>
             <div class="prop-row">
                 <div class="prop-group">

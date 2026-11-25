@@ -7,5 +7,6 @@ dependencies = [
     "Pillow",
     "PyYAML",
     "pdf2image",
-    "platformdirs"
+    "platformdirs",
+    "fonttools[woff]>=4.50,<4.69",
 ]

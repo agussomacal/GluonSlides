@@ -7,6 +7,7 @@
 
 import { state } from '../core/state.js';
 import { escapeHtml, exportElementMarkup } from '../core/render.js';
+import { exportFontCss } from '../core/fonts.js';
 
 export async function getExportHtmlString() {
     let katexCss = '';
@@ -26,6 +27,14 @@ export async function getExportHtmlString() {
         textStyles = await resp.text();
     } catch (e) {
         console.warn('Could not load text-styles.css for export:', e);
+    }
+
+    // Text fonts the project uses, embedded so the file works anywhere.
+    let fontCss = '';
+    try {
+        fontCss = await exportFontCss();
+    } catch (e) {
+        console.warn('Could not embed fonts for export:', e);
     }
 
     const activeSlideBg = state.isDarkMode ? '#1e293b' : '#ffffff';
@@ -48,6 +57,7 @@ export async function getExportHtmlString() {
     let htmlContent = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${escapeHtml(state.projectName || 'Presentation')}</title>
         <style>${katexCss}</style>
         <style>${textStyles}</style>
+        <style>${fontCss}</style>
         <style>
             .katex .mathbb { font-family: 'KaTeX_Math', 'Times New Roman', serif !important; font-weight: bold; letter-spacing: 0.05em; }
             body { background: #0f172a; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; overflow: hidden; }

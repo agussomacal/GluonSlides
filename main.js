@@ -14,6 +14,7 @@ import {
 } from './core/render.js';
 import { initKeyboardShortcuts } from './core/clipboard.js';
 import { initStyledSelects } from './ui/selectMenu.js';
+import { loadSystemFonts } from './core/fonts.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
@@ -99,11 +100,16 @@ initKeyboardShortcuts();
 // autosave (every few seconds) is the real safety net.
 window.addEventListener('beforeunload', flushPendingSave);
 
-if (window.pywebview) {
+function onApiReady() {
     initRecents();
+    loadSystemFonts(); // "This computer" section of the font list
+}
+
+if (window.pywebview) {
+    onApiReady();
 } else {
     // pywebview injects its API asynchronously; in a plain browser
     // (preview) the event never fires and recents stay empty.
-    window.addEventListener('pywebviewready', initRecents, { once: true });
+    window.addEventListener('pywebviewready', onApiReady, { once: true });
     initRecents();
 }

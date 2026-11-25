@@ -14,6 +14,7 @@ import { setBibSource, CITATION_STYLES } from '../core/citations.js';
 import { clearFigureCache, hydrateFigures } from '../elements/figure/figure.js';
 import { renderEditor } from '../editor/editor.js';
 import { loadImportedLibraries } from '../core/macros.js';
+import { loadProjectFonts } from '../core/fonts.js';
 
 /** Macro definitions shaped like slides, so their figures load too. */
 function macroSlides() {
@@ -127,6 +128,7 @@ export async function setBibliography(text) {
 
 /** Shows the editor for the project now in state, as "clean". */
 function enterEditor() {
+    loadProjectFonts(); // <project>/fonts/ (none for new/sample projects)
     state.lastSnapshot = currentSnapshot();
     state.isDirty = false;
     resetHistory();

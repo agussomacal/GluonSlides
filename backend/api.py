@@ -5,8 +5,11 @@ stable. Logic lives in the sibling modules.
 """
 
 import os
+import webbrowser
 
-from . import dialogs, figures, pdf_export, project_io, user_settings
+import webview
+
+from . import dialogs, figures, fonts, pdf_export, project_io, user_settings
 
 
 
@@ -16,6 +19,7 @@ def _cancelled():
 PROJECT_FILE_TYPES = ("Slide Project Files (*.gl)", "Legacy Projects (*.ssproj;*.json)", "All Files (*.*)")
 FIGURE_FILE_TYPES = ("Figure Files (*.png;*.jpg;*.jpeg;*.svg;*.pdf;*.eps)", "All Files (*.*)")
 PDF_FILE_TYPES = ("PDF Files (*.pdf)", "All Files (*.*)")
+FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
 
 class Api:
@@ -128,3 +132,36 @@ class Api:
         if not loaded.get("success"):
             return {"success": False, "error": f"Could not load figure: {loaded.get('error')}"}
         return loaded
+
+    # --- fonts -------------------------------------------------------------
+
+    def list_project_fonts(self, project_folder):
+        """Font files in <project>/fonts/ (family, weight, style, data_uri)."""
+        return fonts.list_project_fonts(project_folder)
+
+    def import_font_files(self, project_folder):
+        """Pick font files and copy them into <project>/fonts/."""
+        paths = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=True, file_types=FONT_FILE_TYPES)
+        if not paths:
+            return _cancelled()
+        return fonts.import_font_files(project_folder, list(paths))
+
+    def list_system_fonts(self):
+        """Font families installed on this computer."""
+        return fonts.list_system_fonts()
+
+    def system_font_faces(self, family):
+        """Regular/italic/bold faces of an installed family, for embedding in exports."""
+        return fonts.system_font_faces(family)
+
+    def system_font_license(self, family):
+        """Licence text/URL and embedding permission of an installed family."""
+        return fonts.system_font_license(family)
+
+    def open_url(self, url):
+        """Open an http(s) link (e.g. a font licence) in the default browser."""
+        if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
+            return {"success": False, "error": "Only http(s) links can be opened."}
+        webbrowser.open(url)
+        return {"success": True}
