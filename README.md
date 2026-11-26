@@ -6,6 +6,18 @@ A local-first, freeform presentation builder with a twist: **your slides live in
 
 GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no accounts) and treats the `.gl` project file as the single source of truth: every drag, resize, and property change in the GUI is serialized back into clean, human-readable text.
 
+## Download
+
+**[⬇ Download the latest version](https://github.com/agussomacal/GluonSlides/releases/latest)**: Windows, macOS (Apple Silicon) and Linux. Nothing else to install: no Python, no terminal. Test versions (pre-releases) are on the [list of all releases](https://github.com/agussomacal/GluonSlides/releases).
+
+| System | File | Then |
+|---|---|---|
+| Windows 10/11 | `…-windows-x64.zip` | unzip, open `GluonSlides.exe` |
+| macOS | `…-macos-arm64.dmg` | drag to Applications, open |
+| Linux | `…-linux-x86_64.tar.gz` | unpack, run `GluonSlides/GluonSlides` |
+
+The builds aren't signed yet, so the first start shows a warning; the release page says what to click. To run from source instead, see [Getting started](#getting-started).
+
 ## Highlights
 
 - 🖱️ **Visual slide editor** — drag, resize, multi-select, group-move, arrow-key nudging, snap-to-grid and smart guides, align/distribute, layers and locking, slide reordering, cut/copy/paste, and full undo/redo.
