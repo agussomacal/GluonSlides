@@ -80,7 +80,8 @@ jobs:
       - name: Note in the summary
         if: steps.smoke.outcome != 'success'
         shell: bash
-        run: echo "⚠️ ${{ matrix.name }}: the built app did not open on GitHub's machine; try it by hand." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "⚠️ ${{ matrix.name }}: the built app did not open on GitHub's machine; try it by hand." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

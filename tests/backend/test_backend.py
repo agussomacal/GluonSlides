@@ -484,6 +484,18 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("OK", res.stdout)
 
+    def test_github_workflows_are_valid(self):
+        """A workflow GitHub can't read fails silently (a red run with no steps)."""
+        import yaml
+        for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+            with self.subTest(path.name):
+                wf = yaml.safe_load(path.read_text(encoding="utf-8"))
+                self.assertIn("jobs", wf)
+                self.assertTrue("on" in wf or True in wf)  # YAML 1.1 reads `on:` as True
+                for job in wf["jobs"].values():
+                    for step in job.get("steps", []):
+                        self.assertTrue("uses" in step or "run" in step, step)
+
     def test_bundle_lists_every_folder_the_page_loads(self):
         spec = (REPO / "packaging" / "gluonslides.spec").read_text()
         html = (REPO / "index.html").read_text()
