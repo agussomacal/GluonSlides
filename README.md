@@ -434,10 +434,10 @@ uv sync --group build
 uv run python packaging/build.py          # --smoke: also open the built app once
 ```
 
-The result is `dist/GluonSlides/` (on macOS `dist/GluonSlides.app`); the build runs the app's `--self-check` on it. Recent projects and settings stay in the user's config folder, never inside the app.
+The result is `dist/GluonSlides/` (on macOS `dist/GluonSlides.app`), about 60 MB (25 MB compressed) on Linux. The build runs the app's `--self-check` on it, which also does each kind of backend work once (project file, figures, PDF, fonts), so a package missing from the bundle shows up there. Packages the app doesn't use are left out (see `UNUSED` in the recipe). Recent projects and settings stay in the user's config folder, never inside the app.
 
 - **Windows** uses the Edge WebView2 built into Windows 10/11; **macOS** its own WebKit.
-- **Linux** uses the system's WebKitGTK and GTK (`gir1.2-webkit2-4.1`, normally installed with the desktop), not a bundled copy.
+- **Linux** uses the desktop's own WebKitGTK, GTK and system libraries (`gir1.2-webkit2-4.1`, normally installed with the desktop), not bundled copies.
 - Exporting a vector PDF needs Chrome, Chromium or Edge installed; without one, the image-based PDF is used. PDF/EPS *figures* need Poppler (`pdftoppm`).
 - Unsigned builds show a warning on first start (macOS: right-click → Open; Windows: More info → Run anyway).
 

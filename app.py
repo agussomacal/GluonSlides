@@ -36,6 +36,8 @@ def self_check():
         import PIL, fontTools, pdf2image, platformdirs  # noqa: F401,E401
     except Exception as e:
         problems.append(f"import failed: {e}")
+    if not problems:
+        problems += _exercise_backend()
     print(f"GluonSlides {__version__} ({'bundled' if FROZEN else 'from source'}) at {APP_DIR}")
     for p in problems:
         print(f"  problem: {p}")
@@ -43,7 +45,70 @@ def self_check():
     return 0 if not problems else 1
 
 
+def use_desktop_gtk():
+    """Bundled on Linux: PyInstaller points GTK/GLib at copies inside the
+    bundle (left out to keep it small): use the desktop's own instead."""
+    if not FROZEN or not sys.platform.startswith("linux"):
+        return
+    inside = str(APP_DIR)
+    for key in ("GI_TYPELIB_PATH", "GDK_PIXBUF_MODULE_FILE", "GDK_PIXBUF_MODULEDIR", "GTK_DATA_PREFIX",
+                "GTK_EXE_PREFIX", "GTK_PATH", "GTK_IM_MODULE_FILE", "GIO_MODULE_DIR", "GSETTINGS_SCHEMA_DIR",
+                "XDG_DATA_DIRS", "FONTCONFIG_FILE", "FONTCONFIG_PATH", "GTK_THEME"):
+        value = os.environ.get(key)
+        if value is None or inside not in value:
+            continue
+        kept = [p for p in value.split(os.pathsep) if p and inside not in p]
+        if kept:
+            os.environ[key] = os.pathsep.join(kept)
+        else:
+            os.environ.pop(key)
+
+
+def _exercise_backend():
+    """Runs each kind of backend work once in a temporary folder, so a bundle
+    missing a package fails here, not when someone exports a PDF."""
+    import base64
+    import io
+    import tempfile
+
+    from PIL import Image
+
+    problems = []
+
+    def step(name, fn):
+        try:
+            res = fn()
+            if isinstance(res, dict) and res.get("success") is False:
+                problems.append(f"{name}: {res.get('error')}")
+        except Exception as e:
+            problems.append(f"{name}: {type(e).__name__}: {e}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        from backend import figures, fonts, pdf_export, project_io
+
+        buf = io.BytesIO()
+        Image.new("RGB", (8, 4), "red").save(buf, format="PNG")
+        png = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        step("project file", lambda: project_io.save_project_data(f"{tmp}/t.gl", ".project {T} version:2\n"))
+        step("project file read", lambda: project_io.load_project_at(f"{tmp}/t.gl"))
+        step("figure save", lambda: figures.save_figure_data(tmp, png, "check"))
+        step("figure load", lambda: figures.load_figure_data_uri(tmp, "figures/check.png"))
+        step("PDF from images", lambda: pdf_export.images_to_pdf([png, png], f"{tmp}/t.pdf"))
+        font = next((APP_DIR / "libs" / "fonts").glob("*.woff2"), None)
+        if font:  # reading and writing woff2 needs fontTools + brotli
+            def woff2_round_trip():
+                from fontTools.ttLib import TTFont
+                face = TTFont(str(font))
+                face.flavor = "woff2"
+                face.save(io.BytesIO())
+            step("fonts (woff2)", woff2_round_trip)
+            step("font licence", lambda: fonts.font_license(str(font)))
+        step("system fonts", fonts.list_system_fonts)
+    return problems
+
+
 def main():
+    use_desktop_gtk()  # before GTK is loaded
     if "--version" in sys.argv:
         print(__version__)
         return 0

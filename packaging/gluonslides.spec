@@ -4,6 +4,10 @@
 # Output in dist/:
 #   Linux / Windows   GluonSlides/          the program and its files
 #   macOS             GluonSlides.app
+#
+# Kept small: packages the app never uses are excluded (PyInstaller finds
+# them as optional imports of other packages), and on Linux the desktop's
+# own GTK/WebKitGTK and system libraries are used, not copies.
 import sys
 from pathlib import Path
 
@@ -24,14 +28,41 @@ for candidate in (["icon.ico"] if sys.platform == "win32" else ["icon.icns"] if 
     if (ROOT / "packaging" / candidate).is_file():
         icon = str(ROOT / "packaging" / candidate)
 
+# Optional imports of other packages that the app does not need.
+UNUSED = [
+    "tkinter", "numpy", "scipy", "matplotlib", "pandas", "lxml", "IPython", "jupyter",
+    "cryptography", "bcrypt", "_cffi_backend", "cffi", "tornado", "psutil", "jinja2", "markupsafe",
+    "lz4", "unicodedata2", "sympy", "PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy", "test", "unittest",
+]
+
+# Linux: libraries of the system (GTK, GLib, X11, OpenSSL...) come from the
+# desktop. Kept: Python itself and libraries shipped inside pip packages
+# (e.g. pillow.libs), and Python's own modules (lib-dynload, gi's _gi).
+def system_library(src):
+    src = str(src)
+    if "/python3" in src or "site-packages" in src or "/.venv/" in src:
+        return False
+    if Path(src).name.startswith("libpython3"):
+        return False
+    return src.startswith(("/usr/lib", "/lib", "/usr/local/lib"))
+
+
+GTK_DATA = ("share/icons", "share/themes", "share/locale", "share/glib-2.0", "share/fontconfig",
+            "share/mime", "gi_typelibs", "lib/gdk-pixbuf", "lib/gio", "gio_modules", "etc/")
+
 a = Analysis(  # noqa: F821
     [str(ROOT / "app.py")],
     pathex=[str(ROOT)],
     datas=datas,
     hiddenimports=["backend.api"],
-    excludes=["tkinter"],
+    excludes=UNUSED,
     noarchive=False,
 )
+
+if sys.platform.startswith("linux"):
+    a.binaries = [b for b in a.binaries if not system_library(b[1])]
+    a.datas = [d for d in a.datas if not d[0].replace("\\", "/").startswith(GTK_DATA)]
+
 pyz = PYZ(a.pure)  # noqa: F821
 
 exe = EXE(  # noqa: F821
