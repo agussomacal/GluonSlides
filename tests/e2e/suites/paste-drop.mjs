@@ -1,8 +1,8 @@
 // Pasting and dropping images in the app (fake backend):
 //   Ctrl+V asks the backend for the clipboard (WebKitGTK sends no paste
 //   event without a text field): a screenshot, copied image files, or
-//   nothing (then the app's own copied objects are pasted); Ctrl+C in the
-//   app replaces the system clipboard.
+//   text (a new text box), or nothing (then the app's own copied objects
+//   are pasted); Ctrl+C in the app replaces the system clipboard.
 //   Files dropped on the window never open in place of the app; images
 //   become linked figures where they are dropped, or replace the figure
 //   they are dropped on.
@@ -25,8 +25,8 @@ await page.addInitScript(() => {
     window.__dropPaths = [];
     const ok = (o = {}) => Promise.resolve({ success: true, ...o });
     window.pywebview = { api: {
-        read_clipboard_image: () => ok(window.__clipboard),
-        set_clipboard_text: (t) => { window.__clipboardText.push(t); window.__clipboard = {}; return ok(); },
+        read_clipboard: () => ok(window.__clipboard),
+        set_clipboard_text: (t) => { window.__clipboardText.push(t); window.__clipboard = { text: t }; return ok(); },
         take_dropped_paths: () => { const p = window.__dropPaths; window.__dropPaths = []; return ok({ paths: p }); },
         save_figure_data: (folder, uri, name) => ok({ relative_path: `figures/${name.replace(/\.\w+$/, '')}.png`, data_uri: uri }),
         import_figure: (folder, path) => {
@@ -82,6 +82,17 @@ await page.waitForTimeout(300);
 els = await elements();
 const linked = els[2];
 check('Ctrl+V of a copied image file: a linked figure', linked && linked.filePath === 'figures/plot.png' && linked.originalPath === '/home/me/analysis/plot.png' && linked.sync === 'yes', JSON.stringify(linked));
+
+// Text copied outside the app: a new text box
+await app(() => { window.__clipboard = { text: 'Copied from a paper\nsecond line' }; });
+await page.keyboard.press('Control+v');
+await page.waitForTimeout(300);
+els = await elements();
+const tb = els[3];
+check('Ctrl+V of outside text: a new text box with it', tb && tb.type === 'text' && tb.content === 'Copied from a paper\nsecond line', JSON.stringify(tb));
+check('…selected, sized for two lines, left-aligned', tb && tb.height >= 80 && tb.width < 1920 * 0.7 + 1 && tb.textAlign === 'left'
+    && await page.$eval(`#slide-canvas [data-element-id="${tb.id}"]`, n => n.classList.contains('selected') && n.innerText.includes('second line')), JSON.stringify(tb));
+await app(async () => { const { state } = await import('/core/state.js'); state.slides[0].elements.pop(); (await import('/editor/editor.js')).renderEditor(); });
 
 // Typing in a text field: Ctrl+V is the field's, not the slide's
 await app(() => { window.__clipboard = { data_uri: window.__red }; });
@@ -146,13 +157,44 @@ res = await drop(cx, cy, ['notes.txt'], ['/home/me/notes.txt']);
 await page.waitForTimeout(900);
 check('a non-image is refused (and not opened)', (await elements()).length === 2 && res.dropPrevented);
 
+// WebKitGTK may give only a uri-list (no Files type, no files): still taken
+const uriDrop = (x, y, uris) => app(([x, y, uris]) => {
+    const dt = new DataTransfer();
+    dt.setData('text/uri-list', uris.join('\r\n'));
+    const target = document.elementFromPoint(x, y);
+    const over = new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y });
+    target.dispatchEvent(over);
+    const ev = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y });
+    target.dispatchEvent(ev);
+    return { overPrevented: over.defaultPrevented, dropPrevented: ev.defaultPrevented };
+}, [x, y, uris]);
+[cx, cy] = await toClient(300, 800);
+res = await uriDrop(cx, cy, ['file:///home/me/My%20plots/fig%201.png']);
+await page.waitForTimeout(300);
+els = await elements();
+check('a drop given only as file:// uris: prevented, imported by path', res.overPrevented && res.dropPrevented
+    && els.length === 3 && els[2].originalPath === '/home/me/My plots/fig 1.png' && els[2].filePath === 'figures/fig 1.png', JSON.stringify({ res, el: els[2] }));
+res = await uriDrop(cx, cy, ['https://example.org/pic.png']);
+await page.waitForTimeout(100);
+check('a web image: prevented (the window stays), explained', res.dropPrevented && (await elements()).length === 3);
+// Text dragged into a text field is left to the field
+const fieldDrop = await app(() => {
+    const input = document.getElementById('slide-title-input');
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'hello');
+    const over = new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true });
+    input.dispatchEvent(over);
+    return over.defaultPrevented;
+});
+check('text dragged over a text field: left to the field', fieldDrop === false);
+
 // On the start screen: nothing is added, the window stays
 await app(async () => {
     document.getElementById('editor-view').classList.remove('active');
 });
 res = await drop(20, 20, ['x.png'], ['/tmp/x.png']);
 await page.waitForTimeout(900);
-check('outside the editor: ignored, but never opened', res.dropPrevented && (await elements()).length === 2);
+check('outside the editor: ignored, but never opened', res.dropPrevented && (await elements()).length === 3);
 await app(() => document.getElementById('editor-view').classList.add('active'));
 
 console.log(out.join('\n'));

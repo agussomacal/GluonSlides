@@ -32,8 +32,15 @@ def main():
 
 
 def _watch_drops(window, api):
-    """Gives the page the full paths of dropped files (see backend/desktop.py)."""
+    """Gives the page the full paths of dropped files, and keeps the window
+    on the app when something is dropped (see backend/desktop.py)."""
     from webview.dom import DOMEventHandler
+    from backend.desktop import guard_navigation
+
+    if getattr(window, "_drop_watch", False):  # `loaded` fires again on reloads
+        return
+    window._drop_watch = True
+    guard_navigation(window)
 
     try:
         window.dom.document.events.drop += DOMEventHandler(api._dropped.on_drop)

@@ -87,9 +87,9 @@ Exports embed every font the presentation uses (not the generic defaults), so th
 
 ### Figures: pasting and linked files
 
-**Ctrl+V** with an image in the clipboard (a screenshot, an image copied from a browser or another program) saves it into the project's `figures/` folder as `pasted-<date-time>.png` and adds it to the slide, centred and in proportion. Image *files* copied in a file manager are imported like dropped files (below). Objects copied inside the app still paste as objects: copying them replaces what the system clipboard held.
+**Ctrl+V** with an image in the clipboard (a screenshot, an image copied from a browser or another program) saves it into the project's `figures/` folder as `pasted-<date-time>.png` and adds it to the slide, centred and in proportion. Image *files* copied in a file manager are imported like dropped files (below). **Text** copied from elsewhere (a paper, a web page, an email) becomes a new text box, sized to fit, when you are not editing one. Objects copied inside the app still paste as objects: copying them replaces what the system clipboard held.
 
-**Dropping image files** (PNG, JPG, SVG, PDF…) from a file manager onto the window adds each one as a figure where it was dropped; dropped on an existing figure, it replaces that figure's image. Other files are refused; the window never opens a dropped file in place of the editor.
+**Dropping image files** (PNG, JPG, SVG, PDF…) from a file manager onto the window adds each one as a figure where it was dropped; dropped on an existing figure, it replaces that figure's image. Other files are refused; the window never opens a dropped file in place of the editor. Images dragged straight from a web page can't be dropped: copy the image and paste it with Ctrl+V.
 
 A figure imported from a file elsewhere (**📁 Browse**, dropping or pasting a file) is copied into `figures/` and stays **linked** to the original: when the original changes, for example a plot your analysis script just regenerated, the copy is updated and the slide redrawn within a few seconds, without touching anything. The figure's panel has *Update when the original file changes* (on for new imports) and **↻ Reload from the original**. In the file this is `sync:yes` on the figure, next to its `filePath` (the project's copy) and `originalPath`.
 

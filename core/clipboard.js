@@ -36,6 +36,7 @@ import {
     toggleLockSelected,
 } from '../editor/editor.js';
 import { syncProjectChrome } from './render.js';
+import { withDefaults } from './defaults.js';
 import { addImageFile, addImageData, addImagePath } from '../elements/figure/figure.js';
 
 const PASTE_OFFSET_PX = 40;
@@ -227,7 +228,7 @@ export function initKeyboardShortcuts() {
             clearTimeout(pendingPaste);
             pendingPaste = null;
             const api = pyApi();
-            if (api && typeof api.read_clipboard_image === 'function') {
+            if (api && typeof api.read_clipboard === 'function') {
                 // In the app the page gets no paste event without a focused
                 // text field: the backend reads the clipboard.
                 systemPasteAt = Date.now();
@@ -288,7 +289,7 @@ function pasteInternal(onMaster, slide) {
     }
 }
 
-// ---------- System clipboard: images in, a marker out ----------
+// ---------- System clipboard: images and text in, a marker out ----------
 
 const PASTE_WAIT_MS = 60;
 const INTERNAL_MARKER = 'GluonSlides objects';
@@ -310,11 +311,43 @@ function markInternalCopy() {
     }
 }
 
-/** Ctrl+V in the app: the clipboard's image (or copied image files), else the app's own clipboard. */
+/** Text from outside the app (not the marker of an in-app copy). */
+function outsideText(text) {
+    const t = String(text ?? '').replace(/\r\n?/g, '\n');
+    return t.trim() && t.trim() !== INTERNAL_MARKER ? t.replace(/^\n+|\s+$/g, '') : '';
+}
+
+/**
+ * Pasted text: a new text box holding it, centred on the slide, wide
+ * enough for its lines (up to 70% of the slide) and tall enough for them.
+ */
+export function addTextBox(text) {
+    const slideW = state.slideWidth;
+    const fontSize = withDefaults({ type: 'text' }).fontSize || Math.round(32 * slideW / 1920);
+    const charW = fontSize * 0.55;
+    const lines = text.split('\n');
+    const longest = Math.max(...lines.map(l => l.length));
+    const width = Math.round(Math.min(slideW * 0.7, Math.max(slideW * 0.2, longest * charW + fontSize)));
+    const perLine = Math.max(1, Math.floor((width - fontSize) / charW));
+    const rows = lines.reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0);
+    const height = Math.round(Math.min(state.slideHeight * 0.9, rows * fontSize * 1.5 + fontSize));
+    insertElement('text', {
+        content: text,
+        x: Math.round((slideW - width) / 2),
+        y: Math.round(Math.max(0, (state.slideHeight - height) / 2)),
+        width, height,
+        ...(lines.length > 1 ? { textAlign: 'left', verticalAlign: 'top' } : {}),
+    });
+}
+
+/**
+ * Ctrl+V in the app: the clipboard's image (or copied image files), or
+ * its text as a new text box, else what was copied in the app.
+ */
 async function pasteFromSystem(api, onMaster, slide) {
     let res = null;
     try {
-        res = await api.read_clipboard_image();
+        res = await api.read_clipboard();
     } catch (err) {
         res = null;
     }
@@ -330,6 +363,11 @@ async function pasteFromSystem(api, onMaster, slide) {
                 await addImagePath(path, insert, { x: state.slideWidth / 2 + i * 40, y: state.slideHeight / 2 + i * 40 });
             }
             flashSaveIndicator(res.paths.length > 1 ? `${res.paths.length} images pasted ✓` : 'Image pasted ✓');
+            return;
+        }
+        if (res && outsideText(res.text) && slide) {
+            addTextBox(outsideText(res.text));
+            flashSaveIndicator('Text pasted ✓');
             return;
         }
     } catch (err) {
@@ -372,7 +410,16 @@ function initImagePaste() {
             return;
         }
         const file = clipboardImage(e.clipboardData);
-        if (!file) return; // the app's own clipboard is pasted (pendingPaste)
+        if (!file) {
+            const text = outsideText(e.clipboardData && e.clipboardData.getData('text/plain'));
+            if (!text || !currentSlide()) return; // the app's own clipboard is pasted (pendingPaste)
+            e.preventDefault();
+            clearTimeout(pendingPaste);
+            pendingPaste = null;
+            addTextBox(text);
+            flashSaveIndicator('Text pasted ✓');
+            return;
+        }
         e.preventDefault();
         clearTimeout(pendingPaste);
         pendingPaste = null;

@@ -70,7 +70,7 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 | `fields` | Fields (`\slidenumber`, `\sectiontitle`, `\tableofcontents`...) per slide on the canvas, thumbnails and exports, numbering with continuation pages, sections (`.section`, Section field, sidebar headers and folding), Fields ▾, Project settings → Presentation, `\` autocomplete on the canvas and in the inspector |
 | `masters` | Master slides: creating and editing one on the canvas, drawn under every slide (canvas, thumbnails, export), fields with each slide's values, `master:none` and several masters, rename/delete, the `.gl` format, undo, slide shortcuts off while editing one |
 | `figures` | Pasting an image (saved into `figures/`, centred, in proportion), copy/paste of objects unaffected, linked figures redrawn when the original changes (periodic check, once per change), the sync option and ↻, figures on master slides loaded |
-| `paste-drop` | In the app (fake backend): Ctrl+V of a screenshot or of copied image files through the backend, Ctrl+C replacing the system clipboard, Ctrl+V in a text field left alone; dropped files never opening in the window, images added where dropped and linked to the original, replacing a figure, non-images refused |
+| `paste-drop` | In the app (fake backend): Ctrl+V of a screenshot, of copied image files or of text (a new text box) through the backend, Ctrl+C replacing the system clipboard, Ctrl+V in a text field left alone; dropped files never opening in the window (also when given only as `file://` uris, or as a web address), images added where dropped and linked to the original, replacing a figure, non-images refused, text dragged into a text field left alone |
 | `arrange` | Align on the slide and to each other, distribute, undo, layer order (buttons, disabled states, Ctrl+[ ]), locking (no drag/arrows/align, a drag on it selects with a rectangle, a click selects it, `locked:yes`, Ctrl+Shift+L), smart guides while moving, resizing and moving several, Alt to place freely |
 | `file-format` | The `.gl` files in `fixtures/` (and your local `Slides/` projects, if present) parse, keep their content and round-trip; friendly errors |
 
@@ -121,7 +121,7 @@ Plain Python `unittest` tests that call the backend modules directly, in tempora
 | Fonts | style names, licences of built-in fonts, restricted fonts are not embeddable, project fonts, system font list |
 | User settings | recent projects (missing ones dropped), inspector settings — in a temporary config folder, never your real one |
 | Snap environment | variables leaked by snap terminals are removed, normal environments untouched |
-| Desktop | the clipboard image as a PNG data URI, copied image files as paths, the fallback without GTK, dropped file paths taken once and forgotten when old |
+| Desktop | the clipboard image as a PNG data URI, copied image files as paths, text, which navigations would leave the app, the fallback without GTK, dropped file paths taken once and forgotten when old |
 | Presenter view | the audience window: which screen it goes to, full screen or not, messages both ways, closing (pywebview faked) |
 
 Tests that need something the machine may not have (a TrueType font, the downloaded built-in fonts) are skipped rather than failed.

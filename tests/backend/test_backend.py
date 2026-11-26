@@ -366,7 +366,7 @@ class DesktopTest(TempDirTest):
 
     def test_clipboard_screenshot_becomes_a_png_data_uri(self):
         with mock.patch.object(desktop, "_read_with_gtk", return_value={"png": png_bytes()}):
-            res = desktop.read_clipboard_image()
+            res = desktop.read_clipboard()
         self.assertTrue(res["success"])
         self.assertTrue(res["data_uri"].startswith("data:image/png;base64,"))
         self.assertEqual(base64.b64decode(res["data_uri"].split(",", 1)[1]), png_bytes())
@@ -379,16 +379,30 @@ class DesktopTest(TempDirTest):
         uris = ["file://" + img.replace(" ", "%20"), "file://" + txt]
         self.assertEqual(desktop._image_files(desktop._paths_from_uris(uris)), [img])
         with mock.patch.object(desktop, "_read_with_gtk", return_value={"paths": [img]}):
-            self.assertEqual(desktop.read_clipboard_image(), {"success": True, "paths": [img]})
+            self.assertEqual(desktop.read_clipboard(), {"success": True, "paths": [img]})
+
+    def test_clipboard_text(self):
+        with mock.patch.object(desktop, "_read_with_gtk", return_value={"text": "Hello\nworld"}):
+            self.assertEqual(desktop.read_clipboard(), {"success": True, "text": "Hello\nworld"})
+
+    def test_navigation_away_from_the_app_is_blocked(self):
+        app = "http://127.0.0.1:8123/index.html"
+        block = desktop.should_block_navigation
+        self.assertTrue(block(app, "file:///home/me/plot.png", False))       # a dropped file
+        self.assertTrue(block(app, "file:///home/me/plot.png", True))
+        self.assertTrue(block(app, "https://example.org/pic.png", False))    # a dropped web image
+        self.assertFalse(block(app, "http://127.0.0.1:8123/index.html", False))  # reload
+        self.assertFalse(block(app, "https://example.org/", True))            # a link
+        self.assertFalse(block(app, "about:srcdoc", False))                   # Present mode's frame
 
     def test_nothing_on_the_clipboard(self):
         with mock.patch.object(desktop, "_read_with_gtk", return_value={}):
-            self.assertEqual(desktop.read_clipboard_image(), {"success": True})
+            self.assertEqual(desktop.read_clipboard(), {"success": True})
 
     def test_falls_back_to_a_command_without_gtk(self):
         with mock.patch.object(desktop, "_read_with_gtk", side_effect=ImportError("no gi")), \
                 mock.patch.object(desktop, "_read_with_command", return_value={"png": png_bytes()}):
-            self.assertIn("data_uri", desktop.read_clipboard_image())
+            self.assertIn("data_uri", desktop.read_clipboard())
 
     def test_dropped_paths_are_taken_once(self):
         drops = desktop.DroppedFiles()
@@ -408,7 +422,7 @@ class DesktopTest(TempDirTest):
     def test_api_exposes_them(self):
         from backend.api import Api
         api = Api()
-        for name in ("read_clipboard_image", "set_clipboard_text", "take_dropped_paths"):
+        for name in ("read_clipboard", "set_clipboard_text", "take_dropped_paths"):
             self.assertTrue(callable(getattr(api, name)))
         self.assertEqual(api.take_dropped_paths(), {"success": True, "paths": []})
 

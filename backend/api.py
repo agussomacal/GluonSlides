@@ -137,9 +137,9 @@ class Api:
         """Re-copy linked figures whose original file changed; returns the updated ones."""
         return figures.refresh_linked_figures(project_folder, items)
 
-    def read_clipboard_image(self):
-        """The image (data URI) or image files (paths) on the system clipboard."""
-        return desktop.read_clipboard_image()
+    def read_clipboard(self):
+        """The image (data URI), image files (paths) or text on the system clipboard."""
+        return desktop.read_clipboard()
 
     def set_clipboard_text(self, text):
         """Replace the system clipboard (objects copied in the app)."""

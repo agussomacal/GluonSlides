@@ -2,7 +2,10 @@
 // editor/fileDrop.js — Files dragged onto the window.
 //
 // The browser's own reaction (opening the image in place of the app,
-// with no way back) is always prevented. In the editor:
+// with no way back) is always prevented, except for text dropped into a
+// text field (backend/desktop.py also keeps the window on the app).
+// WebKitGTK may give a file drop as a uri-list of file:// paths with
+// no files: those are imported by path. In the editor:
 //   on a figure          its image is replaced
 //   anywhere else        each image becomes a new figure, centred where
 //                        it was dropped (on the canvas) or on the slide
@@ -69,50 +72,102 @@ function editorActive() {
     return Boolean(editor && editor.classList.contains('active'));
 }
 
+/** file:// paths in the drop's uri-list (WebKitGTK may give these and no files). */
+function uriListPaths(dt) {
+    let list = '';
+    try { list = dt.getData('text/uri-list') || ''; } catch (err) { list = ''; }
+    return list.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('file://'))
+        .map(l => { try { return decodeURIComponent(new URL(l).pathname); } catch (err) { return ''; } })
+        .filter(Boolean);
+}
+
+function webAddress(dt) {
+    let list = '';
+    try { list = dt.getData('text/uri-list') || dt.getData('text/plain') || ''; } catch (err) { list = ''; }
+    return /^https?:\/\//.test(list.trim());
+}
+
+/** Text dragged into a text field (or the source editor) is the field's own business. */
+function textFieldDrop(e) {
+    const t = e.target;
+    const field = t && t.closest && t.closest('input, textarea, [contenteditable="true"], .CodeMirror');
+    return Boolean(field) && !hasFiles(e);
+}
+
+const baseName = (p) => p.split(/[/\\]/).pop();
+
+/**
+ * What was dropped, as [{ name, file?, path? }]: the files (with their
+ * full path when the backend knows it), or the file paths of the uri-list.
+ */
+async function droppedItems(dt) {
+    const files = [...(dt.files || [])];
+    const uris = uriListPaths(dt);
+    if (files.length) {
+        const paths = await droppedPaths(files);
+        return files.map((file, i) => ({
+            name: file.name, file,
+            path: paths[i] || uris.find(u => baseName(u) === file.name) || '',
+        }));
+    }
+    return uris.map(path => ({ name: baseName(path), path }));
+}
+
+const isImageItem = (it) => (it.file ? isImage(it.file) : IMAGE_RE.test(it.name));
+
 /**
  * Installs the window's drop handling. `insert(props)` adds a figure
  * (editor.js insertElement).
  */
 export function initFileDrop(insert) {
+    // Whatever is dragged over the window (files or not: WebKitGTK does not
+    // always say), the browser must not take it, or it opens the file in
+    // place of the app.
     window.addEventListener('dragover', (e) => {
-        if (!hasFiles(e)) return;
+        if (textFieldDrop(e)) return;
         e.preventDefault();
         const ok = editorActive();
-        e.dataTransfer.dropEffect = ok ? 'copy' : 'none';
+        if (e.dataTransfer) e.dataTransfer.dropEffect = ok ? 'copy' : 'none';
         document.body.classList.toggle('file-drag-over', ok);
     });
     window.addEventListener('dragleave', (e) => {
         if (!e.relatedTarget) document.body.classList.remove('file-drag-over');
     });
     window.addEventListener('drop', async (e) => {
-        if (!hasFiles(e)) return;
-        e.preventDefault(); // never let the window navigate to the file
         document.body.classList.remove('file-drag-over');
-        if (!editorActive()) return;
-        const files = [...(e.dataTransfer.files || [])];
-        const images = files.filter(isImage);
+        if (textFieldDrop(e)) return;
+        e.preventDefault(); // never let the window open what was dropped
+        const dt = e.dataTransfer;
+        if (!dt || !editorActive()) return;
+        const onFigure = figureUnder(e.target);
+        const at = slidePoint(e.clientX, e.clientY);
+        const items = await droppedItems(dt);
+        if (!items.length) {
+            if (webAddress(dt)) flashSaveIndicator('Images from a web page: copy the image and paste it with Ctrl+V');
+            return;
+        }
+        const images = items.filter(isImageItem);
         if (!images.length) {
             flashSaveIndicator('Only images (PNG, JPG, SVG, PDF…) can be dropped on a slide');
             return;
         }
-        const onFigure = figureUnder(e.target);
-        const at = slidePoint(e.clientX, e.clientY);
-        const paths = await droppedPaths(files);
-        const pathOf = (f) => paths[files.indexOf(f)] || '';
+        const canLink = (it) => it.path && state.projectFolder;
 
         try {
             if (onFigure !== null) {
-                const f = images[0];
-                if (pathOf(f) && state.projectFolder) await replaceFigureImage(onFigure, pathOf(f));
-                else await replaceFigureImageData(onFigure, f);
+                const it = images[0];
+                if (canLink(it)) await replaceFigureImage(onFigure, it.path);
+                else if (it.file) await replaceFigureImageData(onFigure, it.file);
+                else throw new Error('save the project first');
                 flashSaveIndicator('Figure replaced ✓');
                 return;
             }
-            for (const [i, f] of images.entries()) {
+            for (const [i, it] of images.entries()) {
                 // Several images: fanned out a little from the drop point.
                 const point = at ? { x: at.x + i * 40, y: at.y + i * 40 } : null;
-                if (pathOf(f) && state.projectFolder) await addImagePath(pathOf(f), insert, point);
-                else await addImageFile(f, insert, point);
+                if (canLink(it)) await addImagePath(it.path, insert, point);
+                else if (it.file) await addImageFile(it.file, insert, point);
+                else throw new Error('save the project first: figures are copied into its folder');
             }
             flashSaveIndicator(images.length > 1 ? `${images.length} images added ✓` : 'Image added ✓');
         } catch (err) {
