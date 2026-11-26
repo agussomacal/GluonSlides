@@ -1,0 +1,112 @@
+# Builds the installable app on Windows, macOS and Linux (packaging/).
+#
+#   Push a version tag      git tag v0.2.0 && git push origin v0.2.0
+#     -> builds all three and publishes them on a GitHub Release page.
+#     A tag with a suffix (v0.2.0-rc1) makes a pre-release, for testing.
+#     The tag must match the version in backend/__init__.py.
+#   Run by hand             Actions -> Release builds -> Run workflow
+#     -> builds all three; download them from the run's page (no Release).
+name: Release builds
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-22.04 }   # oldest supported: works on newer systems too
+          - { name: windows, os: windows-latest }
+          - { name: macos, os: macos-latest }    # Apple Silicon
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches the app's version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)".*/\1/p' backend/__init__.py)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "${tag%%-*}" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in backend/__init__.py"
+            exit 1
+          fi
+
+      - name: Linux - the desktop's GTK, WebKitGTK and PyGObject
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 xvfb
+          # PyGObject comes from the system: a venv that can see it.
+          echo "UV_PYTHON=/usr/bin/python3" >> "$GITHUB_ENV"
+          echo "UV_PYTHON_DOWNLOADS=never" >> "$GITHUB_ENV"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            uv venv --system-site-packages
+          else
+            uv venv --python 3.12
+          fi
+          uv sync --locked --group build
+
+      - name: Build, self-check, pack
+        run: uv run python packaging/build.py --archive
+
+      - name: Open the built app once
+        id: smoke
+        continue-on-error: true  # the builds are kept even if this can't run here
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a uv run python packaging/build.py --smoke-only
+          else
+            uv run python packaging/build.py --smoke-only
+          fi
+
+      - name: Note in the summary
+        if: steps.smoke.outcome != 'success'
+        shell: bash
+        run: echo "⚠️ ${{ matrix.name }}: the built app did not open on GitHub's machine; try it by hand." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GluonSlides-${{ matrix.name }}
+          path: |
+            dist/GluonSlides-*.tar.gz
+            dist/GluonSlides-*.zip
+            dist/GluonSlides-*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish the Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: GluonSlides ${{ github.ref_name }}
+          body_path: packaging/RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: downloads/*

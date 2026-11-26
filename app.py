@@ -107,7 +107,18 @@ def _exercise_backend():
     return problems
 
 
+def _log_to_file_without_console():
+    """A window app on Windows has no console: with GLUONSLIDES_LOG set,
+    print to that file instead (the build reads --self-check from it)."""
+    log = os.environ.get("GLUONSLIDES_LOG")
+    if log and (sys.stdout is None or sys.stderr is None):
+        stream = open(log, "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stdout or stream
+        sys.stderr = sys.stderr or stream
+
+
 def main():
+    _log_to_file_without_console()
     use_desktop_gtk()  # before GTK is loaded
     if "--version" in sys.argv:
         print(__version__)
@@ -145,7 +156,8 @@ def main():
         import faulthandler
         import threading
         # Stuck (e.g. on a build machine): show where, and stop.
-        faulthandler.dump_traceback_later(SMOKE_LIMIT_S, exit=True)
+        if sys.stderr is not None and hasattr(sys.stderr, "fileno"):
+            faulthandler.dump_traceback_later(SMOKE_LIMIT_S, exit=True, file=sys.stderr)
         threading.Thread(target=_smoke_test, args=(window, result), daemon=True).start()
     webview.start(http_server=True)
     # The window is closed. Threads still waiting on the page (calls from

@@ -31,9 +31,11 @@ for candidate in (["icon.ico"] if sys.platform == "win32" else ["icon.icns"] if 
 # Optional imports of other packages that the app does not need.
 UNUSED = [
     "tkinter", "numpy", "scipy", "matplotlib", "pandas", "lxml", "IPython", "jupyter",
-    "cryptography", "bcrypt", "_cffi_backend", "cffi", "tornado", "psutil", "jinja2", "markupsafe",
-    "lz4", "unicodedata2", "sympy", "PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy", "test", "unittest",
+    "cryptography", "bcrypt", "tornado", "psutil", "jinja2", "markupsafe",
+    "lz4", "unicodedata2", "sympy", "PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy", "test",
 ]
+if sys.platform.startswith("linux"):
+    UNUSED += ["cffi", "_cffi_backend"]  # Windows needs it (pythonnet's clr_loader)
 
 # Linux: libraries of the system (GTK, GLib, X11, OpenSSL...) come from the
 # desktop. Kept: Python itself and libraries shipped inside pip packages

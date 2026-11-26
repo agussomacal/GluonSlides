@@ -439,7 +439,14 @@ The result is `dist/GluonSlides/` (on macOS `dist/GluonSlides.app`), about 60 MB
 - **Windows** uses the Edge WebView2 built into Windows 10/11; **macOS** its own WebKit.
 - **Linux** uses the desktop's own WebKitGTK, GTK and system libraries (`gir1.2-webkit2-4.1`, normally installed with the desktop), not bundled copies.
 - Exporting a vector PDF needs Chrome, Chromium or Edge installed; without one, the image-based PDF is used. PDF/EPS *figures* need Poppler (`pdftoppm`).
-- Unsigned builds show a warning on first start (macOS: right-click → Open; Windows: More info → Run anyway).
+- Unsigned builds show a warning on first start (see `packaging/RELEASE_NOTES.md` for what to click on each system).
+
+### Releases
+
+`.github/workflows/release.yml` builds all three on GitHub's machines (Linux on Ubuntu 22.04, Windows, macOS on Apple Silicon), runs `--self-check` and opens each built app once:
+
+- **Push a version tag** (`git tag v0.2.0 && git push origin v0.2.0`): the builds are published on a Release page, with `packaging/RELEASE_NOTES.md` as instructions. The tag must match `__version__` in `backend/__init__.py` (and `pyproject.toml`). A tag with a suffix, like `v0.2.0-rc1`, makes a pre-release for testing.
+- **Run it by hand** (*Actions → Release builds → Run workflow*): the builds are attached to the run as downloads, with no Release.
 
 ## Tests
 
