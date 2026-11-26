@@ -5,6 +5,7 @@
                    there, without opening a window (used on bundled builds)
     --smoke-test   open the window, check the page started (its JavaScript
                    ran to the end), close it; exit code 0 if it did
+    FILE.gl        open this project (what a double-click on a .gl file does)
 """
 
 import os
@@ -107,32 +108,60 @@ def _exercise_backend():
     return problems
 
 
+MIME_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-gluonslides">
+    <comment>GluonSlides project</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.gl"/>
+    <icon name="gluonslides"/>
+  </mime-type>
+</mime-info>
+"""
+
+
 def add_to_applications_menu():
     """Run as an AppImage (Linux sets $APPIMAGE): add GluonSlides to the
-    applications menu, pointing at this file (kept up to date if it moves).
-    Remove ~/.local/share/applications/gluonslides.desktop to undo."""
+    applications menu, pointing at this file (kept up to date if it moves),
+    and make .gl files open with it (double-click).
+    To undo: remove gluonslides.desktop (~/.local/share/applications),
+    gluonslides.xml (~/.local/share/mime/packages) and the icon."""
     appimage = os.environ.get("APPIMAGE")
     if not appimage or not sys.platform.startswith("linux"):
         return
     try:
         from pathlib import Path
         import shutil
+        import subprocess
 
         data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
         entry = data / "applications" / "gluonslides.desktop"
+        mime = data / "mime" / "packages" / "gluonslides.xml"
         icon = data / "icons" / "hicolor" / "256x256" / "apps" / "gluonslides.png"
         text = (
             "[Desktop Entry]\nType=Application\nName=GluonSlides\n"
             "Comment=Presentations as text: a freeform slide editor\n"
-            f'Exec="{appimage}"\nIcon=gluonslides\nTerminal=false\n'
+            f'Exec="{appimage}" %f\nIcon=gluonslides\nTerminal=false\n'
             "Categories=Office;Presentation;\nStartupWMClass=GluonSlides\n"
+            "MimeType=application/x-gluonslides;\n"
         )
-        if not entry.is_file() or entry.read_text(encoding="utf-8") != text:
-            entry.parent.mkdir(parents=True, exist_ok=True)
-            entry.write_text(text, encoding="utf-8")
+        changed = []
+        for path, content in ((entry, text), (mime, MIME_XML)):
+            if not path.is_file() or path.read_text(encoding="utf-8") != content:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                changed.append(path)
         if (APP_DIR / "icon.png").is_file() and not icon.is_file():
             icon.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(APP_DIR / "icon.png", icon)
+        # Let the desktop notice (quietly; skipped if the tools are missing).
+        tools = []
+        if mime in changed and shutil.which("update-mime-database"):
+            tools.append(["update-mime-database", str(data / "mime")])
+        if entry in changed and shutil.which("update-desktop-database"):
+            tools.append(["update-desktop-database", str(entry.parent)])
+        for cmd in tools:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError as e:
         print(f"Could not add GluonSlides to the applications menu: {e}")
 
@@ -145,6 +174,17 @@ def _log_to_file_without_console():
         stream = open(log, "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stdout or stream
         sys.stderr = sys.stderr or stream
+
+
+def startup_file(argv):
+    """The .gl project given on the command line (a double-click), or None."""
+    for arg in argv[1:]:
+        if arg.startswith("-"):
+            continue  # options (and macOS's -psn_... process ids)
+        path = os.path.abspath(os.path.expanduser(arg))
+        if path.lower().endswith(".gl") and os.path.isfile(path):
+            return path
+    return None
 
 
 def main():
@@ -173,6 +213,7 @@ def main():
         return 1
 
     api = Api()
+    api._startup_file = startup_file(sys.argv)
     window = webview.create_window(
         "GluonSlides",
         str(html_path),

@@ -35,7 +35,7 @@ import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
 import { startPresentation } from './ui/present.js';
 import {
-    initRecents, openProjectFromFile, goToHome, toggleDarkMode, changeCitestyle,
+    initRecents, openProjectFromFile, openProjectByPath, goToHome, toggleDarkMode, changeCitestyle,
 } from './ui/project.js';
 import {
     showNewProjectModal, validateNewProjectForm, chooseNewProjectFolder, confirmCreateProject,
@@ -130,8 +130,14 @@ window.addEventListener('beforeunload', flushPendingSave);
 startFigureSync(); // linked figures follow their original files
 initFileDrop(props => insertElement('figure', props)); // images dropped on the window
 initRecents();
-whenApiReady(60000).then(api => {
-    if (api) loadSystemFonts(); // "This computer" section of the font list
+whenApiReady(60000).then(async api => {
+    if (!api) return;
+    loadSystemFonts(); // "This computer" section of the font list
+    // Started by double-clicking a .gl file: open that project.
+    if (typeof api.get_startup_file === 'function') {
+        const res = await api.get_startup_file();
+        if (res && res.path) openProjectByPath(res.path);
+    }
 });
 
 // Startup finished (app.py --smoke-test checks this on built apps).

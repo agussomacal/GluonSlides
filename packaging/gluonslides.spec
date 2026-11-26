@@ -84,6 +84,7 @@ exe = EXE(  # noqa: F821
     exclude_binaries=True,
     name="GluonSlides",
     console=False,  # a window app; `--self-check` output still works on Linux/macOS
+    argv_emulation=sys.platform == "darwin",  # macOS: a double-clicked .gl arrives as an argument
     icon=icon,
 )
 
@@ -96,5 +97,20 @@ if sys.platform == "darwin":
         icon=icon,
         bundle_identifier="io.github.gluonslides",
         version=__version__,
-        info_plist={"NSHighResolutionCapable": True},
+        info_plist={
+            "NSHighResolutionCapable": True,
+            # .gl project files open in GluonSlides (double-click, Open With)
+            "CFBundleDocumentTypes": [{
+                "CFBundleTypeName": "GluonSlides project",
+                "CFBundleTypeRole": "Editor",
+                "LSHandlerRank": "Owner",
+                "LSItemContentTypes": ["io.github.gluonslides.project"],
+            }],
+            "UTExportedTypeDeclarations": [{
+                "UTTypeIdentifier": "io.github.gluonslides.project",
+                "UTTypeDescription": "GluonSlides project",
+                "UTTypeConformsTo": ["public.plain-text"],
+                "UTTypeTagSpecification": {"public.filename-extension": ["gl"]},
+            }],
+        },
     )

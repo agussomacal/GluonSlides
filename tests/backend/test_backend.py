@@ -519,7 +519,10 @@ class PackagingTest(unittest.TestCase):
             with mock.patch.dict(os.environ, env), mock.patch.object(app.sys, "platform", "linux"):
                 app.add_to_applications_menu()
                 entry = Path(tmp) / "applications" / "gluonslides.desktop"
-                self.assertIn('Exec="/home/me/Apps/GluonSlides.AppImage"', entry.read_text())
+                self.assertIn('Exec="/home/me/Apps/GluonSlides.AppImage" %f', entry.read_text())
+                self.assertIn("MimeType=application/x-gluonslides;", entry.read_text())
+                mime = (Path(tmp) / "mime" / "packages" / "gluonslides.xml").read_text()
+                self.assertIn('<glob pattern="*.gl"/>', mime)
                 os.environ["APPIMAGE"] = "/home/me/Moved/GluonSlides.AppImage"  # the file was moved
                 app.add_to_applications_menu()
                 self.assertIn("/Moved/", entry.read_text())
@@ -528,6 +531,24 @@ class PackagingTest(unittest.TestCase):
                 os.environ.pop("APPIMAGE", None)
                 app.add_to_applications_menu()
                 self.assertFalse((Path(tmp) / "applications").exists())
+
+    def test_a_gl_file_on_the_command_line_is_opened(self):
+        import app
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "My talk.gl"
+            project.write_text(".project {T}\n")
+            other = Path(tmp) / "notes.txt"
+            other.write_text("x")
+            self.assertEqual(app.startup_file(["GluonSlides", str(project)]), str(project))
+            self.assertEqual(app.startup_file(["GluonSlides", "-psn_0_123", str(project)]), str(project))
+            self.assertIsNone(app.startup_file(["GluonSlides", str(other)]))
+            self.assertIsNone(app.startup_file(["GluonSlides", str(Path(tmp) / "missing.gl")]))
+            self.assertIsNone(app.startup_file(["GluonSlides"]))
+        from backend.api import Api
+        api = Api()
+        api._startup_file = "/p/t.gl"
+        self.assertEqual(api.get_startup_file(), {"success": True, "path": "/p/t.gl"})
+        self.assertEqual(api.get_startup_file(), {"success": True, "path": None})  # only once
 
     def test_bundle_lists_every_folder_the_page_loads(self):
         spec = (REPO / "packaging" / "gluonslides.spec").read_text()

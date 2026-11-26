@@ -3,7 +3,8 @@
 ;
 ; Installs for the current user (no administrator rights needed): the app
 ; in %LOCALAPPDATA%\Programs\GluonSlides, a Start-menu entry, an optional
-; desktop shortcut, and an entry in Settings -> Apps to uninstall it.
+; desktop shortcut, .gl files opening in GluonSlides (optional, on by
+; default), and an entry in Settings -> Apps to uninstall it.
 ; Recent projects and settings (in %LOCALAPPDATA%\gluonslides) are kept.
 
 #ifndef AppVersion
@@ -34,10 +35,20 @@ UninstallDisplayIcon={app}\GluonSlides.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+ChangesAssociations=yes
 LicenseFile={#Root}\LICENSE
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "glfiles"; Description: "Open .gl project files with GluonSlides (double-click)"; GroupDescription: "File types:"
+
+[Registry]
+; Per user (HKA = HKCU here); removed on uninstall.
+Root: HKA; Subkey: "Software\Classes\.gl"; ValueType: string; ValueName: ""; ValueData: "GluonSlides.Project"; Flags: uninsdeletevalue; Tasks: glfiles
+Root: HKA; Subkey: "Software\Classes\.gl\OpenWithProgids"; ValueType: string; ValueName: "GluonSlides.Project"; ValueData: ""; Flags: uninsdeletevalue; Tasks: glfiles
+Root: HKA; Subkey: "Software\Classes\GluonSlides.Project"; ValueType: string; ValueName: ""; ValueData: "GluonSlides project"; Flags: uninsdeletekey; Tasks: glfiles
+Root: HKA; Subkey: "Software\Classes\GluonSlides.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\GluonSlides.exe,0"; Tasks: glfiles
+Root: HKA; Subkey: "Software\Classes\GluonSlides.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\GluonSlides.exe"" ""%1"""; Tasks: glfiles
 
 [Files]
 Source: "{#Root}\dist\GluonSlides\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion

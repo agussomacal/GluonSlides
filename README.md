@@ -18,7 +18,7 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 | macOS | `…-macos-arm64.dmg` | drag to Applications, open |
 | Linux | `…-linux-x86_64.AppImage` | make it executable, double-click (it adds itself to the menu) |
 
-The builds aren't signed yet, so the first start shows a warning; the release page says what to click. To run from source instead, see [Getting started](#getting-started).
+The builds aren't signed yet, so the first start shows a warning; the release page says what to click. Once installed, double-clicking a `.gl` project opens it in GluonSlides (Windows: an installer option, on by default; macOS: the app declares the type; Linux: the AppImage registers it on first start). To run from source instead, see [Getting started](#getting-started).
 
 ## Highlights
 
@@ -437,7 +437,7 @@ On first start, missing JS/CSS libraries from `dependencies.yaml` are downloaded
 
 Create a project (pick a folder — you get `MyDeck.gl` plus a `macros.tex` for your LaTeX macros), add elements from the toolbar, and export with the HTML/PDF buttons. Autosave runs continuously; your project file always reflects the current canvas.
 
-`python3 app.py --version` prints the version; `--self-check` checks that the files, libraries and Python packages are all there without opening a window; `--smoke-test` opens the window, checks the page started and closes it.
+`python3 app.py MyDeck.gl` opens that project directly. `python3 app.py --version` prints the version; `--self-check` checks that the files, libraries and Python packages are all there without opening a window; `--smoke-test` opens the window, checks the page started and closes it.
 
 ## Building the installable app
 

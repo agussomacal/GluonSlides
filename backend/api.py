@@ -28,6 +28,7 @@ class Api:
         # Leading underscore: pywebview does not expose it to JS.
         self._presentation = Presentation()
         self._dropped = desktop.DroppedFiles()
+        self._startup_file = None  # set by app.py: a .gl given on the command line
 
     # --- per-user settings -------------------------------------------------
 
@@ -136,6 +137,11 @@ class Api:
     def refresh_linked_figures(self, project_folder, items):
         """Re-copy linked figures whose original file changed; returns the updated ones."""
         return figures.refresh_linked_figures(project_folder, items)
+
+    def get_startup_file(self):
+        """The project to open at start (double-clicked .gl file), once."""
+        path, self._startup_file = self._startup_file, None
+        return {"success": True, "path": path}
 
     def read_clipboard(self):
         """The image (data URI), image files (paths) or text on the system clipboard."""

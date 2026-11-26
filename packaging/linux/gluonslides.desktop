@@ -2,8 +2,9 @@
 Type=Application
 Name=GluonSlides
 Comment=Presentations as text: a freeform slide editor with a .gl text format
-Exec=GluonSlides
+Exec=GluonSlides %f
 Icon=gluonslides
 Terminal=false
 Categories=Office;Presentation;
 StartupWMClass=GluonSlides
+MimeType=application/x-gluonslides;
