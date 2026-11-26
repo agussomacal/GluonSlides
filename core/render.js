@@ -27,6 +27,29 @@ function sanitizeHtml(html) {
     return escapeHtml(html);
 }
 
+// Math is set aside while Markdown runs, then put back untouched for KaTeX:
+// otherwise Markdown eats the \\ row breaks of aligned equations and
+// turns *...* inside formulas into italics. Same delimiters as below.
+const MATH_RE = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<![\\$])\$(?![\s$])(?:\\.|[^$\\\n])+?\$/g;
+const MATH_TOKEN_RE = /GLMATH(\d+)X/g;
+// \$ is a literal dollar: kept apart (its own element) so KaTeX never pairs it.
+const DOLLAR_TOKEN = 'GLDOLLARX';
+
+/** Text with math replaced by GLMATH<n>X tokens, and the math pieces. */
+export function protectMath(text) {
+    const pieces = [];
+    const out = String(text ?? '').replace(/\\\$/g, DOLLAR_TOKEN).replace(MATH_RE, (m) => {
+        pieces.push(m);
+        return `GLMATH${pieces.length - 1}X`;
+    });
+    return { text: out, pieces };
+}
+
+/** HTML from Markdown with the math tokens put back (escaped, as text). */
+function restoreMath(html, pieces) {
+    return html.split(DOLLAR_TOKEN).join('<span class="gl-dollar">$</span>').replace(MATH_TOKEN_RE, (t, i) => (pieces[Number(i)] !== undefined ? escapeHtml(pieces[Number(i)].split(DOLLAR_TOKEN).join('\\$')) : t));
+}
+
 export function renderMarkdownAndKatex(element, rawText) {
     // Citations are resolved at render time only — the stored content
     // keeps the raw \cite{...} markers for round-trip fidelity.
@@ -39,14 +62,16 @@ export function renderMarkdownAndKatex(element, rawText) {
         processed = rawText;
     }
 
-    let html = processed || '';
+    const { text: withoutMath, pieces } = protectMath(processed || '');
+    let html = withoutMath;
     if (window.marked && typeof window.marked.parse === 'function') {
         try {
-            html = window.marked.parse(processed || '', { breaks: true, gfm: true });
+            html = window.marked.parse(withoutMath, { breaks: true, gfm: true });
         } catch (e) {
             console.error('Markdown parsing error:', e);
         }
     }
+    html = restoreMath(html, pieces);
     element.innerHTML = sanitizeHtml(html);
     if (window.renderMathInElement) {
         try {
@@ -58,6 +83,7 @@ export function renderMarkdownAndKatex(element, rawText) {
                     { left: '\\[', right: '\\]', display: true },
                 ],
                 macros: state.projectMacros,
+                ignoredClasses: ['gl-dollar'],
                 throwOnError: false,
             });
         } catch (e) {
