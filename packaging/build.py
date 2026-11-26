@@ -28,6 +28,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 sys.path.insert(0, str(ROOT))
 
+# Windows consoles may not take every character the app prints (font
+# names, paths): never fail the build over printing one.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="replace")
+
 
 def built_program():
     if sys.platform == "darwin":

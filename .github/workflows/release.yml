@@ -25,6 +25,8 @@ jobs:
           - { name: macos, os: macos-latest }    # Apple Silicon
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    env:
+      PYTHONUTF8: "1"  # same text encoding on every system (Windows defaults to cp1252)
     steps:
       - uses: actions/checkout@v4
 
