@@ -81,6 +81,22 @@ def make_archive(version):
     return target
 
 
+ICON_PNG = ROOT / "packaging" / "icon.png"
+
+
+def make_icons():
+    """packaging/icon.png (square, ideally 1024 px) -> icon.ico (Windows) and
+    icon.icns (macOS), which the recipe picks up. No PNG: no icon."""
+    if not ICON_PNG.is_file():
+        return
+    from PIL import Image
+
+    img = Image.open(ICON_PNG).convert("RGBA")
+    img.save(ROOT / "packaging" / "icon.ico", sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+    if sys.platform == "darwin":
+        img.resize((1024, 1024)).save(ROOT / "packaging" / "icon.icns")
+
+
 def main():
     if "--smoke-only" in sys.argv:
         sys.exit(run_built("--smoke-test", 300))
@@ -91,6 +107,7 @@ def main():
     missing = check_and_install_dependencies()
     if missing:
         sys.exit(f"Could not download: {', '.join(missing)}")
+    make_icons()
 
     subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
