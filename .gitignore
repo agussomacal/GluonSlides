@@ -5,3 +5,5 @@ recents.json
 gl_inspector_settings.json
 node_modules/
 tests/e2e/output/
+/build/
+/dist/

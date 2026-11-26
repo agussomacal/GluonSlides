@@ -10,3 +10,7 @@ dependencies = [
     "platformdirs",
     "fonttools[woff]>=4.50,<4.69",
 ]
+
+[dependency-groups]
+# Only for building the installable app (packaging/): `uv sync --group build`
+build = ["pyinstaller>=6.10"]

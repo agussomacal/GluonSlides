@@ -11,8 +11,10 @@ import base64
 import glob
 import io
 import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -425,6 +427,72 @@ class DesktopTest(TempDirTest):
         for name in ("read_clipboard", "set_clipboard_text", "take_dropped_paths"):
             self.assertTrue(callable(getattr(api, name)))
         self.assertEqual(api.take_dropped_paths(), {"success": True, "paths": []})
+
+
+class OtherSystemsClipboardTest(unittest.TestCase):
+    """macOS / Windows clipboard (simulated here): Pillow for images, commands for text."""
+
+    def test_image_on_macos_or_windows(self):
+        from PIL import ImageGrab
+        for platform in ("darwin", "win32"):
+            with mock.patch.object(desktop.sys, "platform", platform), \
+                    mock.patch.object(ImageGrab, "grabclipboard", return_value=Image.new("RGB", (3, 2), "blue")):
+                res = desktop.read_clipboard()
+            self.assertTrue(res["data_uri"].startswith("data:image/png;base64,"), platform)
+
+    def test_files_copied_in_explorer(self):
+        from PIL import ImageGrab
+        with tempfile.TemporaryDirectory() as tmp:
+            img = os.path.join(tmp, "plot.png")
+            Path(img).write_bytes(b"x")
+            with mock.patch.object(desktop.sys, "platform", "win32"), \
+                    mock.patch.object(ImageGrab, "grabclipboard", return_value=[img, os.path.join(tmp, "a.txt")]):
+                self.assertEqual(desktop.read_clipboard(), {"success": True, "paths": [img]})
+
+    def test_text_through_pbpaste_and_powershell(self):
+        from PIL import ImageGrab
+        for platform, out, expected_cmd in (("darwin", b"hello", "pbpaste"), ("win32", b"hello\r\n", "powershell")):
+            done = subprocess.CompletedProcess([], 0, stdout=out)
+            with mock.patch.object(desktop.sys, "platform", platform), \
+                    mock.patch.object(ImageGrab, "grabclipboard", return_value=None), \
+                    mock.patch.object(desktop.subprocess, "run", return_value=done) as run:
+                self.assertEqual(desktop.read_clipboard(), {"success": True, "text": "hello"}, platform)
+            self.assertEqual(run.call_args[0][0][0], expected_cmd)
+
+    def test_setting_text(self):
+        for platform, expected_cmd in (("darwin", "pbcopy"), ("win32", "powershell")):
+            with mock.patch.object(desktop.sys, "platform", platform), \
+                    mock.patch.object(desktop.subprocess, "run") as run:
+                self.assertEqual(desktop.set_clipboard_text("GluonSlides objects"), {"success": True})
+            self.assertEqual(run.call_args[0][0][0], expected_cmd)
+            self.assertEqual(run.call_args[1]["input"], b"GluonSlides objects")
+
+
+class PackagingTest(unittest.TestCase):
+    """What the installable app relies on (packaging/)."""
+
+    def test_version_matches_pyproject(self):
+        import re
+        from backend import __version__
+        declared = re.search(r'^version = "([^"]+)"', (REPO / "pyproject.toml").read_text(), re.M).group(1)
+        self.assertEqual(__version__, declared)
+
+    def test_self_check_passes_from_source(self):
+        if not (REPO / "libs" / "katex.min.js").is_file():
+            self.skipTest("libraries not downloaded yet (start the app once)")
+        res = subprocess.run([sys.executable, str(REPO / "app.py"), "--self-check"], capture_output=True, text=True, cwd=REPO, timeout=60)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("OK", res.stdout)
+
+    def test_bundle_lists_every_folder_the_page_loads(self):
+        spec = (REPO / "packaging" / "gluonslides.spec").read_text()
+        html = (REPO / "index.html").read_text()
+        for folder in ("core", "editor", "elements", "export", "ui", "present", "libs"):
+            self.assertIn(f'"{folder}"', spec)
+        # Every local file index.html loads is inside a bundled folder or listed.
+        for ref in re.findall(r'(?:src|href)="(?!https?:|#|data:)([^"]+)"', html):
+            top = ref.split("/")[0]
+            self.assertTrue(f'"{top}"' in spec, f"{ref} is not bundled")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 """The desktop around the app window: the system clipboard and dropped files.
 
 WebKitGTK only sends a paste event to the page when a text field has
-focus, so Ctrl+V on the canvas asks Python for the clipboard instead
-(read through GTK, or `wl-paste` / `xclip` when GTK is not available):
-an image, image files copied in a file manager, or text.
+focus, so Ctrl+V on the canvas asks Python for the clipboard instead:
+an image, image files copied in a file manager, or text. Linux: through
+GTK, or `wl-paste` / `xclip`. macOS and Windows: Pillow's ImageGrab for
+images (and copied files on Windows), pbpaste / PowerShell for text.
 
 A file dropped where the page does not take it would make WebKit open
 it in place of the app, with no way back: `guard_navigation` keeps the
@@ -15,9 +16,11 @@ GTK window knows it. `DroppedFiles` keeps the paths of the latest drop
 """
 
 import base64
+import io
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -129,6 +132,54 @@ def _read_with_command():
     return {}
 
 
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console flashing on Windows
+_PS = ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
+
+
+def _system_text():
+    """Clipboard text on macOS / Windows ('' if none)."""
+    if sys.platform == "darwin":
+        cmd = ["pbpaste"]
+    elif sys.platform == "win32":
+        cmd = _PS + ["[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw"]
+    else:
+        return ""
+    try:
+        res = subprocess.run(cmd, capture_output=True, timeout=_GTK_TIMEOUT_S, creationflags=_NO_WINDOW)
+    except Exception:
+        return ""
+    text = res.stdout.decode("utf-8", errors="replace") if res.returncode == 0 else ""
+    return text[:-2] if sys.platform == "win32" and text.endswith("\r\n") else text
+
+
+def _read_with_pillow():
+    """macOS / Windows: a copied image, copied image files, or text."""
+    from PIL import ImageGrab
+
+    try:
+        grabbed = ImageGrab.grabclipboard()
+    except Exception:
+        grabbed = None
+    if isinstance(grabbed, list):  # files copied in Explorer (Windows)
+        files = _image_files([str(p) for p in grabbed])
+        return {"paths": files} if files else {}
+    if grabbed is not None:
+        buf = io.BytesIO()
+        grabbed.save(buf, format="PNG")
+        return {"png": buf.getvalue()}
+    text = _system_text()
+    return {"text": text} if text else {}
+
+
+def _read_system():
+    if sys.platform in ("darwin", "win32"):
+        return _read_with_pillow()
+    try:
+        return _read_with_gtk()
+    except Exception:
+        return _read_with_command()
+
+
 def read_clipboard():
     """What Ctrl+V on the canvas pastes from the system clipboard.
 
@@ -138,10 +189,7 @@ def read_clipboard():
     or {"success": True} when there is nothing usable.
     """
     try:
-        try:
-            found = _read_with_gtk()
-        except Exception:
-            found = _read_with_command()
+        found = _read_system()
         if found.get("png"):
             return {"success": True, "data_uri": "data:image/png;base64," + base64.b64encode(found["png"]).decode("ascii")}
         if found.get("paths"):
@@ -155,6 +203,15 @@ def read_clipboard():
 
 def set_clipboard_text(text):
     """Puts `text` on the system clipboard (replacing an older screenshot)."""
+    if sys.platform in ("darwin", "win32"):
+        cmd = ["pbcopy"] if sys.platform == "darwin" else _PS + [
+            "[Console]::InputEncoding = [Text.Encoding]::UTF8; Set-Clipboard -Value ([Console]::In.ReadToEnd())"]
+        try:
+            subprocess.run(cmd, input=str(text).encode("utf-8"), timeout=_GTK_TIMEOUT_S,
+                           check=True, creationflags=_NO_WINDOW)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     try:
         def write():
             clip = _gtk_clipboard()

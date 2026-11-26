@@ -406,6 +406,7 @@ backend/
   user_settings.py  recents + inspector settings (~/.config/gluonslides)
   vendor_libs.py    downloads JS/CSS libs listed in dependencies.yaml
   snap_env.py       undoes env leaked by snap-packaged terminals
+packaging/        installable app: PyInstaller recipe + build.py
 ```
 
 The in-memory model is plain JS objects; `.gl` is a projection applied only at the file boundary (`serializeProject` / `deserializeProject`), which keeps rendering, selection, and history logic completely format-agnostic. Text elements never import the editor — they communicate through DOM events, so there are no circular dependencies.
@@ -421,6 +422,24 @@ uv run app.py      # or: python3 app.py
 On first start, missing JS/CSS libraries from `dependencies.yaml` are downloaded into `libs/`. Recent projects and inspector settings are stored per user (`~/.config/gluonslides` on Linux).
 
 Create a project (pick a folder — you get `MyDeck.gl` plus a `macros.tex` for your LaTeX macros), add elements from the toolbar, and export with the HTML/PDF buttons. Autosave runs continuously; your project file always reflects the current canvas.
+
+`python3 app.py --version` prints the version; `--self-check` checks that the files, libraries and Python packages are all there without opening a window; `--smoke-test` opens the window, checks the page started and closes it.
+
+## Building the installable app
+
+The app can be bundled, with Python, its packages and the JavaScript libraries and fonts, into a program that runs without `uv` or a terminal (PyInstaller, recipe in `packaging/`). Build on the system you are building for:
+
+```bash
+uv sync --group build
+uv run python packaging/build.py          # --smoke: also open the built app once
+```
+
+The result is `dist/GluonSlides/` (on macOS `dist/GluonSlides.app`); the build runs the app's `--self-check` on it. Recent projects and settings stay in the user's config folder, never inside the app.
+
+- **Windows** uses the Edge WebView2 built into Windows 10/11; **macOS** its own WebKit.
+- **Linux** uses the system's WebKitGTK and GTK (`gir1.2-webkit2-4.1`, normally installed with the desktop), not a bundled copy.
+- Exporting a vector PDF needs Chrome, Chromium or Edge installed; without one, the image-based PDF is used. PDF/EPS *figures* need Poppler (`pdftoppm`).
+- Unsigned builds show a warning on first start (macOS: right-click → Open; Windows: More info → Run anyway).
 
 ## Tests
 

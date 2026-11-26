@@ -133,3 +133,6 @@ initRecents();
 whenApiReady(60000).then(api => {
     if (api) loadSystemFonts(); // "This computer" section of the font list
 });
+
+// Startup finished (app.py --smoke-test checks this on built apps).
+window.gluonStarted = true;
