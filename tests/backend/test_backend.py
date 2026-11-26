@@ -496,6 +496,22 @@ class PackagingTest(unittest.TestCase):
                     for step in job.get("steps", []):
                         self.assertTrue("uses" in step or "run" in step, step)
 
+    def test_excluded_packages_dont_clash_with_setuptools(self):
+        """PyInstaller maps distutils and setuptools' bundled packages (wheel,
+        packaging, jaraco...) onto setuptools' copies; excluding one of those
+        names fails the build where setuptools is pulled in (Windows)."""
+        try:
+            import setuptools
+        except ImportError:
+            self.skipTest("setuptools not installed")
+        vendor = Path(setuptools.__file__).parent / "_vendor"
+        vendored = {p.name.split("-")[0].split(".")[0] for p in vendor.iterdir()} if vendor.is_dir() else set()
+        spec = (REPO / "packaging" / "gluonslides.spec").read_text()
+        block = spec[spec.index("UNUSED = ["):spec.index("]", spec.index("UNUSED = ["))]
+        excluded = set(re.findall(r'"([A-Za-z_][\w.]*)"', block))
+        clashes = excluded & (vendored | {"setuptools", "distutils", "_distutils_hack"})
+        self.assertFalse(clashes, f"excluded but needed by PyInstaller's setuptools support: {clashes}")
+
     def test_bundle_lists_every_folder_the_page_loads(self):
         spec = (REPO / "packaging" / "gluonslides.spec").read_text()
         html = (REPO / "index.html").read_text()

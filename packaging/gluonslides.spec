@@ -36,7 +36,9 @@ UNUSED = [
     # Linux system packages (seen when the system's packages are visible);
     # Debian's pkg_resources breaks once bundled. Not setuptools/distutils:
     # PyInstaller maps distutils onto setuptools' copy (cffi on Windows needs it).
-    "pkg_resources", "pip", "wheel",
+    # Nothing setuptools vendors (wheel, packaging, jaraco...): PyInstaller
+    # maps those names onto setuptools' copies, and an excluded name clashes.
+    "pkg_resources",
     "keyring", "httplib2", "zope", "launchpadlib", "lazr", "wadllib", "dbus", "secretstorage", "jeepney",
 ]
 if sys.platform.startswith("linux"):
