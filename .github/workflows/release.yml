@@ -44,7 +44,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 xvfb
-          # PyGObject comes from the system: a venv that can see it.
+          # The system's Python, whose PyGObject (gi) matches it.
           echo "UV_PYTHON=/usr/bin/python3" >> "$GITHUB_ENV"
           echo "UV_PYTHON_DOWNLOADS=never" >> "$GITHUB_ENV"
 
@@ -56,12 +56,18 @@ jobs:
       - name: Install
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            uv venv --system-site-packages
-          else
-            uv venv --python 3.12
-          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then uv venv; else uv venv --python 3.12; fi
           uv sync --locked --group build
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # Only PyGObject from the system (not all its packages: those
+            # would be bundled too, and some break, e.g. Debian's pkg_resources).
+            site=$(.venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['platlib'])")
+            # (with their install records: PyInstaller reads the version)
+            for item in /usr/lib/python3/dist-packages/{gi,cairo,PyGObject-*,pycairo-*}; do
+              ln -s "$item" "$site/"
+            done
+            .venv/bin/python -c "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk; print('PyGObject', gi.__version__)"
+          fi
 
       - name: Build, self-check, pack
         run: uv run python packaging/build.py --archive
