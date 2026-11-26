@@ -141,6 +141,15 @@ Select several elements (drag a box on empty canvas space, or Ctrl+click) and pr
 
 Here the children live in a 400×200 frame drawn at 800×400, i.e. at 2× scale. Double-click a group to edit its children (Esc or a click outside to finish); **Ctrl+Shift+G** ungroups and bakes the scale into the children.
 
+### Importing a talk (Beamer, PowerPoint, PDF)
+
+**⬇ Import Talk...** on the start screen turns an existing talk into a new project (in a folder you choose, with the figures copied into `figures/`):
+
+- **Beamer**: the `.tex`, or the `.zip` of the LaTeX project as Overleaf downloads it (the main file is found). Frames become slides with their titles, `\section`s become sections (with section slides if the talk has `\AtBeginSection`), the title page is rebuilt, and the footer's page number and the frame-title bar go on a master slide. Text keeps bold, italics and colours; math stays LaTeX (`align*` becomes `aligned`), and the document's macros (`\newcommand`, `\DeclareMathOperator`) go into `macros.tex` with colour names resolved; `itemize`/`enumerate`, `columns` (also nested), `\includegraphics`, `tabular`, `tcolorbox` and Beamer blocks are converted; `\cite` and the `.bib` are kept. Overlays (`\pause`, `\item<2->`, `\only`, `\onslide`, `\includegraphics<2>`) become build steps; where Beamer *replaces* content, the later version covers the earlier one at the same place. LaTeX's own layout isn't available, so positions are estimated and a frame that is too full is shown smaller: a good draft to tidy, not a pixel copy. TikZ drawings are not converted (a placeholder shows where they were).
+- **PowerPoint** `.pptx` and **PDF**: see below.
+
+The import lists anything worth checking (a figure not found, a very full slide, content that Beamer hides again later).
+
 ### Arranging: align, guides, layers, lock
 
 The **Arrange** part of the properties panel works on the selected objects:

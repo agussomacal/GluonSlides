@@ -519,6 +519,118 @@ class UpdatesTest(TempDirTest):
         self.assertIn("no network", r["error"])
 
 
+BEAMER_FIXTURE = REPO / "tests" / "backend" / "fixtures" / "beamer"
+
+
+class BeamerImportTest(TempDirTest):
+    """Beamer .tex / .zip -> slides (backend/importers/beamer.py), on a small talk using each feature."""
+
+    def setUp(self):
+        super().setUp()
+        from backend.importers import import_talk
+        self.import_talk = import_talk
+        res = import_talk(str(BEAMER_FIXTURE / "talk.tex"), self.tmp, "Test Talk")
+        self.assertTrue(res["success"], res)
+        self.res, self.p = res, res["project"]
+        self.slides = {s["title"]: s for s in self.p["slides"]}
+
+    def texts(self, title):
+        return [e for e in self.slides[title]["elements"] if e["type"] == "text"]
+
+    def test_document_settings(self):
+        self.assertEqual((self.p["width"], self.p["height"]), (1920, 1080))  # aspectratio=169
+        self.assertEqual((self.p["title"], self.p["author"], self.p["date"]), ("A Test Talk", "Ana, Bo", "2026"))
+        self.assertTrue(self.res["path"].endswith(os.path.join("Test Talk", "Test Talk.gl")))
+
+    def test_slides_sections_and_section_slides(self):
+        titles = [s["title"] for s in self.p["slides"]]
+        self.assertEqual(titles, ["A Test Talk", "Intro", "First x^2 frame", "Columns", "End", "References"])
+        self.assertEqual(self.slides["Columns"]["section"], "Intro")
+        self.assertEqual(self.slides["References"]["section"], "End")
+        self.assertEqual(self.slides["Intro"]["master"], "Plain")  # \AtBeginSection slide
+
+    def test_masters_title_bar_and_page_number(self):
+        beamer = next(m for m in self.p["masters"] if m["name"] == "Beamer")
+        bar = next(e for e in beamer["elements"] if e["type"] == "shape")
+        self.assertEqual(bar["bg"], "#d9d9d9")  # \setbeamercolor{frametitle}{bg=barbg}
+        self.assertIn("\\slidenumber / \\totalslides", [e.get("content") for e in beamer["elements"]])
+        title = self.texts("Columns")[0]
+        self.assertEqual((title["content"], title["textAlign"]), ("Columns", "center"))
+
+    def test_text_formatting_math_and_notes(self):
+        body = [e["content"] for e in self.texts("First x^2 frame")]
+        self.assertIn("Some **bold** and *italic* text with $a_k + \\R$ inline.", body)
+        self.assertIn("$$\\argmin_{x \\in \\R} \\cL(x)$$", body)
+        self.assertEqual(self.slides["First x^2 frame"]["notes"], "Say hello first.")
+        self.assertEqual(self.texts("First x^2 frame")[0]["fontFamily"], "Inter")
+
+    def test_overlays_become_steps(self):
+        steps = {e["content"]: e.get("step", 1) for e in self.texts("First x^2 frame")}
+        self.assertEqual((steps["- One"], steps["- Two"], steps["- Three"]), (1, 2, 3))
+        self.assertEqual(steps["$$\\argmin_{x \\in \\R} \\cL(x)$$"], 2)  # after \pause
+        # a row shown from step 2: two versions, the later one covers the first
+        rows = [e for e in self.texts("Columns") if "aligned" in e["content"]]
+        self.assertEqual([e.get("step", 1) for e in rows], [1, 2])
+        self.assertIn("\\phantom{c }", rows[0]["content"])
+        self.assertEqual(rows[1]["bg"], "#ffffff")
+
+    def test_alternating_images_share_their_place(self):
+        figs = [e for e in self.slides["Columns"]["elements"] if e["type"] == "figure"]
+        self.assertEqual([f["filePath"] for f in figs], ["figures/plot.png", "figures/plot2.png"])
+        self.assertEqual([f.get("step", 1) for f in figs], [1, 2])
+        self.assertEqual((figs[0]["x"], figs[0]["y"]), (figs[1]["x"], figs[1]["y"]))
+        self.assertAlmostEqual(figs[0]["height"] / figs[0]["width"], 0.75, places=2)
+        for f in ("plot.png", "plot2.png"):
+            self.assertTrue(os.path.isfile(os.path.join(self.tmp, "Test Talk", "figures", f)))
+        self.assertTrue(figs[0]["originalPath"].endswith("plot.png") and figs[0]["sync"] == "yes")
+
+    def test_nested_columns_stay_inside_their_column(self):
+        els = {e["content"]: e for e in self.texts("Columns")}
+        left, right = els["Inner left"], els["Inner right"]
+        fig = next(e for e in self.slides["Columns"]["elements"] if e["type"] == "figure")
+        self.assertLess(left["x"], right["x"])
+        self.assertLess(right["x"] + right["width"], fig["x"] + 2)  # inner columns within the 0.6 column
+
+    def test_boxes_tables_citations_bibliography(self):
+        box = next(e for e in self.slides["Columns"]["elements"] if e["type"] == "shape")
+        self.assertEqual((box["borderStyle"], box["borderCol"], box["bg"]), ("dashed", "#d8e2ec", "#ffffff"))  # colorV!20!white
+        contents = [e["content"] for e in self.texts("Columns")]
+        self.assertIn("Boxed note, see \\cite{smith2020}.", contents)
+        self.assertIn("| $x$ | one |\n|---|---|\n| $y$ | two |", contents)
+        self.assertIn("\\printbibliography", [e["content"] for e in self.texts("References")])
+        self.assertIn("@article{smith2020", self.p["bib"])
+
+    def test_macros_for_katex(self):
+        m = self.p["macros"]
+        self.assertIn("\\newcommand{\\R}{\\mathbb{R}}", m)
+        self.assertIn("\\newcommand{\\colorV}{\\color{#3e6e9e}}", m)  # colour name resolved
+        self.assertIn("\\newcommand{\\argmin}{\\operatorname*{arg\\,min}}", m)
+        self.assertIn("\\newcommand{\\pair}[2]", m)
+
+    def test_from_a_zip_like_overleaf(self):
+        import zipfile
+        z = os.path.join(self.tmp, "talk.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            for f in BEAMER_FIXTURE.rglob("*"):
+                if f.is_file():
+                    zf.write(f, f.relative_to(BEAMER_FIXTURE))
+            zf.writestr("../escape.txt", "must not be written outside")
+        res = self.import_talk(z, self.tmp, "From Zip")
+        self.assertTrue(res["success"], res)
+        self.assertEqual(len(res["project"]["slides"]), 6)
+        fig = next(e for s in res["project"]["slides"] for e in s["elements"] if e["type"] == "figure")
+        self.assertEqual((fig["originalPath"], fig.get("sync")), ("", None))  # a temporary copy: not linked
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(self.tmp), "escape.txt")))
+
+    def test_errors(self):
+        self.assertFalse(self.import_talk(os.path.join(self.tmp, "nope.tex"), self.tmp, "X")["success"])
+        doc = os.path.join(self.tmp, "a.docx")
+        Path(doc).write_text("x")
+        self.assertIn("Choose", self.import_talk(doc, self.tmp, "X")["error"])
+        again = self.import_talk(str(BEAMER_FIXTURE / "talk.tex"), self.tmp, "Test Talk")
+        self.assertIn("already exists", again["error"])  # never mixed into an earlier import
+
+
 class PackagingTest(unittest.TestCase):
     """What the installable app relies on (packaging/)."""
 

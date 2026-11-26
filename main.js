@@ -24,6 +24,7 @@ import './elements/index.js';
 import { startFigureSync } from './elements/figure/figure.js';
 import { initFileDrop } from './editor/fileDrop.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
+import { showImportModal, chooseImportSource, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
@@ -51,6 +52,10 @@ const clickActions = {
     'new-project': showNewProjectModal,
     'open-project': openProjectFromFile,
     'choose-project-folder': chooseNewProjectFolder,
+    'import-talk': showImportModal,
+    'import-choose-source': chooseImportSource,
+    'import-choose-folder': chooseImportFolder,
+    'import-go': () => { if (!document.getElementById('import-go').onclick) confirmImport(); },
     'create-project': confirmCreateProject,
     'close-modal': (id) => closeModal(id),
     'open-macros': openMacrosModal,
@@ -87,6 +92,7 @@ const clickActions = {
 
 const valueActions = {
     'validate-new-project': validateNewProjectForm,
+    'import-name': onImportNameInput,
     'rename-slide': renameCurrentSlide,
     'change-citestyle': changeCitestyle,
     'change-grid-size': changeGridSize,

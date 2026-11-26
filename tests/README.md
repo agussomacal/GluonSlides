@@ -85,6 +85,7 @@ It prints one line per check, `PASS name` or `FAIL name — details`, plus any J
 | `masters` | Master slides: creating and editing one on the canvas, drawn under every slide (canvas, thumbnails, export), fields with each slide's values, `master:none` and several masters, rename/delete, the `.gl` format, undo, slide shortcuts off while editing one |
 | `figures` | Pasting an image (saved into `figures/`, centred, in proportion), copy/paste of objects unaffected, linked figures redrawn when the original changes (periodic check, once per change), the sync option and ↻, figures on master slides loaded |
 | `markdown-math` | Math in text boxes reaches KaTeX untouched by Markdown: `\\` row breaks, `*` and `_` in formulas, math in lists and tables, escaped `\$` (outside and inside math) |
+| `import-talk` | Import Talk dialog (fake backend): file and folder, PDF options only for PDFs, building and opening the project (size, author, steps, sections, notes, masters, macros, bibliography), warnings before opening, the PDF component asked for first (and declining), errors |
 | `open-file` | Started with a `.gl` file (double-click): the page asks the backend for it and opens the project; without one the start screen stays |
 | `update-notice` | "A new version is available": the notice and its buttons (Download, Skip this version, Don't check, ×), the version and checkbox on the start screen, no notice when up to date |
 | `paste-drop` | In the app (fake backend): Ctrl+V of a screenshot, of copied image files or of text (a new text box) through the backend, Ctrl+C replacing the system clipboard, Ctrl+V in a text field left alone; dropped files never opening in the window (also when given only as `file://` uris, or as a web address), images added where dropped and linked to the original (also when the backend sends the drop, without duplicates), replacing a figure, non-images refused, text dragged into a text field left alone |
@@ -140,6 +141,7 @@ Plain Python `unittest` tests that call the backend modules directly, in tempora
 | Snap environment | variables leaked by snap terminals are removed, normal environments untouched |
 | Desktop | the clipboard image as a PNG data URI, copied image files as paths, text, which navigations would leave the app, the fallback without GTK, dropped file paths taken once and forgotten when old |
 | Updates | version comparison, newer / same / older release, a skipped version, the check turned off (no request), offline |
+| Beamer import | a small talk using each feature (`fixtures/beamer/`): size, metadata, sections and section slides, master with title bar and page number, formatting, math and notes, overlays as steps, alternating images, nested columns, boxes, tables, citations, bibliography, macros; from a `.zip` (and a zip entry can't escape), errors |
 | Presenter view | the audience window: which screen it goes to, full screen or not, messages both ways, closing (pywebview faked) |
 
 Tests that need something the machine may not have (a TrueType font, the downloaded built-in fonts) are skipped rather than failed.

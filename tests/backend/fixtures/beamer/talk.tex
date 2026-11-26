@@ -1,0 +1,61 @@
+\documentclass[10pt,aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usepackage[sfdefault]{inter}
+\usepackage[most]{tcolorbox}
+\definecolor{colorV}{HTML}{3E6E9E}
+\definecolor{barbg}{HTML}{D9D9D9}
+\setbeamercolor{frametitle}{fg=black, bg=barbg}
+\setbeamertemplate{frametitle}[default][center]
+\setbeamertemplate{footline}{\hfill\insertframenumber{} / \inserttotalframenumber\hspace{2ex}}
+\AtBeginSection[]{\begin{frame}\centering\insertsectionhead\end{frame}}
+\newtcolorbox{note-box}{colframe=colorV!20!white, colback=white, arc=1mm, frame style={dashed}}
+\input{macros}
+\title{A Test Talk}
+\author{\underline{Ana} \and Bo}
+\date{2026}
+\begin{document}
+\frame{\titlepage}
+\section{Intro}
+\begin{frame}{First $x^2$ frame}
+Some \textbf{bold} and \emph{italic} text with $a_k + \R$ inline. % a comment
+\begin{itemize}
+  \item One
+  \item<2-> Two
+  \item<3-> Three
+\end{itemize}
+\pause
+$$\argmin_{x \in \R} \cL(x)$$
+\note{Say hello first.}
+\end{frame}
+\begin{frame}[t]
+\frametitle{Columns}
+\begin{columns}[T]
+\column{0.6\textwidth}
+  \begin{columns}
+  \column{0.5\textwidth} Inner left
+  \column{0.5\textwidth} Inner right
+  \end{columns}
+  \begin{align*}
+    a &= b \\
+    \only<2->{c &= {\colorV d}}
+  \end{align*}
+\column{0.4\textwidth}
+  \begin{figure}
+    \includegraphics<1>[width=\linewidth]{figures/plot}
+    \includegraphics<2->[width=\linewidth]{figures/plot2.png}
+  \end{figure}
+\end{columns}
+\begin{note-box}
+  Boxed note, see \cite{smith2020}.
+\end{note-box}
+\begin{tabular}{l l}
+  $x$ & one \\
+  $y$ & two
+\end{tabular}
+\end{frame}
+\section{End}
+\begin{frame}{References}
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{frame}
+\end{document}

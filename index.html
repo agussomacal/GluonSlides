@@ -31,11 +31,52 @@
         <p>Local Markdown, LaTeX, and Freeform presentation builder with the Gluon (.gl) format.</p>
         <button class="btn btn-primary" data-action="new-project">+ Create New Project</button>
         <button class="btn btn-secondary" data-action="open-project">📂 Open Project File...</button>
+        <button class="btn btn-secondary" data-action="import-talk">⬇ Import Talk (Beamer, PowerPoint, PDF)...</button>
         <div class="existing-projects">
             <p style="font-size: 12px; margin-bottom: 6px;">Recent Projects:</p>
             <ul class="project-list" id="project-list"></ul>
         </div>
         <div class="welcome-footer" id="welcome-footer"></div>
+    </div>
+</div>
+
+<!-- Import talk: a Beamer .tex/.zip, a .pptx or a .pdf becomes a new project (ui/importTalk.js) -->
+<div class="modal-backdrop" id="import-modal">
+    <div class="modal" style="width: 520px;">
+        <h3>Import a Talk</h3>
+        <p class="prop-hint">A Beamer <strong>.tex</strong> (or the <strong>.zip</strong> of a LaTeX project, as Overleaf downloads it), a PowerPoint <strong>.pptx</strong> or a <strong>.pdf</strong> becomes a new GluonSlides project.</p>
+        <div class="prop-group">
+            <label>File</label>
+            <button class="sidebar-btn" data-action="import-choose-source">📄 Choose File...</button>
+            <div class="modal-folder-path" id="import-source">No file chosen</div>
+        </div>
+        <div class="prop-group" id="import-pdf-options" hidden>
+            <label>PDF</label>
+            <label class="prop-check"><input type="radio" name="import-pdf-mode" value="editable" checked> Editable: text, shapes and images as GluonSlides objects</label>
+            <label class="prop-check"><input type="radio" name="import-pdf-mode" value="overlay"> Page picture with editable text on top</label>
+            <label class="prop-check"><input type="radio" name="import-pdf-mode" value="images"> Pages as pictures (exact, not editable)</label>
+        </div>
+        <div class="prop-group">
+            <label for="import-name">Project name</label>
+            <input type="text" id="import-name" class="prop-control" placeholder="My Talk" data-input="import-name">
+        </div>
+        <div class="prop-group">
+            <label>Save in</label>
+            <button class="sidebar-btn" data-action="import-choose-folder">📁 Choose Folder...</button>
+            <div class="modal-folder-path" id="import-folder">No folder selected</div>
+        </div>
+        <div class="import-extra" id="import-extra" hidden>
+            <p class="import-extra-text"></p>
+            <button class="btn btn-primary" data-extra="yes">Download</button>
+            <button class="btn btn-secondary" data-extra="no">Cancel</button>
+        </div>
+        <div class="prop-hint" id="import-status"></div>
+        <div class="import-warnings" id="import-warnings"></div>
+        <div class="modal-error" id="import-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" data-action="close-modal" data-arg="import-modal">Cancel</button>
+            <button class="btn btn-primary" id="import-go" data-action="import-go" disabled>Import</button>
+        </div>
     </div>
 </div>
 

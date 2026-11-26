@@ -20,6 +20,7 @@ def _cancelled():
 PROJECT_FILE_TYPES = ("Slide Project Files (*.gl)", "Legacy Projects (*.ssproj;*.json)", "All Files (*.*)")
 FIGURE_FILE_TYPES = ("Figure Files (*.png;*.jpg;*.jpeg;*.svg;*.pdf;*.eps)", "All Files (*.*)")
 PDF_FILE_TYPES = ("PDF Files (*.pdf)", "All Files (*.*)")
+IMPORT_FILE_TYPES = ("Talks (*.tex;*.zip;*.pptx;*.pdf)", "All Files (*.*)")
 FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
 
@@ -167,6 +168,18 @@ class Api:
     def take_dropped_paths(self):
         """Full paths of the files just dropped on the window (once)."""
         return {"success": True, "paths": self._dropped.take()}
+
+    # --- importing talks (backend/importers/) -------------------------------
+
+    def select_import_file(self):
+        """Pick a Beamer .tex/.zip, a .pptx or a .pdf to import."""
+        path = dialogs.ask_open(IMPORT_FILE_TYPES)
+        return {"success": True, "path": path} if path else _cancelled()
+
+    def import_talk(self, source, parent_folder, name, options=None):
+        """Convert `source` into a new project folder <parent>/<name>/; returns its slides."""
+        from . import importers
+        return importers.import_talk(source, parent_folder, name, options or {})
 
     def select_figure_file(self):
         """Open dialog to pick a figure file; returns its path and data URI."""
