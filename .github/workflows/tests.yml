@@ -1,0 +1,50 @@
+# Runs every test on GitHub's machines, on each push and pull request
+# (and by hand from the Actions tab). See tests/README.md.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (Python packages from uv.lock)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Node.js (the browser-test driver)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: |
+          uv sync --locked
+          npm ci
+
+      - name: Download the app's JavaScript libraries and fonts
+        run: uv run python -m backend.vendor_libs
+
+      - name: Backend tests
+        run: npm run test:backend
+
+      - name: Browser tests
+        run: npm test
+        env:
+          CHROME_PATH: /usr/bin/google-chrome  # preinstalled on GitHub's Ubuntu machines
+
+      - name: Keep the screenshots of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots
+          path: tests/e2e/output/
+          if-no-files-found: ignore
