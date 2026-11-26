@@ -12,9 +12,9 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 
 | System | File | Then |
 |---|---|---|
-| Windows 10/11 | `…-windows-x64.zip` | unzip, open `GluonSlides.exe` |
+| Windows 10/11 | `…-windows-x64-setup.exe` | run it: Start menu entry, no admin rights needed |
 | macOS | `…-macos-arm64.dmg` | drag to Applications, open |
-| Linux | `…-linux-x86_64.tar.gz` | unpack, run `GluonSlides/GluonSlides` |
+| Linux | `…-linux-x86_64.AppImage` | make it executable, double-click (it adds itself to the menu) |
 
 The builds aren't signed yet, so the first start shows a warning; the release page says what to click. To run from source instead, see [Getting started](#getting-started).
 
@@ -444,7 +444,10 @@ The app can be bundled, with Python, its packages and the JavaScript libraries a
 ```bash
 uv sync --group build
 uv run python packaging/build.py          # --smoke: also open the built app once
+uv run python packaging/build.py --archive --package   # + download file and installer
 ```
+
+`--package` makes the installer: an AppImage on Linux (downloads `appimagetool`), a `…-setup.exe` on Windows (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php); recipe in `packaging/windows/`). The app's icon comes from `packaging/icon.png` (square, ideally 1024 px; a placeholder "G" is used until there is one).
 
 The result is `dist/GluonSlides/` (on macOS `dist/GluonSlides.app`), about 60 MB (25 MB compressed) on Linux. The build runs the app's `--self-check` on it, which also does each kind of backend work once (project file, figures, PDF, fonts), so a package missing from the bundle shows up there. Packages the app doesn't use are left out (see `UNUSED` in the recipe). Recent projects and settings stay in the user's config folder, never inside the app.
 

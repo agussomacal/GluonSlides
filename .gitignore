@@ -7,5 +7,4 @@ node_modules/
 tests/e2e/output/
 /build/
 /dist/
-packaging/icon.ico
-packaging/icon.icns
+packaging/generated/

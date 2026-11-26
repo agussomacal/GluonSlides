@@ -86,11 +86,35 @@ jobs:
             uv run python packaging/build.py --smoke-only
           fi
 
-      - name: Note in the summary
+      - name: Note in the summary (smoke)
         if: steps.smoke.outcome != 'success'
         shell: bash
         run: |
           echo "⚠️ ${{ matrix.name }}: the built app did not open on GitHub's machine; try it by hand." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Windows - Inno Setup (for the installer)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          command -v iscc || [ -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] || choco install innosetup -y --no-progress
+
+      - name: Installer (Windows) / AppImage (Linux)
+        id: package
+        if: runner.os != 'macOS'  # the .dmg is the macOS installer
+        continue-on-error: true   # the .zip / .tar.gz are kept even if this fails
+        shell: bash
+        run: |
+          uv run python packaging/build.py --package-only
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # The AppImage itself runs (without FUSE on this machine).
+            ./dist/GluonSlides-*.AppImage --appimage-extract-and-run --self-check
+          fi
+
+      - name: Note in the summary
+        if: steps.package.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "⚠️ ${{ matrix.name }}: the installer/AppImage could not be made; the plain download is still there." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -99,6 +123,8 @@ jobs:
             dist/GluonSlides-*.tar.gz
             dist/GluonSlides-*.zip
             dist/GluonSlides-*.dmg
+            dist/GluonSlides-*.AppImage
+            dist/GluonSlides-*-setup.exe
           if-no-files-found: error
 
   release:

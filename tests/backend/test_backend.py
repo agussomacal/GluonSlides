@@ -512,6 +512,23 @@ class PackagingTest(unittest.TestCase):
         clashes = excluded & (vendored | {"setuptools", "distutils", "_distutils_hack"})
         self.assertFalse(clashes, f"excluded but needed by PyInstaller's setuptools support: {clashes}")
 
+    def test_appimage_adds_itself_to_the_applications_menu(self):
+        import app
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {"APPIMAGE": "/home/me/Apps/GluonSlides.AppImage", "XDG_DATA_HOME": tmp}
+            with mock.patch.dict(os.environ, env), mock.patch.object(app.sys, "platform", "linux"):
+                app.add_to_applications_menu()
+                entry = Path(tmp) / "applications" / "gluonslides.desktop"
+                self.assertIn('Exec="/home/me/Apps/GluonSlides.AppImage"', entry.read_text())
+                os.environ["APPIMAGE"] = "/home/me/Moved/GluonSlides.AppImage"  # the file was moved
+                app.add_to_applications_menu()
+                self.assertIn("/Moved/", entry.read_text())
+        with tempfile.TemporaryDirectory() as tmp:  # not an AppImage: nothing written
+            with mock.patch.dict(os.environ, {"XDG_DATA_HOME": tmp}, clear=False):
+                os.environ.pop("APPIMAGE", None)
+                app.add_to_applications_menu()
+                self.assertFalse((Path(tmp) / "applications").exists())
+
     def test_bundle_lists_every_folder_the_page_loads(self):
         spec = (REPO / "packaging" / "gluonslides.spec").read_text()
         html = (REPO / "index.html").read_text()

@@ -107,6 +107,36 @@ def _exercise_backend():
     return problems
 
 
+def add_to_applications_menu():
+    """Run as an AppImage (Linux sets $APPIMAGE): add GluonSlides to the
+    applications menu, pointing at this file (kept up to date if it moves).
+    Remove ~/.local/share/applications/gluonslides.desktop to undo."""
+    appimage = os.environ.get("APPIMAGE")
+    if not appimage or not sys.platform.startswith("linux"):
+        return
+    try:
+        from pathlib import Path
+        import shutil
+
+        data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+        entry = data / "applications" / "gluonslides.desktop"
+        icon = data / "icons" / "hicolor" / "256x256" / "apps" / "gluonslides.png"
+        text = (
+            "[Desktop Entry]\nType=Application\nName=GluonSlides\n"
+            "Comment=Presentations as text: a freeform slide editor\n"
+            f'Exec="{appimage}"\nIcon=gluonslides\nTerminal=false\n'
+            "Categories=Office;Presentation;\nStartupWMClass=GluonSlides\n"
+        )
+        if not entry.is_file() or entry.read_text(encoding="utf-8") != text:
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            entry.write_text(text, encoding="utf-8")
+        if (APP_DIR / "icon.png").is_file() and not icon.is_file():
+            icon.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(APP_DIR / "icon.png", icon)
+    except OSError as e:
+        print(f"Could not add GluonSlides to the applications menu: {e}")
+
+
 def _log_to_file_without_console():
     """A window app on Windows has no console: with GLUONSLIDES_LOG set,
     print to that file instead (the build reads --self-check from it)."""
@@ -127,6 +157,7 @@ def main():
         return self_check()
 
     sanitize_snap_environment()  # must run before webview.start()
+    add_to_applications_menu()
 
     import webview
     from backend.api import Api
@@ -159,7 +190,7 @@ def main():
         if sys.stderr is not None and hasattr(sys.stderr, "fileno"):
             faulthandler.dump_traceback_later(SMOKE_LIMIT_S, exit=True, file=sys.stderr)
         threading.Thread(target=_smoke_test, args=(window, result), daemon=True).start()
-    webview.start(http_server=True)
+    webview.start(http_server=True, icon=_window_icon())
     # The window is closed. Threads still waiting on the page (calls from
     # the page in flight, event handlers) would keep Python from exiting:
     # stop now, as a window app does.
@@ -169,6 +200,14 @@ def main():
 
 
 SMOKE_LIMIT_S = 120  # seconds before a stuck smoke test reports where and stops
+def _window_icon():
+    """The window's icon (used on Linux): bundled, or the one for building."""
+    for path in (APP_DIR / "icon.png", APP_DIR / "packaging" / "icon.png", APP_DIR / "packaging" / "generated" / "icon.png"):
+        if path.is_file():
+            return str(path)
+    return None
+
+
 _STARTED_JS = "window.gluonStarted === true && document.querySelectorAll('script, link').length"
 
 

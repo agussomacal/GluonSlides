@@ -1,0 +1,4 @@
+#!/bin/sh
+# Entry point of the AppImage: runs the bundled program.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/gluonslides/GluonSlides" "$@"

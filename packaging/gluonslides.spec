@@ -22,11 +22,14 @@ FOLDERS = ["core", "editor", "elements", "export", "ui", "present", "libs"]
 datas = [(str(ROOT / f), ".") for f in FILES]
 datas += [(str(ROOT / d), d) for d in FOLDERS]
 
-# Optional icons: packaging/icon.ico (Windows), icon.icns (macOS).
+# Icons made by build.py (from packaging/icon.png, or a placeholder).
+ICONS = ROOT / "packaging" / "generated"
 icon = None
 for candidate in (["icon.ico"] if sys.platform == "win32" else ["icon.icns"] if sys.platform == "darwin" else []):
-    if (ROOT / "packaging" / candidate).is_file():
-        icon = str(ROOT / "packaging" / candidate)
+    if (ICONS / candidate).is_file():
+        icon = str(ICONS / candidate)
+if (ICONS / "icon.png").is_file():
+    datas.append((str(ICONS / "icon.png"), "."))  # the window's icon (Linux)
 
 # Optional imports of other packages that the app does not need.
 UNUSED = [
