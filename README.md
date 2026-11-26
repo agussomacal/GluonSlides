@@ -1,5 +1,7 @@
 # GluonSlides
 
+[![Tests](https://github.com/agussomacal/GluonSlides/actions/workflows/tests.yml/badge.svg)](https://github.com/agussomacal/GluonSlides/actions/workflows/tests.yml)
+
 A local-first, freeform presentation builder with a twist: **your slides live in a Quarkdown-inspired text format** that you can read, edit, and version-control — while a full drag-and-drop editor keeps everything in sync.
 
 GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no accounts) and treats the `.gl` project file as the single source of truth: every drag, resize, and property change in the GUI is serialized back into clean, human-readable text.
@@ -428,7 +430,7 @@ npm test               # end-to-end tests: the editor driven in a headless Chrom
 npm run test:backend   # Python backend tests
 ```
 
-See [tests/README.md](tests/README.md) for what each kind of test covers and how to add one.
+Every push and pull request runs both on GitHub (the *Tests* workflow, badge at the top). See [tests/README.md](tests/README.md) for what each kind of test covers and how to add one.
 
 ## License
 

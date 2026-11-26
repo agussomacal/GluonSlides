@@ -32,6 +32,20 @@ FAIL shapes             25 passed, 1 failed  (3.2s)
        FAIL locked circle stays square on edge drag — 400x380
 ```
 
+## On GitHub
+
+`.github/workflows/tests.yml` runs everything on a fresh Ubuntu machine for every push and pull request (and by hand: *Actions → Tests → Run workflow*). It installs the Python packages from `uv.lock` (`uv sync --locked`) and the driver from `package-lock.json` (`npm ci`), downloads the app's libraries and fonts (`python -m backend.vendor_libs`, which fails if one can't be downloaded), then runs the backend and browser tests with the machine's Google Chrome. The result shows as ✓ / ✗ next to the commit; when browser tests fail, their screenshots are attached to the run as *test-screenshots*.
+
+To run the same steps locally in a clean copy:
+
+```bash
+git clone --branch <branch> . /some/empty/folder && cd /some/empty/folder
+uv sync --locked && npm ci && uv run python -m backend.vendor_libs
+npm run test:backend && npm test
+```
+
+The local `Slides/` projects are not in git, so the `file-format` suite has fewer checks there.
+
 ## End-to-end tests (`tests/e2e/`)
 
 `run.mjs` serves the repository with `python3 -m http.server` on a free port and runs each file in `suites/` in a headless Chrome, driven by [playwright-core](https://playwright.dev).
