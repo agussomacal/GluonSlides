@@ -9,7 +9,7 @@ import webbrowser
 
 import webview
 
-from . import desktop, dialogs, figures, fonts, pdf_export, project_io, user_settings
+from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, updates, user_settings
 from .presentation import Presentation
 
 
@@ -137,6 +137,19 @@ class Api:
     def refresh_linked_figures(self, project_folder, items):
         """Re-copy linked figures whose original file changed; returns the updated ones."""
         return figures.refresh_linked_figures(project_folder, items)
+
+    # --- version and updates ------------------------------------------------
+
+    def get_version(self):
+        return {"success": True, "version": __version__}
+
+    def check_for_update(self):
+        """Is a newer release published on GitHub? (nothing is downloaded)"""
+        return updates.check_for_update()
+
+    def set_update_preferences(self, check=None, skipped=None):
+        """check: look for updates at start; skipped: a version not to mention again."""
+        return updates.set_preferences(check=check, skipped=skipped)
 
     def get_startup_file(self):
         """The project to open at start (double-clicked .gl file), once."""

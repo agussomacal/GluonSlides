@@ -23,6 +23,7 @@ import { initColorPicker } from './ui/colorPicker.js';
 import './elements/index.js';
 import { startFigureSync } from './elements/figure/figure.js';
 import { initFileDrop } from './editor/fileDrop.js';
+import { initUpdateNotice } from './ui/updateNotice.js';
 
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
@@ -130,6 +131,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 startFigureSync(); // linked figures follow their original files
 initFileDrop(props => insertElement('figure', props)); // images dropped on the window
 initRecents();
+initUpdateNotice(); // "a new version is available" (backend/updates.py)
 whenApiReady(60000).then(async api => {
     if (!api) return;
     loadSystemFonts(); // "This computer" section of the font list

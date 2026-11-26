@@ -22,7 +22,7 @@ from unittest import mock
 
 from PIL import Image
 
-from backend import desktop, figures, fonts, pdf_export, presentation, project_io, snap_env, user_settings
+from backend import desktop, figures, updates, fonts, pdf_export, presentation, project_io, snap_env, user_settings
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -466,6 +466,57 @@ class OtherSystemsClipboardTest(unittest.TestCase):
                 self.assertEqual(desktop.set_clipboard_text("GluonSlides objects"), {"success": True})
             self.assertEqual(run.call_args[0][0][0], expected_cmd)
             self.assertEqual(run.call_args[1]["input"], b"GluonSlides objects")
+
+
+class UpdatesTest(TempDirTest):
+    """'A new version is available' (nothing is downloaded): GitHub faked."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.dict(os.environ, {"GLUONSLIDES_CONFIG_DIR": self.tmp})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def release(tag):
+        return lambda: {"tag_name": tag, "html_url": f"https://github.com/x/releases/tag/{tag}"}
+
+    def test_versions_are_compared_as_numbers(self):
+        self.assertEqual(updates.parse_version("v0.10.0"), (0, 10, 0))
+        self.assertGreater(updates.parse_version("v0.10.0"), updates.parse_version("0.9.9"))
+        self.assertEqual(updates.parse_version("v1.2.0-rc1"), (1, 2, 0))
+        self.assertIsNone(updates.parse_version("latest"))
+
+    def test_newer_release(self):
+        r = updates.check_for_update("0.2.1", self.release("v0.3.0"))
+        self.assertTrue(r["newer"])
+        self.assertEqual((r["version"], r["current"]), ("0.3.0", "0.2.1"))
+        self.assertTrue(r["url"].endswith("v0.3.0"))
+
+    def test_same_or_older_release(self):
+        self.assertFalse(updates.check_for_update("0.2.1", self.release("v0.2.1"))["newer"])
+        self.assertFalse(updates.check_for_update("0.2.1", self.release("v0.2.0"))["newer"])
+
+    def test_skipped_version_is_not_mentioned_again(self):
+        updates.set_preferences(skipped="0.3.0")
+        self.assertFalse(updates.check_for_update("0.2.1", self.release("v0.3.0"))["newer"])
+        self.assertTrue(updates.check_for_update("0.2.1", self.release("v0.4.0"))["newer"])
+
+    def test_turned_off_means_no_request(self):
+        updates.set_preferences(check=False)
+        asked = mock.Mock(side_effect=AssertionError("GitHub was asked"))
+        r = updates.check_for_update("0.2.1", asked)
+        self.assertFalse(r["newer"])
+        self.assertFalse(r["check"])
+        asked.assert_not_called()
+
+    def test_offline_is_quiet(self):
+        def offline():
+            raise OSError("no network")
+        r = updates.check_for_update("0.2.1", offline)
+        self.assertTrue(r["success"])
+        self.assertFalse(r["newer"])
+        self.assertIn("no network", r["error"])
 
 
 class PackagingTest(unittest.TestCase):

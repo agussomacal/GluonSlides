@@ -18,7 +18,7 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 | macOS | `…-macos-arm64.dmg` | drag to Applications, open |
 | Linux | `…-linux-x86_64.AppImage` | make it executable, double-click (it adds itself to the menu) |
 
-The builds aren't signed yet, so the first start shows a warning; the release page says what to click. Once installed, double-clicking a `.gl` project opens it in GluonSlides (Windows: an installer option, on by default; macOS: the app declares the type; Linux: the AppImage registers it on first start). To run from source instead, see [Getting started](#getting-started).
+The builds aren't signed yet, so the first start shows a warning; the release page says what to click. At start the app checks whether a newer version is published (it only asks GitHub for the latest release number; nothing is downloaded) and shows a note with a link; turn it off with the checkbox on the start screen. Once installed, double-clicking a `.gl` project opens it in GluonSlides (Windows: an installer option, on by default; macOS: the app declares the type; Linux: the AppImage registers it on first start). To run from source instead, see [Getting started](#getting-started).
 
 ## Highlights
 
