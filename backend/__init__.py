@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-__version__ = "0.2.0"  # keep in step with pyproject.toml (a backend test checks)
+__version__ = "0.2.1"  # keep in step with pyproject.toml (a backend test checks)
 
 # Bundled by PyInstaller (packaging/): the app's files are unpacked next
 # to the program (sys._MEIPASS), libraries and fonts included.
