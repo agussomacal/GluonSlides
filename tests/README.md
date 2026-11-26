@@ -142,6 +142,7 @@ Plain Python `unittest` tests that call the backend modules directly, in tempora
 | Desktop | the clipboard image as a PNG data URI, copied image files as paths, text, which navigations would leave the app, the fallback without GTK, dropped file paths taken once and forgotten when old |
 | Updates | version comparison, newer / same / older release, a skipped version, the check turned off (no request), offline |
 | Beamer import | a small talk using each feature (`fixtures/beamer/`): size, metadata, sections and section slides, master with title bar and page number, formatting, math and notes, overlays as steps, alternating images, nested columns, boxes, tables, citations, bibliography, macros; from a `.zip` (and a zip entry can't escape), errors |
+| PowerPoint import | a deck built by `pptx_fixture.py` (python-pptx): size and metadata, layouts as masters with their shapes, background, sections, notes, bullets/numbering/formatting/links, shapes, lines, tables, groups, pictures, click animations as steps |
 | Presenter view | the audience window: which screen it goes to, full screen or not, messages both ways, closing (pywebview faked) |
 
 Tests that need something the machine may not have (a TrueType font, the downloaded built-in fonts) are skipped rather than failed.

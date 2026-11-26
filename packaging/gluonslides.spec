@@ -33,7 +33,7 @@ if (ICONS / "icon.png").is_file():
 
 # Optional imports of other packages that the app does not need.
 UNUSED = [
-    "tkinter", "numpy", "scipy", "matplotlib", "pandas", "lxml", "IPython", "jupyter",
+    "tkinter", "numpy", "scipy", "matplotlib", "pandas", "IPython", "jupyter",  # (lxml: python-pptx needs it)
     "cryptography", "bcrypt", "tornado", "psutil", "jinja2", "markupsafe",
     "lz4", "unicodedata2", "sympy", "PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy", "test",
     # Linux system packages (seen when the system's packages are visible);

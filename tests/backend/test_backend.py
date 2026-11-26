@@ -631,6 +631,74 @@ class BeamerImportTest(TempDirTest):
         self.assertIn("already exists", again["error"])  # never mixed into an earlier import
 
 
+class PptxImportTest(TempDirTest):
+    """PowerPoint -> slides (backend/importers/pptx.py), on a deck built by tests/backend/pptx_fixture.py."""
+
+    def setUp(self):
+        super().setUp()
+        import sys as _sys
+        _sys.path.insert(0, str(REPO / "tests" / "backend"))
+        import pptx_fixture
+        from backend.importers import import_talk
+        src = pptx_fixture.build(os.path.join(self.tmp, "deck.pptx"))
+        res = import_talk(src, self.tmp, "Deck")
+        self.assertTrue(res["success"], res)
+        self.p = res["project"]
+        self.title, self.content = self.p["slides"]
+
+    def els(self, slide, kind):
+        return [e for e in slide["elements"] if e["type"] == kind]
+
+    def test_deck_settings_and_titles(self):
+        self.assertEqual((self.p["width"], self.p["height"]), (1920, 1080))
+        self.assertEqual((self.p["title"], self.p["author"]), ("Imported Deck", "Ana"))
+        self.assertEqual([s["title"] for s in self.p["slides"]], ["Imported Deck", "Content"])
+
+    def test_layouts_become_masters_with_their_shapes(self):
+        names = {m["name"]: m for m in self.p["masters"]}
+        self.assertEqual(set(names), {"Title Slide", "Title and Content"})
+        self.assertEqual([e["bg"] for e in names["Title and Content"]["elements"]], ["#aa0000"])  # the layout's logo
+        self.assertEqual(self.content["master"], "Title and Content")
+
+    def test_background_sections_notes(self):
+        bg = self.els(self.title, "shape")[0]
+        self.assertEqual((bg["bg"], bg["width"], bg["height"], bg.get("locked")), ("#102030", 1920, 1080, "yes"))
+        self.assertEqual((self.title["section"], self.content["section"]), ("Opening", "Main"))
+        self.assertEqual(self.content["notes"], "Speaker notes here")
+
+    def test_text_bullets_formatting_links(self):
+        body = next(e["content"] for e in self.els(self.content, "text") if "First point" in e["content"])
+        lines = body.split("\n")
+        self.assertEqual(lines[0], "- First point")
+        self.assertEqual(lines[1], "    - **bold sub**")
+        self.assertEqual(lines[2], '- [<span style="color:#ff0000">red link</span>](https://example.org)')
+        self.assertEqual(lines[3], "1. Numbered")
+        boxed = next(e for e in self.els(self.content, "text") if e["content"] == "In a box")
+        self.assertEqual(boxed["textAlign"], "center")
+        self.assertEqual(boxed["fontSize"], 40)  # 20 pt on a 13.33 in wide slide -> 1920 px
+
+    def test_shapes_lines_tables_groups_pictures(self):
+        shapes = self.els(self.content, "shape")
+        kinds = [(s["kind"], s["bg"]) for s in shapes]
+        self.assertIn(("rect", "#228844"), kinds)
+        self.assertIn(("ellipse", "#ffcc00"), kinds)
+        rounded = next(s for s in shapes if s["bg"] == "#8888ff")
+        self.assertGreater(rounded.get("radius", 0), 0)
+        self.assertIn(("rect", "#aa0000"), kinds)  # inside a group
+        line = self.els(self.content, "path")[0]
+        self.assertEqual((line.get("end"), line["stroke"]), ("arrow", "#333333"))
+        table = next(e["content"] for e in self.els(self.content, "text") if e["content"].startswith("|"))
+        self.assertEqual(table, "| h1 | h2 |\n|---|---|\n| a | b |")
+        fig = self.els(self.content, "figure")[0]
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "Deck", fig["filePath"])))
+        self.assertAlmostEqual(fig["width"] / fig["height"], 2.0, places=1)
+
+    def test_click_animations_become_steps(self):
+        fig = self.els(self.content, "figure")[0]
+        oval = next(s for s in self.els(self.content, "shape") if s["kind"] == "ellipse")
+        self.assertEqual((fig.get("step"), oval.get("step")), (2, 3))
+
+
 class PackagingTest(unittest.TestCase):
     """What the installable app relies on (packaging/)."""
 

@@ -9,6 +9,7 @@ dependencies = [
     "pdf2image",
     "platformdirs",
     "fonttools[woff]>=4.50,<4.69",
+    "python-pptx>=1.0",
 ]
 
 [dependency-groups]
