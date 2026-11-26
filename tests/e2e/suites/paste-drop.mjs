@@ -177,6 +177,18 @@ check('a drop given only as file:// uris: prevented, imported by path', res.over
 res = await uriDrop(cx, cy, ['https://example.org/pic.png']);
 await page.waitForTimeout(100);
 check('a web image: prevented (the window stays), explained', res.dropPrevented && (await elements()).length === 3);
+// The backend's drop (from GTK): paths and a page point; the page's own
+// drop event for the same file doesn't add it twice
+[cx, cy] = await toClient(1500, 300);
+await app(([x, y]) => window.gluonNativeDrop(['/home/me/analysis/native.png'], x, y), [cx, cy]);
+await drop(cx, cy, ['native.png'], []);
+await page.waitForTimeout(900);
+els = await elements();
+const nat = els.filter(e => (e.filePath || '').includes('native'));
+check('a drop sent by the backend: a linked figure where it was dropped, once', nat.length === 1 && nat[0].originalPath === '/home/me/analysis/native.png'
+    && Math.abs(nat[0].x + nat[0].width / 2 - 1500) <= 1, JSON.stringify(nat));
+await app(async () => { const { state } = await import('/core/state.js'); state.slides[0].elements = state.slides[0].elements.filter(e => !(e.filePath || '').includes('native')); (await import('/editor/editor.js')).renderEditor(); });
+
 // Text dragged into a text field is left to the field
 const fieldDrop = await app(() => {
     const input = document.getElementById('slide-title-input');

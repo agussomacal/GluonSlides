@@ -139,39 +139,65 @@ export function initFileDrop(insert) {
         e.preventDefault(); // never let the window open what was dropped
         const dt = e.dataTransfer;
         if (!dt || !editorActive()) return;
-        const onFigure = figureUnder(e.target);
-        const at = slidePoint(e.clientX, e.clientY);
         const items = await droppedItems(dt);
         if (!items.length) {
             if (webAddress(dt)) flashSaveIndicator('Images from a web page: copy the image and paste it with Ctrl+V');
             return;
         }
-        const images = items.filter(isImageItem);
-        if (!images.length) {
-            flashSaveIndicator('Only images (PNG, JPG, SVG, PDF…) can be dropped on a slide');
+        await importDropped(items, insert, e.target, slidePoint(e.clientX, e.clientY));
+    });
+
+    // In the app the backend sends the drop from GTK itself (the page may
+    // get no files): paths and the drop point in page pixels.
+    window.gluonNativeDrop = (paths, x, y) => {
+        document.body.classList.remove('file-drag-over');
+        if (!editorActive() || !Array.isArray(paths) || !paths.length) return;
+        const items = paths.map(path => ({ name: baseName(path), path }));
+        importDropped(items, insert, document.elementFromPoint(x, y), slidePoint(x, y));
+    };
+}
+
+// The same drop can arrive twice (page event and backend): once per file name.
+const recentlyDropped = new Map();
+const DUPLICATE_MS = 3000;
+
+function alreadyDropped(name) {
+    const now = Date.now();
+    for (const [k, t] of recentlyDropped) if (now - t > DUPLICATE_MS) recentlyDropped.delete(k);
+    if (recentlyDropped.has(name)) return true;
+    recentlyDropped.set(name, now);
+    return false;
+}
+
+/** Adds the dropped images (or replaces the figure they were dropped on). */
+async function importDropped(items, insert, target, at) {
+    const fresh = items.filter(it => !alreadyDropped(it.name));
+    if (!fresh.length) return;
+    const images = fresh.filter(isImageItem);
+    if (!images.length) {
+        flashSaveIndicator('Only images (PNG, JPG, SVG, PDF…) can be dropped on a slide');
+        return;
+    }
+    const onFigure = figureUnder(target);
+    const canLink = (it) => it.path && state.projectFolder;
+    try {
+        if (onFigure !== null) {
+            const it = images[0];
+            if (canLink(it)) await replaceFigureImage(onFigure, it.path);
+            else if (it.file) await replaceFigureImageData(onFigure, it.file);
+            else throw new Error('save the project first');
+            flashSaveIndicator('Figure replaced ✓');
             return;
         }
-        const canLink = (it) => it.path && state.projectFolder;
-
-        try {
-            if (onFigure !== null) {
-                const it = images[0];
-                if (canLink(it)) await replaceFigureImage(onFigure, it.path);
-                else if (it.file) await replaceFigureImageData(onFigure, it.file);
-                else throw new Error('save the project first');
-                flashSaveIndicator('Figure replaced ✓');
-                return;
-            }
-            for (const [i, it] of images.entries()) {
-                // Several images: fanned out a little from the drop point.
-                const point = at ? { x: at.x + i * 40, y: at.y + i * 40 } : null;
-                if (canLink(it)) await addImagePath(it.path, insert, point);
-                else if (it.file) await addImageFile(it.file, insert, point);
-                else throw new Error('save the project first: figures are copied into its folder');
-            }
-            flashSaveIndicator(images.length > 1 ? `${images.length} images added ✓` : 'Image added ✓');
-        } catch (err) {
-            flashSaveIndicator(`Could not add the image: ${err.message}`);
+        for (const [i, it] of images.entries()) {
+            // Several images: fanned out a little from the drop point.
+            const point = at ? { x: at.x + i * 40, y: at.y + i * 40 } : null;
+            if (canLink(it)) await addImagePath(it.path, insert, point);
+            else if (it.file) await addImageFile(it.file, insert, point);
+            else throw new Error('save the project first: figures are copied into its folder');
         }
-    });
+        flashSaveIndicator(images.length > 1 ? `${images.length} images added ✓` : 'Image added ✓');
+    } catch (err) {
+        flashSaveIndicator(`Could not add the image: ${err.message}`);
+    }
 }

@@ -214,6 +214,68 @@ def guard_navigation(window):
     return True
 
 
+def watch_native_drops(window):
+    """Files dropped on the window, from GTK's own drag signals.
+
+    WebKitGTK does not reliably give the page the dropped files, so the
+    paths and the drop point are passed to the page directly:
+    window.gluonNativeDrop(paths, x, y) (editor/fileDrop.js).
+    Returns the (data, drop) signal handlers, or None without GTK.
+    """
+    import json
+
+    try:
+        from gi.repository import GLib
+        from webview.platforms.gtk import BrowserView
+    except Exception:
+        return None
+
+    pending = {"paths": [], "received": 0.0, "point": None}
+
+    def deliver():
+        if pending["point"] is None or not pending["paths"]:
+            return False
+        if time.monotonic() - pending["received"] > 60:
+            pending["paths"] = []
+            return False
+        view = BrowserView.instances.get(window.uid)
+        zoom = view.webview.get_zoom_level() if view is not None else 1.0
+        (x, y), paths = pending["point"], pending["paths"]
+        pending.update(paths=[], point=None)
+        print(f"[drop] {len(paths)} file(s) at ({x}, {y})")
+        js = f"window.gluonNativeDrop && window.gluonNativeDrop({json.dumps(paths)}, {x / zoom}, {y / zoom})"
+        # evaluate_js waits for the page: not from the GTK thread.
+        threading.Thread(target=window.evaluate_js, args=(js,), daemon=True).start()
+        return False
+
+    def on_data(_widget, _context, _x, _y, data, _info, _time):
+        try:
+            uris = list(data.get_uris() or []) or (data.get_text() or "").split()
+        except Exception:
+            uris = []
+        paths = [p for p in _paths_from_uris(uris) if os.path.isfile(p)]
+        if paths:
+            pending.update(paths=paths, received=time.monotonic())
+            deliver()
+        return False  # WebKit handles the drop too (the page prevents opening it)
+
+    def on_drop(_widget, _context, x, y, _time):
+        pending["point"] = (x, y)
+        deliver()  # the data may have come while dragging, or comes next
+        GLib.timeout_add(1500, lambda: pending.update(point=None) and False)
+        return False
+
+    def connect():
+        view = BrowserView.instances.get(window.uid)
+        if view is not None:
+            view.webview.connect("drag-data-received", on_data)
+            view.webview.connect("drag-drop", on_drop)
+        return False
+
+    GLib.idle_add(connect)
+    return on_data, on_drop
+
+
 class DroppedFiles:
     """Full paths of the files in the latest drop on the window."""
 
