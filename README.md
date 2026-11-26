@@ -1,3 +1,5 @@
+<p align="center"><img src="packaging/icon.png" alt="GluonSlides icon: a balloon made of many small coloured balloons carrying a basket" width="160"></p>
+
 # GluonSlides
 
 [![Tests](https://github.com/agussomacal/GluonSlides/actions/workflows/tests.yml/badge.svg)](https://github.com/agussomacal/GluonSlides/actions/workflows/tests.yml)
@@ -447,7 +449,7 @@ uv run python packaging/build.py          # --smoke: also open the built app onc
 uv run python packaging/build.py --archive --package   # + download file and installer
 ```
 
-`--package` makes the installer: an AppImage on Linux (downloads `appimagetool`), a `…-setup.exe` on Windows (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php); recipe in `packaging/windows/`). The app's icon comes from `packaging/icon.png` (square, ideally 1024 px; a placeholder "G" is used until there is one).
+`--package` makes the installer: an AppImage on Linux (downloads `appimagetool`), a `…-setup.exe` on Windows (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php); recipe in `packaging/windows/`). The app's icon is `packaging/icon.png` (and `icon.svg`), drawn by `packaging/make_icon.py`: a balloon made of many small balloons in nine colours, the 3 × 3 colour pairs carried by gluons. The icon is CC0 (public domain, see `packaging/ICON-LICENSE`); the build makes the Windows `.ico` and macOS `.icns` from it.
 
 The result is `dist/GluonSlides/` (on macOS `dist/GluonSlides.app`), about 60 MB (25 MB compressed) on Linux. The build runs the app's `--self-check` on it, which also does each kind of backend work once (project file, figures, PDF, fonts), so a package missing from the bundle shows up there. Packages the app doesn't use are left out (see `UNUSED` in the recipe). Recent projects and settings stay in the user's config folder, never inside the app.
 
@@ -475,4 +477,4 @@ Every push and pull request runs both on GitHub (the *Tests* workflow, badge at 
 
 ## License
 
-See [LICENSE](LICENSE).
+The code is under the GPL-3.0: see [LICENSE](LICENSE). The icon is CC0 (public domain): see [packaging/ICON-LICENSE](packaging/ICON-LICENSE).

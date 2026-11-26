@@ -1,0 +1,11 @@
+GluonSlides icon (packaging/icon.png, packaging/icon.svg, and the files made
+from them) — dedicated to the public domain under CC0 1.0 Universal.
+
+To the extent possible under law, the authors have waived all copyright and
+related or neighboring rights to this icon. You can copy, modify and use it,
+even commercially, without asking permission or giving credit.
+
+Full text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+It is drawn by packaging/make_icon.py (no third-party images or fonts).
+The rest of GluonSlides is under the GPL-3.0 (see LICENSE).
