@@ -3,6 +3,8 @@
 // canvas (or the grey area around it), drag, release. Every element
 // the rectangle touches gets selected. Ctrl/Cmd or Shift adds to the
 // current selection instead of replacing it.
+// Locked objects (core/arrange.js) count as empty space: the press can
+// start on them, and the rectangle doesn't select them.
 // ============================================================
 
 import { activeElements, getSelectedElementIndices } from '../core/state.js';
@@ -32,6 +34,7 @@ function toLocalRect(container, x1, y1, x2, y2) {
 function elementsTouching(rect) {
     const hits = [];
     activeElements().forEach((el, idx) => {
+        if (el.locked === 'yes') return;
         const touches = el.x <= rect.right && el.x + el.width >= rect.left
             && el.y <= rect.bottom && el.y + el.height >= rect.top;
         if (touches) hits.push(idx);
@@ -51,7 +54,9 @@ export function initMarqueeSelection({ workspace, canvas, getContainer, onSelect
         // Elements stop propagation on mousedown, so reaching here means
         // the press started on empty space (or empty space inside the
         // group being edited).
+        const lockedNode = e.target.closest('.canvas-element.locked');
         const onEmpty = e.target === workspace || e.target === canvas
+            || (lockedNode && lockedNode.parentElement === getContainer())
             || (e.target.closest('.group-entered') && !e.target.closest('[data-element-id]'));
         if (!onEmpty) return;
         if (document.querySelector('.canvas-element.editing-mode')) return;

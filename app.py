@@ -18,15 +18,27 @@ def main():
         print(f"Error: Could not find {html_path}. Make sure index.html is in the same directory.")
         return
 
-    webview.create_window(
+    api = Api()
+    window = webview.create_window(
         "GluonSlides",
         str(html_path),
         width=1200,
         height=750,
         resizable=True,
-        js_api=Api(),
+        js_api=api,
     )
+    window.events.loaded += lambda: _watch_drops(window, api)
     webview.start(http_server=True)
+
+
+def _watch_drops(window, api):
+    """Gives the page the full paths of dropped files (see backend/desktop.py)."""
+    from webview.dom import DOMEventHandler
+
+    try:
+        window.dom.document.events.drop += DOMEventHandler(api._dropped.on_drop)
+    except Exception as e:  # dropping still works, as copies without a link
+        print(f"Drag and drop paths unavailable: {e}")
 
 
 if __name__ == "__main__":

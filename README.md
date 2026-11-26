@@ -6,7 +6,7 @@ GluonSlides runs entirely on your machine (Python + pywebview, no cloud, no acco
 
 ## Highlights
 
-- 🖱️ **Visual slide editor** — drag, resize, multi-select, group-move, arrow-key nudging, snap-to-grid, slide reordering, cut/copy/paste, and full undo/redo.
+- 🖱️ **Visual slide editor** — drag, resize, multi-select, group-move, arrow-key nudging, snap-to-grid and smart guides, align/distribute, layers and locking, slide reordering, cut/copy/paste, and full undo/redo.
 - 📐 **Freeform layout** — absolutely positioned elements on a canvas (1920×1080 by default, other presets available), with a configurable alignment grid.
 - 📝 **Markdown + LaTeX in every text box** — write `**bold**`, lists, and inline or display math (`$E = mc^2$`, `$$\int f(x)\,dx$$`) rendered with marked.js and KaTeX.
 - ⚙️ **LaTeX macros** — define `\newcommand` macros once in a per-project `macros.tex` file (editable from a built-in dialog) and use them in any text element.
@@ -87,9 +87,11 @@ Exports embed every font the presentation uses (not the generic defaults), so th
 
 ### Figures: pasting and linked files
 
-**Ctrl+V** with an image in the clipboard (a screenshot, an image copied from a browser or another program) saves it into the project's `figures/` folder as `pasted-<date-time>.png` and adds it to the slide, centred and in proportion. Objects copied inside the app still paste as objects.
+**Ctrl+V** with an image in the clipboard (a screenshot, an image copied from a browser or another program) saves it into the project's `figures/` folder as `pasted-<date-time>.png` and adds it to the slide, centred and in proportion. Image *files* copied in a file manager are imported like dropped files (below). Objects copied inside the app still paste as objects: copying them replaces what the system clipboard held.
 
-A figure imported from a file elsewhere (**📁 Browse** or dropping a file) is copied into `figures/` and stays **linked** to the original: when the original changes, for example a plot your analysis script just regenerated, the copy is updated and the slide redrawn within a few seconds, without touching anything. The figure's panel has *Update when the original file changes* (on for new imports) and **↻ Reload from the original**. In the file this is `sync:yes` on the figure, next to its `filePath` (the project's copy) and `originalPath`.
+**Dropping image files** (PNG, JPG, SVG, PDF…) from a file manager onto the window adds each one as a figure where it was dropped; dropped on an existing figure, it replaces that figure's image. Other files are refused; the window never opens a dropped file in place of the editor.
+
+A figure imported from a file elsewhere (**📁 Browse**, dropping or pasting a file) is copied into `figures/` and stays **linked** to the original: when the original changes, for example a plot your analysis script just regenerated, the copy is updated and the slide redrawn within a few seconds, without touching anything. The figure's panel has *Update when the original file changes* (on for new imports) and **↻ Reload from the original**. In the file this is `sync:yes` on the figure, next to its `filePath` (the project's copy) and `originalPath`.
 
 ### Shapes
 
@@ -122,6 +124,17 @@ Select several elements (drag a box on empty canvas space, or Ctrl+click) and pr
 ```
 
 Here the children live in a 400×200 frame drawn at 800×400, i.e. at 2× scale. Double-click a group to edit its children (Esc or a click outside to finish); **Ctrl+Shift+G** ungroups and bakes the scale into the children.
+
+### Arranging: align, guides, layers, lock
+
+The **Arrange** part of the properties panel works on the selected objects:
+
+- **Align**: one object is aligned on the slide (or in the group being edited); several are aligned to each other (left, centre, right, top, middle, bottom edges of the box around them).
+- **Distribute evenly** (three or more): equal gaps from left to right or top to bottom; the two outer objects stay put.
+- **Layer**: *To front*, *Forward*, *Backward*, *To back*, also **Ctrl+]** / **Ctrl+[** (one step) and **Ctrl+Shift+]** / **Ctrl+Shift+[** (all the way). The order is the order of the lines in the `.gl` file: later lines are drawn on top.
+- **🔒 Locked** (**Ctrl+Shift+L**): the object can't be moved or resized by dragging, arrow keys, align or distribute. Dragging on it draws a selection rectangle instead, so a full-slide background never gets in the way; a click still selects it. In the file: `locked:yes`.
+
+**Smart guides**: while moving or resizing, the edges and centre of what you drag snap to the edges and centres of the other objects (the master's too) and of the slide, and a pink line shows what it lines up with. A guide wins over the grid on its axis; hold **Alt** to place freely, without guides or grid.
 
 ### Macros (reusable components)
 
@@ -358,12 +371,14 @@ core/
   state.js        app state, undo/redo, autosave, .gl <-> state boundary
   registry.js     element plugin registry + contract validation
   render.js       shared styling, Markdown/KaTeX rendering, grid
-  geometry.js     drag/resize/snap math
+  geometry.js     drag/resize/snap math, smart guides
+  arrange.js      align, distribute, layer order, lock
   clipboard.js    keyboard shortcuts (cut/copy/paste/delete/undo)
   gl/
     glformat.js   the .gl format: spec, serializer, parser
 editor/
   editor.js       canvas, thumbnails, properties panel, slide ops
+  fileDrop.js     image files dropped on the window
   inspector/      .gl source inspector (bottom drawer)
     index.js        drawer + two-way sync with the canvas
     codeEditor.js   CodeMirror 5 wrapper + .gl syntax mode
@@ -385,6 +400,7 @@ app.py            launcher (snap env fix, lib download, window)
 backend/
   api.py          Api class exposed to JS as pywebview.api
   dialogs.py project_io.py figures.py pdf_export.py
+  desktop.py        system clipboard (Ctrl+V) and dropped file paths
   user_settings.py  recents + inspector settings (~/.config/gluonslides)
   vendor_libs.py    downloads JS/CSS libs listed in dependencies.yaml
   snap_env.py       undoes env leaked by snap-packaged terminals

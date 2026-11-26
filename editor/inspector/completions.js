@@ -26,6 +26,7 @@ const VALUES = {
     curve: ['straight', 'smooth'],
     closed: ['yes', 'no'],
     lockAspect: ['yes', 'no'],
+    locked: ['yes', 'no'],
     hidden: ['yes', 'no'],
     darkmode: ['yes', 'no'],
     dash: ['solid', 'dashed', 'dotted'],
@@ -72,9 +73,9 @@ function lineContext(cm, lineNo, text) {
     const keys = new Set([...text.matchAll(/(?:^|\s)([A-Za-z]\w*):/g)].map(m => m[1]));
     let m;
     if ((m = text.match(/^\.element\.([\w-]+)/))) {
-        return { params: ['id', 'name', ...(STYLE_KEYS[m[1]] ? ['style'] : []), 'step', ...elementProps(m[1])], keys, type: m[1] };
+        return { params: ['id', 'name', ...(STYLE_KEYS[m[1]] ? ['style'] : []), 'step', 'locked', ...elementProps(m[1])], keys, type: m[1] };
     }
-    if (text.match(/^\.macro\./)) return { params: ['id', 'name', 'step', ...elementProps('macro')], keys };
+    if (text.match(/^\.macro\./)) return { params: ['id', 'name', 'step', 'locked', ...elementProps('macro')], keys };
     if (text.startsWith('.project')) return { params: PROJECT_PARAMS, keys };
     if (text.startsWith('.slide')) return { params: ['id', 'master'], keys };
     if (text.startsWith('.master')) return { params: ['id'], keys };

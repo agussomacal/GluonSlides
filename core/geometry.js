@@ -1,5 +1,10 @@
 // ============================================================
 // core/geometry.js — Drag, resize, and multi-element group drag.
+//
+// Smart guides: while moving or resizing, the edges and centre of what
+// is dragged snap to the edges and centres of the other objects and of
+// the slide, and a pink line shows what it lines up with. A guide wins
+// over the grid on its axis; Alt turns all snapping off.
 // ============================================================
 
 import { state } from './state.js';
@@ -7,6 +12,7 @@ import { state } from './state.js';
 const EDGE_THRESHOLD = 12;   // px inside the element that acts as resize handle
 const MIN_SIZE = 8;          // smallest width/height a resize can produce
 const DRAG_START_PX = 2;     // movement before a click counts as a drag
+const GUIDE_SNAP_PX = 6;     // screen distance at which a guide catches
 
 export function snapToGridPoint(val, step) {
     if (!state.gridSize || state.gridSize <= 0) return val;
@@ -67,13 +73,74 @@ export function updateResizeCursor(domEl, el, mouseEvent) {
     else domEl.style.cursor = 'move';
 }
 
+// ---------- Smart guides ----------
+
+/**
+ * Lines objects can line up with: for each axis, {v, lo, hi} — the
+ * position and the extent (on the other axis) of the object it comes
+ * from. `targets`: the other objects' boxes; `frame`: the slide (or
+ * group) size, or null.
+ */
+export function guideLines(targets, frame) {
+    const xs = [];
+    const ys = [];
+    const add = (r) => {
+        [r.x, r.x + r.width / 2, r.x + r.width].forEach(v => xs.push({ v, lo: r.y, hi: r.y + r.height }));
+        [r.y, r.y + r.height / 2, r.y + r.height].forEach(v => ys.push({ v, lo: r.x, hi: r.x + r.width }));
+    };
+    (targets || []).forEach(add);
+    if (frame) add({ x: 0, y: 0, width: frame.width, height: frame.height });
+    return { xs, ys };
+}
+
+/**
+ * The closest line to any of `values` within `threshold`:
+ * { delta, v } (delta = how far to move), or null.
+ */
+export function nearestGuide(values, lines, threshold) {
+    let best = null;
+    values.forEach(c => {
+        lines.forEach(l => {
+            const d = l.v - c;
+            if (Math.abs(d) <= threshold && (!best || Math.abs(d) < Math.abs(best.delta))) best = { delta: d, v: l.v };
+        });
+    });
+    return best;
+}
+
+/** Draws the guides (pink lines) for the snaps found, in `container`. */
+function paintGuides(container, snaps, box, lines) {
+    clearGuides(container);
+    const draw = (vertical, v, list) => {
+        const hits = list.filter(l => Math.abs(l.v - v) < 0.5);
+        const lo = Math.min(...hits.map(l => l.lo), vertical ? box.top : box.left);
+        const hi = Math.max(...hits.map(l => l.hi), vertical ? box.bottom : box.right);
+        const g = document.createElement('div');
+        g.className = `smart-guide ${vertical ? 'smart-guide-v' : 'smart-guide-h'}`;
+        if (vertical) Object.assign(g.style, { left: `${v}px`, top: `${lo}px`, height: `${hi - lo}px` });
+        else Object.assign(g.style, { top: `${v}px`, left: `${lo}px`, width: `${hi - lo}px` });
+        container.appendChild(g);
+    };
+    if (snaps.x) draw(true, snaps.x.v, lines.xs);
+    if (snaps.y) draw(false, snaps.y.v, lines.ys);
+}
+
+function clearGuides(container) {
+    if (container) container.querySelectorAll(':scope > .smart-guide').forEach(g => g.remove());
+}
+
 /**
  * Full drag/resize interaction for one element or a group of selected elements.
  * `groupItems` is an optional array of `{ el, domEl }` for all selected elements.
  */
-export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { allowResize = true } = {}) {
+export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { allowResize = true, guides = null } = {}) {
     const { sx, sy } = computeScale(domEl, el);
     const { stepX, stepY } = gridSteps();
+    // `guides`: { targets, frame } (see guideLines), from the editor.
+    const lines = guides ? guideLines(guides.targets, guides.frame) : null;
+    const container = domEl.parentElement;
+    const thresholdX = GUIDE_SNAP_PX / (sx || 1);
+    const thresholdY = GUIDE_SNAP_PX / (sy || 1);
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -95,11 +162,16 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
         }))
         : null;
 
+    // useSnap: true/false, or { x, y } to grid-snap one axis only.
     function applyGeometry(newX, newY, newW, newH, useSnap) {
-        if (useSnap) {
+        const snapX = typeof useSnap === 'object' ? useSnap.x : useSnap;
+        const snapY = typeof useSnap === 'object' ? useSnap.y : useSnap;
+        if (snapX) {
             newX = snapToGridPoint(newX, stepX);
-            newY = snapToGridPoint(newY, stepY);
             newW = snapToGridPoint(newW, stepX);
+        }
+        if (snapY) {
+            newY = snapToGridPoint(newY, stepY);
             newH = snapToGridPoint(newH, stepY);
         }
         el.x = newX; el.y = newY; el.width = newW; el.height = newH;
@@ -112,10 +184,22 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
     function applyGroupMove(rawDx, rawDy, useSnap) {
         let dx = rawDx;
         let dy = rawDy;
-        if (useSnap && state.gridSize > 0) {
-            dx = snapToGridPoint(rawDx, stepX);
-            dy = snapToGridPoint(rawDy, stepY);
-        }
+        let gridX = useSnap;
+        let gridY = useSnap;
+        if (useSnap && lines) {
+            const b = {
+                left: Math.min(...activeGroup.map(i => i.origX)) + rawDx,
+                top: Math.min(...activeGroup.map(i => i.origY)) + rawDy,
+                right: Math.max(...activeGroup.map(i => i.origX + i.el.width)) + rawDx,
+                bottom: Math.max(...activeGroup.map(i => i.origY + i.el.height)) + rawDy,
+            };
+            const snaps = boxSnaps(b);
+            if (snaps.x) { dx += snaps.x.delta; gridX = false; }
+            if (snaps.y) { dy += snaps.y.delta; gridY = false; }
+            paintGuides(container, snaps, shift(b, dx - rawDx, dy - rawDy), lines);
+        } else clearGuides(container);
+        if (gridX && state.gridSize > 0) dx = snapToGridPoint(rawDx, stepX);
+        if (gridY && state.gridSize > 0) dy = snapToGridPoint(rawDy, stepY);
         activeGroup.forEach(item => {
             item.el.x = item.origX + dx;
             item.el.y = item.origY + dy;
@@ -124,6 +208,16 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
             item.domEl.style.cursor = 'grabbing';
         });
     }
+
+    /** Guides for a moved box: its left/centre/right and top/middle/bottom. */
+    function boxSnaps(b) {
+        return {
+            x: nearestGuide([b.left, (b.left + b.right) / 2, b.right], lines.xs, thresholdX),
+            y: nearestGuide([b.top, (b.top + b.bottom) / 2, b.bottom], lines.ys, thresholdY),
+        };
+    }
+
+    const shift = (b, dx, dy) => ({ left: b.left + dx, right: b.right + dx, top: b.top + dy, bottom: b.bottom + dy });
 
     function onMouseMove(moveEvent) {
         const dx = (moveEvent.clientX - startX) / sx;
@@ -136,7 +230,17 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
             if (activeGroup) {
                 applyGroupMove(dx, dy, !freeform);
             } else {
-                applyGeometry(orig.x + dx, orig.y + dy, orig.w, orig.h, !freeform);
+                let x = orig.x + dx;
+                let y = orig.y + dy;
+                const grid = { x: !freeform, y: !freeform };
+                if (!freeform && lines) {
+                    const b = { left: x, top: y, right: x + orig.w, bottom: y + orig.h };
+                    const snaps = boxSnaps(b);
+                    if (snaps.x) { x += snaps.x.delta; grid.x = false; }
+                    if (snaps.y) { y += snaps.y.delta; grid.y = false; }
+                    paintGuides(container, snaps, { left: x, top: y, right: x + orig.w, bottom: y + orig.h }, lines);
+                } else clearGuides(container);
+                applyGeometry(x, y, orig.w, orig.h, grid);
                 domEl.style.cursor = 'grabbing';
             }
             callbacks.onGeometryChanged();
@@ -165,16 +269,34 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
             }
 
             // The opposite edge stays put.
-            const newX = isLeft ? orig.x + orig.w - newW : orig.x;
-            const newY = isTop ? orig.y + orig.h - newH : orig.y;
+            let newX = isLeft ? orig.x + orig.w - newW : orig.x;
+            let newY = isTop ? orig.y + orig.h - newH : orig.y;
 
-            // Snapping each side independently would break the ratio.
-            applyGeometry(newX, newY, newW, newH, !freeform && !keepAspect);
+            // The moving edges snap to guides (not with fixed proportions:
+            // snapping each side independently would break the ratio).
+            const grid = { x: !freeform && !keepAspect, y: !freeform && !keepAspect };
+            if (grid.x && lines) {
+                const snaps = {
+                    x: (isLeft || isRight) ? nearestGuide([isLeft ? newX : newX + newW], lines.xs, thresholdX) : null,
+                    y: (isTop || isBottom) ? nearestGuide([isTop ? newY : newY + newH], lines.ys, thresholdY) : null,
+                };
+                if (snaps.x && newW - (isLeft ? snaps.x.delta : -snaps.x.delta) >= MIN_SIZE) {
+                    if (isLeft) { newX += snaps.x.delta; newW -= snaps.x.delta; } else newW += snaps.x.delta;
+                    grid.x = false;
+                } else snaps.x = null;
+                if (snaps.y && newH - (isTop ? snaps.y.delta : -snaps.y.delta) >= MIN_SIZE) {
+                    if (isTop) { newY += snaps.y.delta; newH -= snaps.y.delta; } else newH += snaps.y.delta;
+                    grid.y = false;
+                } else snaps.y = null;
+                paintGuides(container, snaps, { left: newX, top: newY, right: newX + newW, bottom: newY + newH }, lines);
+            } else clearGuides(container);
+            applyGeometry(newX, newY, newW, newH, grid);
             callbacks.onGeometryChanged();
         }
     }
 
     function onMouseUp() {
+        clearGuides(container);
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onMouseUp);
         domEl.style.cursor = '';

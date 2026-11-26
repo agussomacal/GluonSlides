@@ -36,6 +36,7 @@ import {
     buildStaticElement,
 } from '../core/render.js';
 import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } from '../core/geometry.js';
+import { alignElements, distributeElements, reorderElements, canReorder, setLocked, isLocked } from '../core/arrange.js';
 import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
 import { slideStepCount } from '../core/steps.js';
@@ -570,7 +571,7 @@ export function moveSelectedElementsByArrow(key, altKey = false) {
 
     indices.forEach(idx => {
         const el = elements[idx];
-        if (!el) return;
+        if (!el || isLocked(el)) return;
         let nextX = el.x + dx;
         let nextY = el.y + dy;
         if (!altKey && state.gridSize > 0) {
@@ -798,6 +799,24 @@ function appendHandles(container, domEl, el, def, elIndex) {
     paint();
 }
 
+/**
+ * What a drag can line up with (core/geometry.js smart guides): the other
+ * objects at this level, the master's objects on a slide, and the
+ * slide (or group frame) itself.
+ */
+function guideTargets(container, elements, movingIndices) {
+    const moving = new Set(movingIndices);
+    const targets = elements.filter((el, i) => !moving.has(i) && el.hidden !== 'yes');
+    if (!activeGroup() && !isEditingMaster()) {
+        const m = masterFor(currentSlide());
+        if (m) targets.push(...(m.elements || []));
+    }
+    return {
+        targets: targets.map(el => ({ x: el.x, y: el.y, width: el.width, height: el.height })),
+        frame: { width: container.offsetWidth || state.slideWidth, height: container.offsetHeight || state.slideHeight },
+    };
+}
+
 function renderInteractiveElements(container, elements) {
     const selectedSet = new Set(getSelectedElementIndices());
     // Canvas units per screen pixel, so UI marks (step badges) keep their size.
@@ -814,6 +833,8 @@ function renderInteractiveElements(container, elements) {
             domEl.classList.add('selected');
         }
         if (Number(el.step) > 1 && !activeGroup()) domEl.dataset.step = String(Math.round(el.step));
+        const locked = isLocked(el);
+        if (locked) domEl.classList.add('locked');
 
         // Drawn with defaults/style filled in and colors resolved;
         // geometry edits use `el`.
@@ -826,7 +847,7 @@ function renderInteractiveElements(container, elements) {
 
         // Elements with handles (paths) are reshaped with those, not box edges.
         const boxResize = !def || def.boxResize !== false;
-        if (def && typeof def.handles === 'function' && selectedSet.size === 1 && selectedSet.has(elIndex)) {
+        if (!locked && def && typeof def.handles === 'function' && selectedSet.size === 1 && selectedSet.has(elIndex)) {
             appendHandles(container, domEl, el, def, elIndex);
         }
 
@@ -834,6 +855,7 @@ function renderInteractiveElements(container, elements) {
 
         domEl.onmousemove = (e) => {
             if (domEl.classList.contains('editing-mode') || !boxResize) return;
+            if (locked) { domEl.style.cursor = 'default'; return; }
             updateResizeCursor(domEl, el, e);
         };
 
@@ -862,6 +884,9 @@ function renderInteractiveElements(container, elements) {
         domEl.onmousedown = (e) => {
             if (domEl.classList.contains('editing-mode')) return;
             if (e.button !== 0) return;
+            // Locked: no dragging. The press goes on to the canvas, so a drag
+            // selects with a rectangle; a click selects it (see the click handler).
+            if (locked) return;
             e.stopPropagation();
 
             const multiToggle = e.ctrlKey || e.metaKey;
@@ -886,7 +911,7 @@ function renderInteractiveElements(container, elements) {
                 renderPropertiesPanel();
                 const freshDom = activeContainer().querySelector(`:scope > [data-element-id="${el.id}"]`);
                 if (!freshDom) return;
-                startDragOrResize(freshDom, el, e, dragCallbacks, null, { allowResize: boxResize });
+                startDragOrResize(freshDom, el, e, dragCallbacks, null, { allowResize: boxResize, guides: guideTargets(container, elements, [elIndex]) });
                 return;
             }
 
@@ -895,7 +920,7 @@ function renderInteractiveElements(container, elements) {
                 .filter(item => getSelectedElementIndices().includes(item.elIndex))
                 .map(item => ({ el: item.el, domEl: item.domEl }));
 
-            startDragOrResize(domEl, el, e, dragCallbacks, groupItems, { allowResize: boxResize });
+            startDragOrResize(domEl, el, e, dragCallbacks, groupItems, { allowResize: boxResize, guides: guideTargets(container, elements, getSelectedElementIndices()) });
         };
 
         container.appendChild(domEl);
@@ -909,6 +934,19 @@ document.getElementById('slide-canvas').addEventListener('click', (e) => {
     if (isEditingGroup() && !inEnteredGroup) {
         exitGroup();
         renderEditor();
+        return;
+    }
+    // A click on a locked object selects it (it can't be dragged).
+    const lockedNode = e.target.closest('.canvas-element.locked[data-element-id]');
+    if (lockedNode && lockedNode.parentElement === activeContainer()) {
+        const idx = activeElements().findIndex(x => String(x.id) === lockedNode.dataset.elementId);
+        if (idx >= 0) {
+            const additive = e.ctrlKey || e.metaKey;
+            const current = getSelectedElementIndices();
+            setSelectedElementIndices(additive ? [...new Set([...current, idx])] : [idx], idx);
+            renderCanvas();
+            renderPropertiesPanel();
+        }
         return;
     }
     if (e.target.id === 'slide-canvas' || (inEnteredGroup && !e.target.closest('[data-element-id]'))) {
@@ -991,6 +1029,107 @@ function macroChildInfo(group, el) {
             <button class="btn btn-secondary" data-action="reset-override" style="width: 100%;">↺ Reset to macro</button>` : ''}`;
 }
 
+// ---------- Arrange: align, distribute, layers, lock (core/arrange.js) ----------
+
+/** Small align icons: a guide line and two bars lined up on it. */
+function alignIcon(mode) {
+    const horizontal = ['left', 'center', 'right'].includes(mode);
+    // Bars (long, short) as [x, y, w, h] in a 16×16 box, and the guide line.
+    const bars = {
+        left: [[2, 3, 11, 4], [2, 9, 7, 4]], center: [[2.5, 3, 11, 4], [4.5, 9, 7, 4]], right: [[3, 3, 11, 4], [7, 9, 7, 4]],
+        top: [[3, 2, 4, 11], [9, 2, 4, 7]], middle: [[3, 2.5, 4, 11], [9, 4.5, 4, 7]], bottom: [[3, 3, 4, 11], [9, 7, 4, 7]],
+    }[mode];
+    const at = { left: 1.5, center: 8, right: 14.5, top: 1.5, middle: 8, bottom: 14.5 }[mode];
+    const line = horizontal ? `<line x1="${at}" y1="0.5" x2="${at}" y2="15.5"/>` : `<line x1="0.5" y1="${at}" x2="15.5" y2="${at}"/>`;
+    return `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">${bars.map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1" fill="currentColor" opacity="0.75"/>`).join('')}<g stroke="currentColor" stroke-width="1.2">${line}</g></svg>`;
+}
+
+const ALIGN_BUTTONS = [
+    ['left', 'Align left edges'], ['center', 'Align centres (horizontally)'], ['right', 'Align right edges'],
+    ['top', 'Align top edges'], ['middle', 'Align middles (vertically)'], ['bottom', 'Align bottom edges'],
+];
+const ORDER_BUTTONS = [
+    ['front', 'To front', 'Bring to front (Ctrl+Shift+])'], ['forward', 'Forward', 'Bring forward (Ctrl+])'],
+    ['backward', 'Backward', 'Send backward (Ctrl+[)'], ['back', 'To back', 'Send to back (Ctrl+Shift+[)'],
+];
+
+function arrangeSection(indices) {
+    const elements = activeElements();
+    const several = indices.length > 1;
+    const allLocked = indices.every(i => isLocked(elements[i]));
+    const where = several ? 'to each other' : (activeGroup() ? 'in the group' : 'on the slide');
+    const btn = (action, arg, text, title, disabled = false) =>
+        `<button type="button" class="btn btn-secondary arrange-btn" data-action="${action}" data-arg="${arg}" title="${title}" ${disabled ? 'disabled' : ''}>${text}</button>`;
+    return `
+        <div class="prop-divider"></div>
+        <div class="prop-group arrange-section">
+            <label>Align ${where}</label>
+            <div class="arrange-row">${ALIGN_BUTTONS.map(([m, t]) => btn('align', m, alignIcon(m), t, allLocked)).join('')}</div>
+            ${indices.length >= 3 ? `
+            <label>Distribute evenly</label>
+            <div class="arrange-row">
+                ${btn('distribute', 'x', 'Horizontally', 'Equal gaps from left to right')}
+                ${btn('distribute', 'y', 'Vertically', 'Equal gaps from top to bottom')}
+            </div>` : ''}
+            <label>Layer</label>
+            <div class="arrange-row">${ORDER_BUTTONS.map(([op, text, t]) => btn('reorder', op, text, t, !canReorder(elements, indices, op))).join('')}</div>
+            <label class="prop-check arrange-lock" title="A locked object can't be moved or resized; dragging on it selects with a rectangle">
+                <input type="checkbox" data-arrange-lock ${allLocked ? 'checked' : ''}>
+                🔒 Lock position (Ctrl+Shift+L)
+            </label>
+        </div>`;
+}
+
+function afterArrange(message) {
+    markDirty();
+    renderCanvas();
+    renderPropertiesPanel();
+    updateThumbnailLive();
+    if (message) flashSaveIndicator(message);
+}
+
+export function alignSelected(mode) {
+    const indices = getSelectedElementIndices();
+    if (!indices.length) return false;
+    const container = activeContainer();
+    const frame = { width: container.offsetWidth || state.slideWidth, height: container.offsetHeight || state.slideHeight };
+    alignElements(activeElements(), indices, mode, frame);
+    afterArrange();
+    return true;
+}
+
+export function distributeSelected(axis) {
+    const indices = getSelectedElementIndices();
+    if (indices.length < 3) return false;
+    distributeElements(activeElements(), indices, axis);
+    afterArrange();
+    return true;
+}
+
+export function reorderSelected(op) {
+    const indices = getSelectedElementIndices();
+    if (!indices.length || !canReorder(activeElements(), indices, op)) return false;
+    const primary = activeElements()[state.selectedElementIndex];
+    const next = reorderElements(activeElements(), indices, op);
+    setSelectedElementIndices(next, primary ? activeElements().indexOf(primary) : next[next.length - 1]);
+    afterArrange();
+    return true;
+}
+
+/** Locks the selection, or unlocks it if it is all locked already (or `locked` given). */
+export function toggleLockSelected(locked = null) {
+    const indices = getSelectedElementIndices();
+    if (!indices.length) return false;
+    const lock = locked === null ? !indices.every(i => isLocked(activeElements()[i])) : locked;
+    setLocked(activeElements(), indices, lock);
+    afterArrange(lock ? 'Locked 🔒' : 'Unlocked');
+    return true;
+}
+
+propertiesPanel.addEventListener('change', (e) => {
+    if (e.target.matches && e.target.matches('[data-arrange-lock]')) toggleLockSelected(e.target.checked);
+});
+
 function renderPropertiesPanel() {
     const panelBody = document.getElementById('properties-body');
     const slide = currentSlide();
@@ -1017,6 +1156,7 @@ function renderPropertiesPanel() {
                 Drag or use <strong>Arrow keys</strong> to move all ${selectedIndices.length} objects together, <strong>Ctrl+X / Ctrl+C / Ctrl+V</strong> to cut/copy/paste, or <strong>Delete</strong> to remove.
             </p>
             <button class="btn btn-secondary" data-action="group-selection" style="width: 100%;">🗂️ Group (Ctrl+G)</button>
+            ${arrangeSection(selectedIndices)}
             <div class="prop-divider"></div>
             <div class="prop-group">
                 <label>Background Color (All Selected)</label>
@@ -1073,6 +1213,8 @@ function renderPropertiesPanel() {
             </div>
         </div>
     `;
+
+    html += arrangeSection([activeIdx]);
 
     if (def) {
         html += def.properties(el, activeIdx);

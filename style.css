@@ -1726,3 +1726,58 @@ select.toolbar-select option:checked {
     border-color: #0d9488;
     background: rgba(13, 148, 136, 0.15);
 }
+
+/* ---------- Arranging: guides, locked objects (core/arrange.js) ---------- */
+
+/* Smart guides while dragging (core/geometry.js), 1 screen pixel wide. */
+.smart-guide {
+    position: absolute;
+    background: #ec4899;
+    pointer-events: none;
+    z-index: 50;
+}
+.smart-guide-v { width: calc(1px * var(--ui-unit, 1)); transform: translateX(-50%); }
+.smart-guide-h { height: calc(1px * var(--ui-unit, 1)); transform: translateY(-50%); }
+
+.canvas-element.locked { cursor: default; }
+.canvas-element.locked.selected { outline-style: dashed; }
+.canvas-element.locked.selected::before {
+    content: '🔒';
+    position: absolute;
+    top: calc(4px * var(--ui-unit, 1));
+    right: calc(4px * var(--ui-unit, 1));
+    font-size: calc(14px * var(--ui-unit, 1));
+    line-height: 1;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.arrange-section label { margin-top: 6px; }
+.arrange-section label:first-child { margin-top: 0; }
+.arrange-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.arrange-row .arrange-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 4px 2px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.arrange-row .arrange-btn:disabled { opacity: 0.4; cursor: default; }
+.arrange-row .arrange-btn svg { display: block; margin: 0 auto; }
+.arrange-section .arrange-lock {
+    margin-top: 10px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13px;
+    font-weight: 400;
+}
+
+/* A file dragged over the window: the canvas shows where it lands. */
+body.file-drag-over #slide-canvas {
+    outline: 3px dashed var(--accent-color);
+    outline-offset: 4px;
+}

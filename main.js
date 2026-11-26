@@ -22,12 +22,14 @@ import { initColorPicker } from './ui/colorPicker.js';
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
 import { startFigureSync } from './elements/figure/figure.js';
+import { initFileDrop } from './editor/fileDrop.js';
 
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
     makeMacroFromPanel, detachSelectedMacros, editSelectedDefinition, resetSelectedOverride,
     resetSelectedInstance, gotoSelectedDefinition, styleFromSelected, manageStyles,
-    editMaster, newMaster, leaveMaster, deleteEditedMaster,
+    editMaster, newMaster, leaveMaster, deleteEditedMaster, insertElement,
+    alignSelected, distributeSelected, reorderSelected,
 } from './editor/editor.js';
 import { initGlInspector } from './editor/inspector/index.js';
 import { projectExportHtml, projectExportPdf } from './export/index.js';
@@ -77,6 +79,9 @@ const clickActions = {
     'new-master': newMaster,
     'exit-master': leaveMaster,
     'delete-master': deleteEditedMaster,
+    'align': alignSelected,
+    'distribute': distributeSelected,
+    'reorder': reorderSelected,
 };
 
 const valueActions = {
@@ -123,6 +128,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 // The Python bridge may become ready only after this module runs
 // (pywebview adds its functions asynchronously): both wait for it.
 startFigureSync(); // linked figures follow their original files
+initFileDrop(props => insertElement('figure', props)); // images dropped on the window
 initRecents();
 whenApiReady(60000).then(api => {
     if (api) loadSystemFonts(); // "This computer" section of the font list

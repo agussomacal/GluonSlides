@@ -18,6 +18,7 @@ import {
     activeElements,
     reassignIdsDeep,
     currentSlide,
+    pyApi,
 } from './state.js';
 import {
     renderEditor,
@@ -31,9 +32,11 @@ import {
     leaveGroup,
     leaveMaster,
     insertElement,
+    reorderSelected,
+    toggleLockSelected,
 } from '../editor/editor.js';
 import { syncProjectChrome } from './render.js';
-import { addImageFile } from '../elements/figure/figure.js';
+import { addImageFile, addImageData, addImagePath } from '../elements/figure/figure.js';
 
 const PASTE_OFFSET_PX = 40;
 
@@ -99,6 +102,23 @@ export function initKeyboardShortcuts() {
             e.preventDefault();
             if (e.shiftKey) ungroupSelected();
             else groupSelected();
+            return;
+        }
+
+        // Ctrl/Cmd + ] / [ — bring forward / send backward; with Shift: to front / back
+        if (hasCtrlOrCmd && !e.altKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
+            if (getSelectedElementIndices().length === 0) return;
+            e.preventDefault();
+            const up = e.code === 'BracketRight';
+            reorderSelected(e.shiftKey ? (up ? 'front' : 'back') : (up ? 'forward' : 'backward'));
+            return;
+        }
+
+        // Ctrl/Cmd + Shift + L — lock / unlock the selection
+        if (hasCtrlOrCmd && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+            if (getSelectedElementIndices().length === 0) return;
+            e.preventDefault();
+            toggleLockSelected();
             return;
         }
 
@@ -201,12 +221,22 @@ export function initKeyboardShortcuts() {
             return;
         }
 
-        // 4. Ctrl/Cmd + V — paste copied element(s) or copied slide(s)
+        // 4. Ctrl/Cmd + V — an image from the system clipboard, else the
+        // object(s) or slide(s) copied in the app.
         if (hasCtrlOrCmd && e.key.toLowerCase() === 'v') {
-            // The browser's paste event comes next: an image in the system
-            // clipboard wins (see the 'paste' listener); otherwise, a moment
-            // later, the objects or slides copied in the app are pasted.
             clearTimeout(pendingPaste);
+            pendingPaste = null;
+            const api = pyApi();
+            if (api && typeof api.read_clipboard_image === 'function') {
+                // In the app the page gets no paste event without a focused
+                // text field: the backend reads the clipboard.
+                systemPasteAt = Date.now();
+                pasteFromSystem(api, onMaster, slide);
+                return;
+            }
+            // In a browser the paste event comes next: an image in it wins
+            // (see the 'paste' listener); otherwise, a moment later, what
+            // was copied in the app is pasted.
             pendingPaste = setTimeout(() => { pendingPaste = null; pasteInternal(onMaster, slide); }, PASTE_WAIT_MS);
         }
     });
@@ -265,9 +295,48 @@ const INTERNAL_MARKER = 'GluonSlides objects';
 let pendingPaste = null;
 let internalCopyAt = 0;
 
-/** Ctrl+C/X in the app: the copy event (right after) replaces the system clipboard. */
+let systemPasteAt = 0;
+
+/**
+ * Ctrl+C/X in the app: the system clipboard is replaced (by the backend,
+ * or by the copy event that follows in a browser), so an older
+ * screenshot is not pasted instead of the objects.
+ */
 function markInternalCopy() {
     internalCopyAt = Date.now();
+    const api = pyApi();
+    if (api && typeof api.set_clipboard_text === 'function') {
+        Promise.resolve(api.set_clipboard_text(INTERNAL_MARKER)).catch(() => {});
+    }
+}
+
+/** Ctrl+V in the app: the clipboard's image (or copied image files), else the app's own clipboard. */
+async function pasteFromSystem(api, onMaster, slide) {
+    let res = null;
+    try {
+        res = await api.read_clipboard_image();
+    } catch (err) {
+        res = null;
+    }
+    const insert = props => insertElement('figure', props);
+    try {
+        if (res && res.data_uri) {
+            await addImageData(res.data_uri, insert);
+            flashSaveIndicator('Image pasted ✓');
+            return;
+        }
+        if (res && Array.isArray(res.paths) && res.paths.length) {
+            for (const [i, path] of res.paths.entries()) {
+                await addImagePath(path, insert, { x: state.slideWidth / 2 + i * 40, y: state.slideHeight / 2 + i * 40 });
+            }
+            flashSaveIndicator(res.paths.length > 1 ? `${res.paths.length} images pasted ✓` : 'Image pasted ✓');
+            return;
+        }
+    } catch (err) {
+        flashSaveIndicator(`Could not paste the image: ${err.message}`);
+        return;
+    }
+    pasteInternal(onMaster, slide);
 }
 
 /** An image file in a paste event's data, or null. */
@@ -297,6 +366,11 @@ function initImagePaste() {
         if (isTypingTarget(document.activeElement)) return;
         const editor = document.getElementById('editor-view');
         if (!editor || !editor.classList.contains('active')) return;
+        // Already handled from the keydown, through the backend.
+        if (Date.now() - systemPasteAt < 1500) {
+            e.preventDefault();
+            return;
+        }
         const file = clipboardImage(e.clipboardData);
         if (!file) return; // the app's own clipboard is pasted (pendingPaste)
         e.preventDefault();

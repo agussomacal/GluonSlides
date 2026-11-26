@@ -20,7 +20,7 @@ from unittest import mock
 
 from PIL import Image
 
-from backend import figures, fonts, pdf_export, presentation, project_io, snap_env, user_settings
+from backend import desktop, figures, fonts, pdf_export, presentation, project_io, snap_env, user_settings
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -359,6 +359,58 @@ class PresentationTest(unittest.TestCase):
         self.pres._on_closed()
         self.assertIn("gluon-audience-closed", self.main.js[-1])
         self.assertIsNone(self.pres.window)
+
+
+class DesktopTest(TempDirTest):
+    """System clipboard (Ctrl+V on the canvas) and dropped file paths."""
+
+    def test_clipboard_screenshot_becomes_a_png_data_uri(self):
+        with mock.patch.object(desktop, "_read_with_gtk", return_value={"png": png_bytes()}):
+            res = desktop.read_clipboard_image()
+        self.assertTrue(res["success"])
+        self.assertTrue(res["data_uri"].startswith("data:image/png;base64,"))
+        self.assertEqual(base64.b64decode(res["data_uri"].split(",", 1)[1]), png_bytes())
+
+    def test_copied_image_files_give_their_paths(self):
+        img = os.path.join(self.tmp, "my plot.png")
+        txt = os.path.join(self.tmp, "notes.txt")
+        for p in (img, txt):
+            Path(p).write_bytes(b"x")
+        uris = ["file://" + img.replace(" ", "%20"), "file://" + txt]
+        self.assertEqual(desktop._image_files(desktop._paths_from_uris(uris)), [img])
+        with mock.patch.object(desktop, "_read_with_gtk", return_value={"paths": [img]}):
+            self.assertEqual(desktop.read_clipboard_image(), {"success": True, "paths": [img]})
+
+    def test_nothing_on_the_clipboard(self):
+        with mock.patch.object(desktop, "_read_with_gtk", return_value={}):
+            self.assertEqual(desktop.read_clipboard_image(), {"success": True})
+
+    def test_falls_back_to_a_command_without_gtk(self):
+        with mock.patch.object(desktop, "_read_with_gtk", side_effect=ImportError("no gi")), \
+                mock.patch.object(desktop, "_read_with_command", return_value={"png": png_bytes()}):
+            self.assertIn("data_uri", desktop.read_clipboard_image())
+
+    def test_dropped_paths_are_taken_once(self):
+        drops = desktop.DroppedFiles()
+        drops.on_drop({"dataTransfer": {"files": [
+            {"name": "a.png", "pywebviewFullPath": "/data/a.png"},
+            {"name": "b.png"},  # no path known
+        ]}})
+        self.assertEqual(drops.take(), ["/data/a.png"])
+        self.assertEqual(drops.take(), [])
+
+    def test_old_drops_are_forgotten(self):
+        drops = desktop.DroppedFiles()
+        drops.on_drop({"dataTransfer": {"files": [{"name": "a.png", "pywebviewFullPath": "/data/a.png"}]}})
+        with mock.patch.object(desktop.time, "monotonic", return_value=desktop.time.monotonic() + 60):
+            self.assertEqual(drops.take(), [])
+
+    def test_api_exposes_them(self):
+        from backend.api import Api
+        api = Api()
+        for name in ("read_clipboard_image", "set_clipboard_text", "take_dropped_paths"):
+            self.assertTrue(callable(getattr(api, name)))
+        self.assertEqual(api.take_dropped_paths(), {"success": True, "paths": []})
 
 
 if __name__ == "__main__":

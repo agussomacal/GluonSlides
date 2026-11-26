@@ -9,7 +9,7 @@ import webbrowser
 
 import webview
 
-from . import dialogs, figures, fonts, pdf_export, project_io, user_settings
+from . import desktop, dialogs, figures, fonts, pdf_export, project_io, user_settings
 from .presentation import Presentation
 
 
@@ -27,6 +27,7 @@ class Api:
     def __init__(self):
         # Leading underscore: pywebview does not expose it to JS.
         self._presentation = Presentation()
+        self._dropped = desktop.DroppedFiles()
 
     # --- per-user settings -------------------------------------------------
 
@@ -135,6 +136,18 @@ class Api:
     def refresh_linked_figures(self, project_folder, items):
         """Re-copy linked figures whose original file changed; returns the updated ones."""
         return figures.refresh_linked_figures(project_folder, items)
+
+    def read_clipboard_image(self):
+        """The image (data URI) or image files (paths) on the system clipboard."""
+        return desktop.read_clipboard_image()
+
+    def set_clipboard_text(self, text):
+        """Replace the system clipboard (objects copied in the app)."""
+        return desktop.set_clipboard_text(text)
+
+    def take_dropped_paths(self):
+        """Full paths of the files just dropped on the window (once)."""
+        return {"success": True, "paths": self._dropped.take()}
 
     def select_figure_file(self):
         """Open dialog to pick a figure file; returns its path and data URI."""

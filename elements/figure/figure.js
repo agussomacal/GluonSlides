@@ -62,23 +62,6 @@ function assignFigureSource(elIndex, src, originalPath, storedPath) {
     notifyFullRender();
 }
 
-async function handleFigureDrop(e, elIndex) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        const file = e.dataTransfer.files[0];
-        if (file.path) {
-            await processAndAssignFigure(elIndex, file.path);
-        } else {
-            const reader = new FileReader();
-            reader.onload = () => {
-                assignFigureSource(elIndex, String(reader.result || ''), file.name, file.name);
-            };
-            reader.readAsDataURL(file);
-        }
-    }
-}
-
 async function browseFigurePath(elIndex) {
     const api = pyApi();
     if (api) {
@@ -219,37 +202,85 @@ function imageSize(src) {
 }
 
 /**
- * A pasted (or dropped) image file: saved into figures/ (when the project
- * has a folder) and added as a figure, centred, at most 60% of the slide.
+ * Adds an image as a new figure: centred on `at` ({x, y} in slide units;
+ * the slide centre by default), at most 60% of the slide, in proportion.
  * `insert(props)` adds the element (editor.js insertElement).
  */
-export async function addImageFile(file, insert) {
-    const dataUri = await readAsDataUrl(file);
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
-    const name = file.name && !/^image\.\w+$/i.test(file.name) ? file.name : `pasted-${stamp}`;
-    let stored = name;
-    const api = pyApi();
-    if (api && typeof api.save_figure_data === 'function' && state.projectFolder) {
-        const res = await api.save_figure_data(state.projectFolder, dataUri, name);
-        if (!res || !res.success) throw new Error((res && res.error) || 'Could not save the image');
-        stored = res.relative_path;
-    }
-    figureSources.set(stored, dataUri);
-    const { w, h } = await imageSize(dataUri);
+async function placeFigure(src, props, insert, at = null) {
+    const { w, h } = await imageSize(src);
     const scale = Math.min(1, (state.slideWidth * 0.6) / w, (state.slideHeight * 0.6) / h);
     const width = Math.round(w * scale);
     const height = Math.round(h * scale);
+    const cx = at ? at.x : state.slideWidth / 2;
+    const cy = at ? at.y : state.slideHeight / 2;
     insert({
-        filePath: stored,
         originalPath: '',
-        x: Math.round((state.slideWidth - width) / 2),
-        y: Math.round((state.slideHeight - height) / 2),
+        ...props,
+        x: Math.round(Math.min(Math.max(cx - width / 2, 0), state.slideWidth - width)),
+        y: Math.round(Math.min(Math.max(cy - height / 2, 0), state.slideHeight - height)),
         width, height,
         borderStyle: 'solid',
         borderWidth: 0,
         bg: 'transparent',
     });
+}
+
+/** Saves image data (a data URI) into figures/ when the project has a folder. */
+async function storeImageData(dataUri, name) {
+    const api = pyApi();
+    if (api && typeof api.save_figure_data === 'function' && state.projectFolder) {
+        const res = await api.save_figure_data(state.projectFolder, dataUri, name);
+        if (!res || !res.success) throw new Error((res && res.error) || 'Could not save the image');
+        return res.relative_path;
+    }
+    return name;
+}
+
+function pastedName(fileName) {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+    return fileName && !/^image\.\w+$/i.test(fileName) ? fileName : `pasted-${stamp}`;
+}
+
+/** A pasted or dropped image file (no path known): saved into figures/ and added. */
+export async function addImageFile(file, insert, at = null) {
+    return addImageData(await readAsDataUrl(file), insert, at, file.name);
+}
+
+/** Image data (a data URI, e.g. the clipboard's screenshot): saved into figures/ and added. */
+export async function addImageData(dataUri, insert, at = null, fileName = '') {
+    const stored = await storeImageData(dataUri, pastedName(fileName));
+    figureSources.set(stored, dataUri);
+    await placeFigure(dataUri, { filePath: stored }, insert, at);
     return stored;
+}
+
+/**
+ * An image file on disk (dropped, or copied in a file manager): copied
+ * into figures/ and linked to the original, so it follows its changes.
+ */
+export async function addImagePath(path, insert, at = null) {
+    const api = pyApi();
+    if (!api || typeof api.import_figure !== 'function' || !state.projectFolder) {
+        throw new Error('Save the project first: figures are copied into its folder');
+    }
+    const res = await api.import_figure(state.projectFolder, path);
+    if (!res || !res.success) throw new Error((res && res.error) || `Could not import ${path}`);
+    figureSources.set(res.relative_path, res.data_uri);
+    const linked = res.relative_path !== path && res.path !== path;
+    await placeFigure(res.data_uri, { filePath: res.relative_path, originalPath: path, ...(linked ? { sync: 'yes' } : {}) }, insert, at);
+    return res.relative_path;
+}
+
+/** Replaces the image of figure `elIndex` with the file at `path` (dropped on it). */
+export async function replaceFigureImage(elIndex, path) {
+    await processAndAssignFigure(elIndex, path);
+}
+
+/** Replaces the image of figure `elIndex` with a file whose path is unknown. */
+export async function replaceFigureImageData(elIndex, file) {
+    const dataUri = await readAsDataUrl(file);
+    const stored = await storeImageData(dataUri, pastedName(file.name));
+    assignFigureSource(elIndex, dataUri, '', stored);
 }
 
 /** Drops cached image data (e.g. when switching projects). */
@@ -313,10 +344,6 @@ const FigureElement = {
             }
         }
 
-        if (ctx.context === 'canvas') {
-            domEl.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); };
-            domEl.ondrop = (e) => handleFigureDrop(e, ctx.elIndex);
-        }
     },
 
     // Buttons in properties() call these via data-element-action.
