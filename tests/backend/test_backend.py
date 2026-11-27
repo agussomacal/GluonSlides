@@ -699,6 +699,107 @@ class PptxImportTest(TempDirTest):
         self.assertEqual((fig.get("step"), oval.get("step")), (2, 3))
 
 
+class PdfImportTest(TempDirTest):
+    """PDF -> slides (backend/importers/pdf.py), on a PDF built by tests/backend/pdf_fixture.py."""
+
+    def setUp(self):
+        super().setUp()
+        try:
+            import pymupdf  # noqa: F401
+        except ImportError:
+            self.skipTest("PyMuPDF not installed (uv sync --extra pdf)")
+        import sys as _sys
+        _sys.path.insert(0, str(REPO / "tests" / "backend"))
+        import pdf_fixture
+        from backend.importers import import_talk
+        self.import_talk = import_talk
+        self.src = pdf_fixture.build(os.path.join(self.tmp, "deck.pdf"))
+
+    def run_import(self, mode="editable", name="Deck"):
+        res = self.import_talk(self.src, self.tmp, name, {"pdfMode": mode})
+        self.assertTrue(res["success"], res)
+        return res["project"]
+
+    def test_editable_text_shapes_pictures(self):
+        p = self.run_import()
+        self.assertEqual((p["width"], p["height"], p["title"], p["author"]), (1920, 1080, "PDF Deck", "Ana"))
+        first = p["slides"][0]
+        texts = {e["content"]: e for e in first["elements"] if e["type"] == "text"}
+        self.assertIn("**Results**", texts)
+        self.assertIn("Plain text and *italic*", texts)  # two runs on one baseline: one line
+        self.assertEqual(texts["Red words"]["fontColor"], "#ff0000")
+        self.assertEqual(texts["**Results**"]["fontSize"], 64)  # 24 pt on a 720 pt page -> 1920 px
+        shapes = [(e["kind"], e["bg"]) for e in first["elements"] if e["type"] == "shape"]
+        self.assertIn(("rect", "#33994d"), shapes)
+        self.assertIn(("ellipse", "#ffcc00"), shapes)
+        line = next(e for e in first["elements"] if e["type"] == "path")
+        self.assertEqual(line["stroke"], "#333333")
+
+    def test_math_and_dense_drawings_become_pictures(self):
+        p = self.run_import()
+        figs = [e["filePath"] for e in p["slides"][0]["elements"] if e["type"] == "figure"]
+        self.assertTrue(any("pdf-math-" in f for f in figs))      # the Symbol-font line
+        self.assertTrue(any("pdf-drawing-" in f for f in figs))   # the 80-segment "plot"
+        self.assertTrue(any("pdf-image-" in f for f in figs))     # the embedded picture
+        for f in figs:
+            self.assertTrue(os.path.isfile(os.path.join(self.tmp, "Deck", f)))
+        self.assertFalse(any("abc" in e.get("content", "") for e in p["slides"][0]["elements"]))
+        self.assertTrue(any("Equations are pictures" in w for w in p["warnings"]))
+
+    def test_repeated_content_goes_to_a_master_with_page_numbers(self):
+        p = self.run_import()
+        master = p["masters"][0]["elements"]
+        self.assertIn(("shape", "#cc0000"), [(e["type"], e.get("bg")) for e in master])  # the logo
+        self.assertIn("\\slidenumber / \\totalslides", [e.get("content") for e in master])
+        self.assertFalse(any(e.get("bg") == "#cc0000" for s in p["slides"] for e in s["elements"]))
+
+    def test_overlay_pages_merge_into_steps(self):
+        p = self.run_import()
+        self.assertEqual([s["title"] for s in p["slides"]], ["Results", "Steps"])  # 3 pages, 2 slides
+        steps = {e["content"]: e.get("step", 1) for e in p["slides"][1]["elements"] if e["type"] == "text"}
+        self.assertEqual((steps["First point"], steps["Second point"]), (1, 2))
+
+    def test_picture_with_editable_text(self):
+        p = self.run_import("overlay")
+        first = p["slides"][0]["elements"]
+        self.assertEqual((first[0]["type"], first[0].get("locked"), first[0]["width"]), ("figure", "yes", 1920))
+        self.assertIn("Red words", [e.get("content") for e in first])
+
+    def test_pages_as_pictures(self):
+        p = self.run_import("images")
+        self.assertEqual([s["title"] for s in p["slides"]], ["Results", "Steps", "Steps"])
+        self.assertTrue(all(len(s["elements"]) == 1 and s["elements"][0]["type"] == "figure" for s in p["slides"]))
+
+
+class ExtrasTest(TempDirTest):
+    """The PDF component download (backend/importers/extras.py), with a fake download."""
+
+    def test_a_wrong_file_is_refused(self):
+        from backend.importers import extras
+        with mock.patch.dict(os.environ, {"GLUONSLIDES_DATA_DIR": self.tmp}), \
+                mock.patch.object(extras, "_system", return_value=("linux", "x86_64")):
+            res = extras.install("pymupdf", fetch=lambda url: b"not the wheel")
+        self.assertFalse(res["success"])
+        self.assertIn("not the expected file", res["error"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "extras", f"pymupdf-{extras.PYMUPDF_VERSION}")))
+
+    def test_each_system_has_its_wheel(self):
+        from backend.importers import extras
+        for system in (("linux", "x86_64"), ("darwin", "arm64"), ("darwin", "x86_64"), ("win32", "amd64")):
+            url, sha = extras.PYMUPDF_WHEELS[system]
+            self.assertIn(extras.PYMUPDF_VERSION, url)
+            self.assertRegex(sha, r"^[0-9a-f]{64}$")
+        with mock.patch.object(extras, "_system", return_value=("plan9", "mips")):
+            self.assertFalse(extras.install("pymupdf", fetch=lambda u: b"")["success"])
+        self.assertFalse(extras.install("other")["success"])
+
+    def test_pinned_wheels_match_the_lock_file(self):
+        from backend.importers import extras
+        lock = (REPO / "uv.lock").read_text()
+        for url, sha in extras.PYMUPDF_WHEELS.values():
+            self.assertIn(f'{{ url = "{url}", hash = "sha256:{sha}"', lock)
+
+
 class PackagingTest(unittest.TestCase):
     """What the installable app relies on (packaging/)."""
 

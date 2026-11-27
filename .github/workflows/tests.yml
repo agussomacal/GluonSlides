@@ -27,7 +27,7 @@ jobs:
 
       - name: Install
         run: |
-          uv sync --locked
+          uv sync --locked --extra pdf  # the PDF import tests need PyMuPDF
           npm ci
 
       - name: Download the app's JavaScript libraries and fonts

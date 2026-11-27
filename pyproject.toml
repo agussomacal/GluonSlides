@@ -12,6 +12,11 @@ dependencies = [
     "python-pptx>=1.0",
 ]
 
+[project.optional-dependencies]
+pdf = [
+    "pymupdf>=1.24",
+]
+
 [dependency-groups]
 # Only for building the installable app (packaging/): `uv sync --group build`
 build = ["pyinstaller>=6.10"]

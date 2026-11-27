@@ -36,6 +36,7 @@ UNUSED = [
     "tkinter", "numpy", "scipy", "matplotlib", "pandas", "IPython", "jupyter",  # (lxml: python-pptx needs it)
     "cryptography", "bcrypt", "tornado", "psutil", "jinja2", "markupsafe",
     "lz4", "unicodedata2", "sympy", "PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy", "test",
+    "pymupdf", "fitz",  # optional: downloaded on the first PDF import (backend/importers/extras.py)
     # Linux system packages (seen when the system's packages are visible);
     # Debian's pkg_resources breaks once bundled. Not setuptools/distutils:
     # PyInstaller maps distutils onto setuptools' copy (cffi on Windows needs it).

@@ -143,6 +143,8 @@ Plain Python `unittest` tests that call the backend modules directly, in tempora
 | Updates | version comparison, newer / same / older release, a skipped version, the check turned off (no request), offline |
 | Beamer import | a small talk using each feature (`fixtures/beamer/`): size, metadata, sections and section slides, master with title bar and page number, formatting, math and notes, overlays as steps, alternating images, nested columns, boxes, tables, citations, bibliography, macros; from a `.zip` (and a zip entry can't escape), errors |
 | PowerPoint import | a deck built by `pptx_fixture.py` (python-pptx): size and metadata, layouts as masters with their shapes, background, sections, notes, bullets/numbering/formatting/links, shapes, lines, tables, groups, pictures, click animations as steps |
+| PDF import | a PDF built by `pdf_fixture.py` (PyMuPDF; skipped without it): text runs, colours, sizes, shapes, ellipse, line, math and dense drawings as pictures, the master with logo and page numbers, overlay pages merged into steps, the other two modes |
+| Extras | the PDF component download: a wrong file is refused (nothing installed), a pinned wheel per system matching `uv.lock` |
 | Presenter view | the audience window: which screen it goes to, full screen or not, messages both ways, closing (pywebview faked) |
 
 Tests that need something the machine may not have (a TrueType font, the downloaded built-in fonts) are skipped rather than failed.

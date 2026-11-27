@@ -64,6 +64,13 @@ def import_talk(source, parent_folder, name, options=None):
             from .pptx import import_pptx
             result = import_pptx(source, folder)
         else:
+            from . import extras
+            fitz = extras.load_pymupdf()
+            if fitz is None:
+                if not os.listdir(folder):
+                    os.rmdir(folder)  # nothing imported yet: the name stays free
+                return {"success": False, "needs_extra": "pymupdf", "extra_message": extras.PYMUPDF_MESSAGE,
+                        "error": "PDF import needs an extra component."}
             from .pdf import import_pdf
             result = import_pdf(source, folder, mode=options.get("pdfMode", "editable"))
     except ImportError as e:

@@ -181,6 +181,11 @@ class Api:
         from . import importers
         return importers.import_talk(source, parent_folder, name, options or {})
 
+    def install_extra(self, name):
+        """Download an optional component (PDF import), after the user agreed."""
+        from .importers import extras
+        return extras.install(name)
+
     def select_figure_file(self):
         """Open dialog to pick a figure file; returns its path and data URI."""
         path = dialogs.ask_open(FIGURE_FILE_TYPES)
