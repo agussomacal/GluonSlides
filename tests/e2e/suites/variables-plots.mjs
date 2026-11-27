@@ -160,7 +160,17 @@ await app(async () => {
 
 // ---------- the toolbar ----------
 const menu = await app(() => [...document.querySelectorAll('.toolbar-dropdown[data-category="interactive"] .toolbar-menu button')].map(b => b.textContent.trim()));
-check('Interactive ▾: plots and slider', menu.length === 3 && menu.some(t => t.includes('LaTeX')) && menu.some(t => t.includes('Slider')), JSON.stringify(menu));
+check('Interactive ▾: Plot and Slider', JSON.stringify(menu.map(t => t.replace(/^\S+\s*/, ''))) === '["Plot","Slider"]', JSON.stringify(menu));
+
+// a new plot: Python first; choosing LaTeX in its panel swaps the example
+await app(async () => (await import('/editor/editor.js')).addElement('plot'));
+await page.waitForTimeout(200);
+const fresh = () => app(async () => { const { state } = await import('/core/state.js'); const p = state.slides[0].elements.filter(e => e.type === 'plot').pop(); return { lang: p.lang, code: p.code }; });
+const first = await fresh();
+await page.selectOption('#properties-body select[data-prop="lang"]', 'latex');
+await page.waitForTimeout(200);
+const swapped = await fresh();
+check('a new plot is Python; LaTeX in the panel swaps the example', first.lang === 'python' && first.code.includes('exp(') && swapped.lang === 'latex' && swapped.code.includes('\\frac'), JSON.stringify([first, swapped]));
 
 // ---------- the exported HTML works by itself ----------
 const html = await app(async () => (await import('/export/html.js')).getExportHtmlString({ localAssets: true }));

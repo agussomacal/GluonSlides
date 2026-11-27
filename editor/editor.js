@@ -177,7 +177,13 @@ function updateProp(propName, value) {
             }
             // Disappears after: empty (or before it appears) = never.
             else if (propName === 'until' && !(parsedVal >= elementStep(elements[idx]))) delete elements[idx].until;
-            else elements[idx][propName] = (propName === 'step' || propName === 'until') ? Math.round(parsedVal) : parsedVal;
+            else {
+                const before = elements[idx][propName];
+                elements[idx][propName] = (propName === 'step' || propName === 'until') ? Math.round(parsedVal) : parsedVal;
+                // The element's own follow-up (e.g. a plot's example formula in the newly chosen language)
+                const def = ElementRegistry.get(elements[idx].type);
+                if (def && typeof def.propChanged === 'function') def.propChanged(elements[idx], propName, before);
+            }
         });
     }
 

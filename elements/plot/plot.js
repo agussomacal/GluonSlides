@@ -84,14 +84,16 @@ const specAttr = (el) => escapeHtml(JSON.stringify(plotSpec(el, startingVariable
 
 const PlotElement = {
     type: 'plot',
-    label: 'Add Plot',
+    label: 'Add Plot',  // its panel chooses how formulas are written (lang)
     icon: '📈',
     className: 'element-plot',
     category: 'interactive',
-    variants: [
-        { id: 'python', label: 'Plot (Python formula)', icon: '📈', preset: () => ({ lang: 'python', code: EXAMPLE.python }) },
-        { id: 'latex', label: 'Plot (LaTeX formula)', icon: '📉', preset: () => ({ lang: 'latex', code: EXAMPLE.latex }) },
-    ],
+    // Choosing the formulas' language while the plot still has the example: the example in that language.
+    propChanged(el, prop, before) {
+        if (prop === 'lang' && EXAMPLE[before] && String(el.code || '').trim() === EXAMPLE[before].trim() && EXAMPLE[el.lang]) {
+            el.code = EXAMPLE[el.lang];
+        }
+    },
 
     gl: {
         props: ['x', 'y', 'width', 'height', 'lang', 'xmin', 'xmax', 'ymin', 'ymax', 'xlabel', 'ylabel', 'grid', 'legend', 'samples',
