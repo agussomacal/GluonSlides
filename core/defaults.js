@@ -26,6 +26,8 @@ export const STYLE_NAME_RE = /^[A-Za-z][\w-]*$/;
 /** Style properties that may be inherited, per element type. */
 export const STYLE_KEYS = {
     text: ['fontFamily', 'fontSize', 'fontColor', 'textAlign', 'verticalAlign', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
+    columns: ['fontFamily', 'fontSize', 'fontColor', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
+    table: ['fontFamily', 'fontSize', 'fontColor', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
     shape: ['bg', 'borderCol', 'borderWidth', 'borderStyle'],
     figure: ['bg', 'borderCol', 'borderWidth', 'borderStyle'],
     path: ['stroke', 'strokeWidth', 'dash', 'fill'],
@@ -117,9 +119,18 @@ export function styleUsage(type, name) {
 }
 
 /** Value an element of `type` gets for `key` when it does not set it. */
+// Columns and tables hold text: without defaults of their own, they use
+// the project's text defaults for the font.
+const TEXT_LIKE = new Set(['columns', 'table']);
+const FONT_KEYS = new Set(['fontFamily', 'fontSize', 'fontColor']);
+
 export function defaultValue(type, key) {
     const p = projectStyle(type);
     if (p[key] !== undefined && p[key] !== '') return p[key];
+    if (TEXT_LIKE.has(type) && FONT_KEYS.has(key)) {
+        const t = projectStyle('text');
+        if (t[key] !== undefined && t[key] !== '') return t[key];
+    }
     return builtinStyle(type)[key];
 }
 

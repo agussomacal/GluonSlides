@@ -109,6 +109,20 @@ Exports embed every font the presentation uses (not the generic defaults), so th
 
 A figure imported from a file elsewhere (**📁 Browse**, dropping or pasting a file) is copied into `figures/` and stays **linked** to the original: when the original changes, for example a plot your analysis script just regenerated, the copy is updated and the slide redrawn within a few seconds, without touching anything. The figure's panel has *Update when the original file changes* (on for new imports) and **↻ Reload from the original**. In the file this is `sync:yes` on the figure, next to its `filePath` (the project's copy) and `originalPath`.
 
+### Columns
+
+**Columns ▾** in the toolbar adds text in 2–4 columns: one box, each column edited like a text box (Markdown, math, lists, citations, and images with `![](figures/plot.png)`). Double-click a column to edit it (**Tab** / **Shift+Tab**: next / previous column; **Esc** or a click outside: done); drag the handles on the dividers to change the widths, or pick a preset (50/50, 60/40, 30/70...) in the panel, with the gap, a divider line, and each column's horizontal and vertical alignment. Without a font of their own, columns use the project's text font.
+
+```
+.element.columns id:12 x:100 y:200 width:1700 height:600 gap:40 divider:line
+	.column width:60
+	Left column, **Markdown** and $math$
+	.column width:40 valign:center align:center
+	Right column
+```
+
+Widths are relative (here 60% / 40% of the space left by the gap). Markdown images work in ordinary text boxes too; they are loaded from the project folder like figures and embedded in exports.
+
 ### Shapes
 
 The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.

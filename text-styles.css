@@ -109,3 +109,24 @@
     padding: 0 0.2em;
     font-weight: 600;
 }
+
+/* Columns (elements/columns/columns.js): also in exports */
+.gl-columns { display: grid; width: 100%; height: 100%; box-sizing: border-box; }
+.gl-column { display: flex; flex-direction: column; min-width: 0; overflow: hidden; box-sizing: border-box; }
+.gl-column-text { outline: none; min-height: 1em; overflow-wrap: anywhere; }
+.gl-column-text > :first-child { margin-top: 0; }
+.gl-column-text > :last-child { margin-bottom: 0; }
+.gl-column-text img.md-image { max-width: 100%; height: auto; display: block; margin: 0.3em auto; }
+/* Markdown images in text boxes */
+img.md-image { max-width: 100%; height: auto; }
+/* Column text: the same paragraphs, lists and equations as a text box */
+.gl-column-text { line-height: 1.15; word-break: break-word; }
+.gl-column-text p { margin: 0 0 0.45em; }
+.gl-column-text ul, .gl-column-text ol { margin: 0 0 0.45em; padding-left: 1.4em; text-align: inherit; }
+.gl-column-text ul { list-style: disc outside; }
+.gl-column-text ol { list-style: decimal outside; }
+.gl-column-text ul ul { list-style-type: circle; }
+.gl-column-text li { margin-bottom: 0.15em; }
+.gl-column-text .katex-display { text-align: inherit; margin: 0.4em 0; }
+.gl-column[style*="text-align: center"] .gl-column-text ul,
+.gl-column[style*="text-align: center"] .gl-column-text ol { width: fit-content; margin-left: auto; margin-right: auto; }

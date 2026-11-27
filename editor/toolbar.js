@@ -12,6 +12,7 @@ import { escapeHtml } from '../core/render.js';
 // Unknown categories are appended after these, in registration order.
 const CATEGORIES = [
     { id: 'text', label: 'Text', icon: '📝' },
+    { id: 'columns', label: 'Columns', icon: '▥', menu: true },
     { id: 'fields', label: 'Fields', icon: '#', menu: true }, // slide number, footer, date...
     { id: 'shapes', label: 'Shapes', icon: '⬛' },
     { id: 'lines', label: 'Lines & curves', icon: '〰️' },

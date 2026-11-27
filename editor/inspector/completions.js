@@ -27,6 +27,7 @@ const VALUES = {
     closed: ['yes', 'no'],
     lockAspect: ['yes', 'no'],
     locked: ['yes', 'no'],
+    divider: ['none', 'line'],
     hidden: ['yes', 'no'],
     darkmode: ['yes', 'no'],
     dash: ['solid', 'dashed', 'dotted'],

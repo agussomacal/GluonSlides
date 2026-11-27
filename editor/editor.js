@@ -963,7 +963,11 @@ window.addEventListener('click', (e) => {
     const editingEl = document.querySelector('.canvas-element.editing-mode');
     if (editingEl && !editingEl.contains(e.target)) {
         const el = state.selectedElementIndex !== null ? activeElements()[state.selectedElementIndex] : null;
-        if (el) saveAndExitTextEditing(editingEl, el);
+        if (!el) return;
+        // Elements with their own editing (columns, tables) commit themselves.
+        const def = ElementRegistry.get(el.type);
+        if (def && typeof def.commitEditing === 'function') def.commitEditing(editingEl, el);
+        else saveAndExitTextEditing(editingEl, el);
     }
 });
 

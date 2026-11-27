@@ -50,6 +50,27 @@ function restoreMath(html, pieces) {
     return html.split(DOLLAR_TOKEN).join('<span class="gl-dollar">$</span>').replace(MATH_TOKEN_RE, (t, i) => (pieces[Number(i)] !== undefined ? escapeHtml(pieces[Number(i)].split(DOLLAR_TOKEN).join('\\$')) : t));
 }
 
+// Markdown images (![](figures/plot.png)): project-relative paths are
+// resolved by the figure module (elements/figure/figure.js registers it),
+// which returns a data URI, or null while it loads the file (it redraws then).
+let imageResolver = null;
+
+export function setImageResolver(fn) {
+    imageResolver = fn;
+}
+
+function resolveImages(root) {
+    if (!imageResolver) return;
+    root.querySelectorAll('img[src]').forEach(img => {
+        const src = img.getAttribute('src');
+        if (/^(data:|https?:|blob:|\/)/i.test(src)) return;
+        const resolved = imageResolver(decodeURIComponent(src));
+        if (resolved) img.setAttribute('src', resolved);
+        else img.removeAttribute('src');
+        img.classList.add('md-image');
+    });
+}
+
 export function renderMarkdownAndKatex(element, rawText) {
     // Citations are resolved at render time only — the stored content
     // keeps the raw \cite{...} markers for round-trip fidelity.
@@ -73,6 +94,7 @@ export function renderMarkdownAndKatex(element, rawText) {
     }
     html = restoreMath(html, pieces);
     element.innerHTML = sanitizeHtml(html);
+    resolveImages(element);
     if (window.renderMathInElement) {
         try {
             renderMathInElement(element, {

@@ -12,7 +12,7 @@
 
 import { state, pyApi, markDirty, activeElements, forEachElementDeep } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
-import { escapeHtml } from '../../core/render.js';
+import { escapeHtml, setImageResolver } from '../../core/render.js';
 
 function notifyFullRender() {
     document.dispatchEvent(new CustomEvent('slide-content-changed'));
@@ -105,6 +105,13 @@ export async function hydrateFigures(slides, projectFolder) {
 
     for (const slide of slides) {
         forEachElementDeep(slide.elements, (el) => {
+            // Markdown images in text, columns and table cells
+            for (const text of elementTexts(el)) {
+                for (const m of String(text).matchAll(MD_IMAGE_RE)) {
+                    const path = decodeURIComponent(m[1]);
+                    if (!/^(data:|https?:|blob:|\/)/i.test(path) && !figureSources.has(path)) pending.set(path, path);
+                }
+            }
             if (el.type !== 'figure') return;
             const key = figureKey(el);
             if (typeof el.src === 'string' && el.src) {
@@ -282,6 +289,37 @@ export async function replaceFigureImageData(elIndex, file) {
     const stored = await storeImageData(dataUri, pastedName(file.name));
     assignFigureSource(elIndex, dataUri, '', stored);
 }
+
+// ---------- Markdown images in text (![](figures/x.png)) ----------
+
+const MD_IMAGE_RE = /!\[[^\]]*\]\(<?([^)\s>]+)>?(?:\s+"[^"]*")?\)/g;
+
+/** The texts of an element that may hold Markdown (text, columns, table cells). */
+export function elementTexts(el) {
+    const out = [];
+    if (typeof el.content === 'string') out.push(el.content);
+    (el.columns || []).forEach(c => out.push(c.content || ''));
+    (el.rows || []).forEach(r => (Array.isArray(r) ? r : []).forEach(c => out.push(c || '')));
+    return out;
+}
+
+const loadingImages = new Set();
+
+/** Data URI of a project image used in Markdown; loads it if needed (then redraws). */
+function markdownImage(path) {
+    if (figureSources.has(path)) return figureSources.get(path);
+    const api = pyApi();
+    if (!api || typeof api.load_figure_data_uri !== 'function' || loadingImages.has(path)) return null;
+    loadingImages.add(path);
+    Promise.resolve(api.load_figure_data_uri(state.projectFolder || '', path)).then(res => {
+        if (res && res.success && res.data_uri) {
+            figureSources.set(path, res.data_uri);
+            notifyFullRender();
+        }
+    }).finally(() => loadingImages.delete(path));
+    return null;
+}
+setImageResolver(markdownImage);
 
 /** Drops cached image data (e.g. when switching projects). */
 export function clearFigureCache() {
