@@ -366,6 +366,12 @@ class PresentationTest(unittest.TestCase):
 class DesktopTest(TempDirTest):
     """System clipboard (Ctrl+V on the canvas) and dropped file paths."""
 
+    def test_file_drops_are_taken_from_webkit(self):
+        # files known from the drag: the app takes the drop (WebKitGTK froze on a .csv)
+        self.assertTrue(desktop.take_over_drop(["/home/me/runs.csv"], 100.0, 101.0))
+        self.assertFalse(desktop.take_over_drop([], 100.0, 101.0))  # text into a text field: WebKit's
+        self.assertFalse(desktop.take_over_drop(["/old.png"], 100.0, 200.0))  # stale: an earlier drag
+
     def test_clipboard_screenshot_becomes_a_png_data_uri(self):
         with mock.patch.object(desktop, "_read_with_gtk", return_value={"png": png_bytes()}):
             res = desktop.read_clipboard()

@@ -277,6 +277,18 @@ def guard_navigation(window):
     return True
 
 
+FRESH_DRAG_DATA_S = 30
+
+
+def take_over_drop(paths, received, now):
+    """Whether the app takes a drop itself rather than leave it to WebKit:
+    when files are being dropped (their paths came while dragging). WebKitGTK
+    can freeze handling a dropped file itself (a .csv did), and the page gets
+    the files from window.gluonNativeDrop anyway; text dragged into a text
+    field (no files) is still WebKit's."""
+    return bool(paths) and now - received <= FRESH_DRAG_DATA_S
+
+
 def watch_native_drops(window):
     """Files dropped on the window, from GTK's own drag signals.
 
@@ -288,7 +300,7 @@ def watch_native_drops(window):
     import json
 
     try:
-        from gi.repository import GLib
+        from gi.repository import GLib, Gtk
         from webview.platforms.gtk import BrowserView
     except Exception:
         return None
@@ -321,12 +333,24 @@ def watch_native_drops(window):
         if paths:
             pending.update(paths=paths, received=time.monotonic())
             deliver()
+        else:
+            pending.update(paths=[], received=0.0)  # this drag has no files (text)
         return False  # WebKit handles the drop too (the page prevents opening it)
 
-    def on_drop(_widget, _context, x, y, _time):
+    def on_drop(_widget, context, x, y, when):
         debug(f"[drop] dropped at ({x}, {y})")
         pending["point"] = (x, y)
-        deliver()  # the data may have come while dragging, or comes next
+        if take_over_drop(pending["paths"], pending["received"], time.monotonic()):
+            # Files: ours. Finishing the drag here keeps WebKit from handling it
+            # (True also stops its own drag-drop handler).
+            try:
+                Gtk.drag_finish(context, True, False, when)
+            except Exception as e:
+                debug(f"[drop] could not finish the drag: {e}")
+            debug("[drop] taken by the app (WebKit left out)")
+            deliver()
+            return True
+        deliver()  # the data may come next (then WebKit handles the drop too)
         GLib.timeout_add(1500, lambda: pending.update(point=None) and False)
         return False
 
