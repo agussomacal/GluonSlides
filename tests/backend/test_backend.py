@@ -1015,6 +1015,14 @@ class SlidevImportTest(TempDirTest):
         self.assertEqual(self.s["A Slidev Talk"]["notes"], "Welcome everyone.")
         self.assertEqual(self.s["Results"]["notes"], "Say the results slowly.")
 
+    def test_html_headings_become_markdown(self):
+        from backend.importers.slidev import clean_md, only_headings
+        md = clean_md('<h3 style="text-align: center">Gradient descent</h3>\n\n$$x = y$$\n'
+                      '<h3 style="color: white; text-align: center"> <span style="color: black">Ghost</span></h3>')
+        self.assertEqual(md, '### Gradient descent\n\n$$x = y$$\n\n### \\textcolor{white}{\\textcolor{black}{Ghost}}')
+        self.assertTrue(only_headings(md))  # titles over equations: a centred box
+        self.assertFalse(only_headings("### Title\n\nA paragraph."))
+
     def test_text_mdc_grid_table(self):
         texts = [e["content"] for e in self.els("Results", "text")]
         self.assertIn('Text with $x \\in \\R$ and \\textcolor{white}{a ghost}.', texts)

@@ -21,7 +21,10 @@ await page.addInitScript(() => {
     window.pywebview = { api: {
         select_table_file: () => ok({ path: '/home/me/run/results.csv' }),
         read_table_file: () => ok({ rows: window.__csv, mtime: window.__mtime }),
-        link_table_file: () => ok({ rows: window.__csv, mtime: window.__mtime, relative_path: 'data/results.csv', original: '/home/me/run/results.csv' }),
+        link_table_file: () => {
+            const res = { success: true, rows: window.__csv, mtime: window.__mtime, relative_path: 'data/results.csv', original: '/home/me/run/results.csv' };
+            return window.__slowMs ? new Promise(r => setTimeout(() => r(res), window.__slowMs)) : Promise.resolve(res);
+        },
         refresh_tables: (folder, items) => ok({ updated: items.filter(i => i.mtime !== window.__mtime).map(i => ({ src: i.src, rows: window.__csv, mtime: window.__mtime })) }),
         read_clipboard: () => ok(window.__clip),
         set_clipboard_text: () => ok(),
@@ -206,9 +209,14 @@ let t = await last();
 check('the preview shows the grid while drawing', guides === 3 + 3, guides);
 check('a drawn box: 4 columns × 4 rows to fit it', t.type === 'table' && t.rows.length === 4 && t.rows[0].length === 4 && Math.abs(t.x - 100) <= 3 && Math.abs(t.width - 1280) <= 4, `${t.rows.length}x${t.rows[0].length} at ${t.x} w${t.width}`);
 
-await app(async () => { (await import('/core/state.js')).state.projectFolder = '/home/me/talk'; });
+await app(async () => { (await import('/core/state.js')).state.projectFolder = '/home/me/talk'; window.__slowMs = 1000; });
+const barShown = () => app(() => { const n = document.querySelector('.busy-bar'); return !!n && getComputedStyle(n).display !== 'none'; });
 await textMenu('csv');
-await page.waitForTimeout(250);
+await page.waitForTimeout(600);
+const barDuring = await barShown();
+await page.waitForTimeout(800);
+check('a busy bar while the CSV is read, gone afterwards', barDuring && !(await barShown()), `${barDuring}`);
+await app(() => { window.__slowMs = 0; });
 t = await last();
 check('from a CSV file: linked, data/ copy + original', t.type === 'table' && t.data && t.data.src === 'data/results.csv' && t.data.original === '/home/me/run/results.csv' && t.rows[0][0] === 'Method', JSON.stringify(t.data));
 

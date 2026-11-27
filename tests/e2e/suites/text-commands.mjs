@@ -79,6 +79,7 @@ check('selecting words while editing shows the format bar', await page.isVisible
 await page.click('.format-bar [data-color="red"]');
 await page.waitForTimeout(100);
 const typed = await app(() => document.querySelector('#slide-canvas .element-text').innerText);
+check('the format bar goes away after use', await app(() => getComputedStyle(document.querySelector('.format-bar')).display === 'none'));
 check('a colour wraps the selection, still editing', typed.includes('Make this \\textcolor{red}{word} red')
     && await app(() => document.querySelector('#slide-canvas .element-text').classList.contains('editing-mode')), typed);
 await page.keyboard.press('Escape');

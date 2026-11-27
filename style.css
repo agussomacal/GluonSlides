@@ -1,3 +1,6 @@
+/* hidden means hidden, whatever display a class sets (busy bar, format bar...) */
+[hidden] { display: none !important; }
+
 :root {
     --bg-color: #0f172a;
     --panel-bg: #1e293b;

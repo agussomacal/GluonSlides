@@ -198,7 +198,29 @@ class Ctx:
         return self.clicks
 
 
+def html_heading(m):
+    """<h3 style="color: red; text-align: center">Title</h3> -> ### \\textcolor{red}{Title}
+    (alignment: see only_headings, the box is centred)."""
+    level, attrs, inner = int(m.group(1)), m.group(2), m.group(3)
+    inner = re.sub(r"\s+", " ", inner).strip()
+    colour = re.search(r"(?<![-\w])color:\s*([^;\"]+)", attr(attrs, "style") or "")
+    if colour and inner:
+        inner = model.coloured(inner, colour.group(1).strip())
+    return f"\n\n{'#' * level} {inner}\n\n" if inner else "\n"
+
+
+def only_headings(md):
+    """Text that is headings (with equations and images around them): a centred box
+    (Slidev authors centre such titles with <h3 style="text-align: center">)."""
+    rest = re.sub(r"\$\$.*?\$\$", "", md or "", flags=re.S)
+    lines = [l.strip() for l in rest.split("\n") if l.strip()]
+    lines = [l for l in lines if not re.match(r"^!\[[^\]]*\]\([^)]*\)$", l)]
+    return bool(lines) and all(re.match(r"^#{1,6}\s", l) for l in lines)
+
+
 def clean_md(md):
+    # HTML headings -> Markdown headings
+    md = re.sub(r"<h([1-6])\b([^>]*)>(.*?)</h\1>", html_heading, md, flags=re.S | re.I)
     md = re.sub(r"\$\$[ \t]*\{[\d\s|,*\-]*(?:all|none)?[\d\s|,*\-]*\}", "$$", md)  # $${1|all}: line highlights
     # MDC (mdc: true): [text]{style="..."} -> a span; [text]{.class} -> the text
     md = re.sub(r'\[([^\]\n]+)\]\{\s*style="([^"]*)"\s*\}', r'<span style="\2">\1</span>', md)
@@ -491,7 +513,7 @@ class Layout:
                 continue
             h = self.height(b, width)
             if k == "text":
-                out.append(model.text(x, y, width, h, b["md"], fs, align="center" if center else "left", **extra))
+                out.append(model.text(x, y, width, h, b["md"], fs, align="center" if center or only_headings(b["md"]) else "left", **extra))
             elif k == "table":
                 rows = b["rows"]
                 out.append({"type": "table", "x": round(x), "y": round(y), "width": round(width), "height": round(h),
@@ -507,7 +529,8 @@ class Layout:
                 if all(c["md"] is not None for c in b["cols"]):
                     out.append({"type": "columns", "x": round(x), "y": round(y), "width": round(width), "height": round(h),
                                 "gap": round(gap), "fontSize": round(fs),
-                                "columns": [{"width": round(100 / n), "content": c["md"], **({"align": "center"} if center else {})} for c in b["cols"]],
+                                "columns": [{"width": round(100 / n), "content": c["md"],
+                                             **({"align": "center"} if center or only_headings(c["md"]) else {})} for c in b["cols"]],
                                 **extra})
                 else:
                     for j, c in enumerate(b["cols"]):
