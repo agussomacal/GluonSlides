@@ -92,18 +92,50 @@ def recognise_equations(result, folder, reader, report=None):
             continue
         if not latex or sure < SURE_ENOUGH or single_symbol(latex):
             continue
-        box, colour, _share = _ink(im)
-        kx, ky = el["width"] / im.width, el["height"] / im.height
-        ink_h = ((box[3] - box[1]) * ky) if box else el["height"] * 0.6
-        tall = re.search(r"\\(frac|dfrac|sum|prod|int|oint|begin|underbrace|overbrace|binom|sqrt)|_\{[^}]*\}\^|\\limits|\\operatorname\*", latex)
-        size = max(8, round(ink_h / (2.4 if tall else 1.35)))
-        text = {"type": "text", "x": el["x"], "y": el["y"], "width": el["width"], "height": el["height"],
-                "content": f"$\\displaystyle {latex}$", "fontSize": size, "fontColor": colour or "#000000",
-                "textAlign": "center", "verticalAlign": "center", "bg": "transparent", "borderCol": "transparent",
-                "borderWidth": 0, "borderStyle": "solid", "name": NAME}
-        for key in ("step", "until", "rotate", "id"):
-            if key in el:
-                text[key] = el[key]
+        text = equation_element(el, im, latex)
         s["elements"][s["elements"].index(el)] = text
         done += 1
     return done
+
+
+def equation_element(el, im, latex):
+    """The text element `$\\displaystyle latex$` replacing the figure `el` (picture `im`):
+    same place, its ink's colour, a font size from the ink's height."""
+    box, colour, _share = _ink(im)
+    ky = el["height"] / im.height
+    ink_h = ((box[3] - box[1]) * ky) if box else el["height"] * 0.6
+    tall = re.search(r"\\(frac|dfrac|sum|prod|int|oint|begin|underbrace|overbrace|binom|sqrt)|_\{[^}]*\}\^|\\limits|\\operatorname\*", latex)
+    size = max(8, round(ink_h / (2.4 if tall else 1.35)))
+    text = {"type": "text", "x": el["x"], "y": el["y"], "width": el["width"], "height": el["height"],
+            "content": f"$\\displaystyle {latex}$", "fontSize": size, "fontColor": colour or "#000000",
+            "textAlign": "center", "verticalAlign": "center", "bg": "transparent", "borderCol": "transparent",
+            "borderWidth": 0, "borderStyle": "solid", "name": NAME}
+    for key in ("step", "until", "rotate", "id"):
+        if key in el:
+            text[key] = el[key]
+    return text
+
+
+def read_figure(folder, el, reader):
+    """One figure read on request (right-click "Convert to LaTeX"): {"success",
+    "element", "sure"} whatever the model's confidence (the page warns when
+    it is low), or why not."""
+    from PIL import Image
+    path = el.get("filePath") or ""
+    full = path if os.path.isabs(path) else os.path.join(folder or "", path)
+    if not re.search(r"\.(png|jpe?g|gif|webp|bmp)$", path, re.I) or not os.path.isfile(full):
+        return {"success": False, "error": "Only pictures (PNG, JPEG, …) in the project can be read."}
+    try:
+        with Image.open(full) as im:
+            im.load()
+            im = im.copy()
+    except Exception as e:
+        return {"success": False, "error": f"Could not open the picture: {e}"}
+    try:
+        latex, sure = reader.read(im)
+    except Exception as e:
+        return {"success": False, "error": f"Could not read the picture: {type(e).__name__}: {e}"}
+    if not latex:
+        return {"success": False, "error": "No equation could be read in this picture."}
+    return {"success": True, "element": equation_element(el, im, latex), "sure": sure,
+            "unsure": sure < SURE_ENOUGH}

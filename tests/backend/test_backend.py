@@ -854,6 +854,23 @@ class EquationsTest(TempDirTest):
             res = import_talk(self.deck([("formula", (300, 80))]), self.tmp, "Ask", {"equations": True})
         self.assertEqual(res.get("needs_extra"), "equations")
 
+    def test_one_picture_on_request(self):
+        """Right-click "Convert to LaTeX": used even when unsure (flagged), in the figure's place."""
+        from backend.importers.equations import read_figure
+        os.makedirs(os.path.join(self.tmp, "figures"))
+        Image.new("RGB", (300, 80), "white").save(os.path.join(self.tmp, "figures", "eq.png"))
+        el = {"type": "figure", "id": 9, "x": 10, "y": 20, "width": 600, "height": 160, "filePath": "figures/eq.png", "step": 2}
+        res = read_figure(self.tmp, el, self.Reader([("x^2", -0.3)]))
+        self.assertTrue(res["success"], res)
+        self.assertTrue(res["unsure"])
+        t = res["element"]
+        self.assertEqual((t["type"], t["content"], t["id"], t["x"], t["step"]), ("text", "$\\displaystyle x^2$", 9, 10, 2))
+        self.assertFalse(read_figure(self.tmp, dict(el, filePath="figures/plot.pdf"), self.Reader([]))["success"])
+        self.assertFalse(read_figure(self.tmp, el, self.Reader([("", float("-inf"))]))["success"])
+        from backend.api import Api
+        with mock.patch("backend.importers.extras.equation_reader", return_value=None):
+            self.assertEqual(Api().read_equation(self.tmp, el).get("needs_extra"), "equations")
+
     def test_the_wheel_for_this_system(self):
         from backend.importers.extras import wheel_fits
         name = "onnxruntime-1.32.0-cp312-cp312-manylinux_2_28_x86_64.whl"

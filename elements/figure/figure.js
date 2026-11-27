@@ -14,6 +14,7 @@ import { state, pyApi, markDirty, activeElements, forEachElementDeep } from '../
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml, setImageResolver } from '../../core/render.js';
 import { busy, placeholder } from '../../ui/busy.js';
+import { canReadEquation, convertFigureToLatex } from './toLatex.js';
 
 const fileName = (p) => String(p || '').split(/[/\\]/).pop();
 
@@ -411,7 +412,13 @@ const FigureElement = {
         refresh: () => syncLinkedFigures({ force: true }),
         browse: (elIndex) => browseFigurePath(elIndex),
         openPath: (elIndex, path) => openPathInSystem(path),
+        toLatex: (elIndex) => convertFigureToLatex(activeElements()[elIndex]),
     },
+
+    // Right-click menu entries (editor/inspector/contextMenu.js).
+    contextMenu: [
+        { icon: '∑', label: 'Convert to LaTeX', when: canReadEquation, run: (el) => convertFigureToLatex(el) },
+    ],
 
     exportInner(el) {
         const src = figureSrc(el);
@@ -457,6 +464,11 @@ const FigureElement = {
                 <button class="btn btn-secondary" style="width: 100%;"
                         data-element-action="browse">📁 Browse New File...</button>
             </div>
+            ${canReadEquation(el) ? `
+            <div class="prop-group" style="margin-top: 6px;">
+                <button class="btn btn-secondary" style="width: 100%;" data-element-action="toLatex"
+                        title="A picture of an equation becomes editable LaTeX (needs the equation component)">∑ Convert to LaTeX</button>
+            </div>` : ''}
         `;
     },
 };

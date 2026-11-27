@@ -241,6 +241,19 @@ class Api:
         from .importers import progress
         return {"success": True, **progress.get()}
 
+    def read_equation(self, project_folder, element):
+        """A picture element read back to LaTeX: {"success", "element" (the text
+        element replacing it), "sure", "unsure"}, or needs_extra "equations"."""
+        from .importers import extras
+        from .importers.equations import read_figure
+        reader = extras.equation_reader()
+        if reader is None:
+            return {"success": False, "needs_extra": "equations", "extra_message": extras.EQUATIONS_MESSAGE,
+                    "error": "Reading equations needs an extra component."}
+        res = read_figure(project_folder, element or {}, reader)
+        desktop.debug(f"[equation] {res.get('success')} {res.get('sure', '')} {res.get('error', '')}")
+        return res
+
     def install_extra(self, name):
         """Download an optional component (PDF import), after the user agreed."""
         from .importers import extras

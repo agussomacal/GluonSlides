@@ -160,6 +160,17 @@ def _equations_path():
         sys.path.insert(0, site)
 
 
+_reader = None
+
+
+def equation_reader():
+    """The EquationReader, loaded once (its models take a moment to load), or None."""
+    global _reader
+    if _reader is None:
+        _reader = load_equation_reader()
+    return _reader
+
+
 def load_equation_reader():
     """An EquationReader (latex_ocr.py), or None when the component is missing."""
     from . import latex_ocr

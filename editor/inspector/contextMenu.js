@@ -1,11 +1,14 @@
 // ============================================================
-// editor/inspector/contextMenu.js — Right-click "Go to Gluon file"
-// menu. Targets are read from data-slide-id / data-element-id
-// attributes that editor/editor.js puts on thumbnails and canvas
-// elements.
+// editor/inspector/contextMenu.js — The right-click menu: "Go to Gluon
+// file", plus what the element's own type offers (its definition's
+// `contextMenu: [{ icon, label, when(el), run(el) }]`, e.g. a picture's
+// "Convert to LaTeX"). Targets are read from data-slide-id /
+// data-element-id attributes that editor/editor.js puts on thumbnails
+// and canvas elements.
 // ============================================================
 
-import { state } from '../../core/state.js';
+import { state, currentSlide, findElementPath } from '../../core/state.js';
+import { ElementRegistry } from '../../core/registry.js';
 import { parseIdValue } from './glNavigation.js';
 
 const MENU_ID = 'gl-context-menu';
@@ -34,28 +37,39 @@ function targetFromEvent(e) {
     return null;
 }
 
+/** The element a target names, on the slide being edited (groups included). */
+function targetElement(target) {
+    if (!target || target.elementId === null || target.elementId === undefined) return null;
+    const slide = currentSlide();
+    const path = findElementPath(slide, target.elementId);
+    if (!path) return null;
+    const container = path.length ? path[path.length - 1].children : slide.elements;
+    return container.find(el => el.id === target.elementId) || null;
+}
+
+/** The element type's own entries that apply to `el`. */
+function elementItems(el) {
+    const def = el ? ElementRegistry.get(el.type) : null;
+    return ((def && def.contextMenu) || []).filter(item => !item.when || item.when(el));
+}
+
 /** Installs the menu; `onGoTo(target)` opens the inspector at a target. */
 export function initContextMenu({ onGoTo }) {
     const menu = document.createElement('div');
     menu.id = MENU_ID;
-    menu.innerHTML = `
-        <button type="button">
-            <span>📄</span>
-            <span>Go to Gluon file</span>
-        </button>`;
     document.body.appendChild(menu);
 
-    let pendingTarget = null;
-    const hide = () => {
-        menu.classList.remove('open');
-        pendingTarget = null;
-    };
+    const hide = () => menu.classList.remove('open');
 
-    menu.querySelector('button').addEventListener('click', () => {
-        const target = pendingTarget || {};
-        hide();
-        onGoTo(target);
-    });
+    const button = (icon, label, run) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = '<span></span><span></span>';
+        b.children[0].textContent = icon;
+        b.children[1].textContent = label;
+        b.addEventListener('click', () => { hide(); run(); });
+        return b;
+    };
 
     document.addEventListener('contextmenu', (e) => {
         const target = targetFromEvent(e);
@@ -64,10 +78,13 @@ export function initContextMenu({ onGoTo }) {
             return;
         }
         e.preventDefault();
-        pendingTarget = target;
-        menu.style.left = `${Math.min(e.clientX, window.innerWidth - 205)}px`;
-        menu.style.top = `${Math.min(e.clientY, window.innerHeight - 60)}px`;
+        menu.replaceChildren(button('📄', 'Go to Gluon file', () => onGoTo(target)));
+        const el = targetElement(target);
+        elementItems(el).forEach(item => menu.appendChild(button(item.icon || '', item.label, () => item.run(el))));
         menu.classList.add('open');
+        const h = menu.offsetHeight || 60;
+        menu.style.left = `${Math.min(e.clientX, window.innerWidth - 205)}px`;
+        menu.style.top = `${Math.min(e.clientY, window.innerHeight - h - 4)}px`;
     });
 
     document.addEventListener('click', (e) => {
