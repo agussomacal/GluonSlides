@@ -133,7 +133,7 @@ check('export: every page its own number, continuation included', JSON.stringify
 await ev.close();
 
 // ---------- Fields ▾ menu ----------
-check('Text Box stays a one-click button', await page.isVisible('.editor-toolbar > [data-type="text"]'));
+check('Text Box stays a one-click button', await page.isVisible('.editor-toolbar [data-category="text"] > [data-type="text"]'));
 await page.click('[data-category="fields"] > .toolbar-btn');
 const entries = await page.$$eval('[data-category="fields"] .toolbar-menu [data-variant]', ns => ns.map(n => n.dataset.variant));
 check('Fields ▾ lists the fields', entries.join(',') === 'slidenumber,footer,slidetitle,sectiontitle,titlepage,toc', entries.join(','));

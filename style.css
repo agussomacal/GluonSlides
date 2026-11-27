@@ -504,6 +504,19 @@ body {
     opacity: 0.7;
 }
 
+/* Split button: the main part adds, the ▾ opens the menu */
+.toolbar-split .toolbar-split-main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.toolbar-split .toolbar-split-caret {
+    margin-left: -1px;
+    padding-left: 7px;
+    padding-right: 7px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
 .toolbar-menu {
     display: none;
     position: fixed;        /* placed under its button by editor/toolbar.js */

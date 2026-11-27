@@ -26,8 +26,12 @@
 //   handles(el)  : optional [{ id, kind, x, y }] drawn when selected
 //                  (box-local units); dragHandle(el, id, px, py, opts)
 //                  moves one (parent units); removePoint(el, i) optional
-//   variants[].create : 'drag' | 'points' | 'freehand' — drawn with
-//                  editor/tools.js; then fromPoints(points) gives props
+//   variants[].create : 'drag' | 'points' | 'freehand' | 'box' — drawn
+//                  with editor/tools.js; then fromPoints(points, variantId)
+//                  gives props. For 'box', boxGuides(w, h) -> {rows, cols}
+//                  optionally draws a grid in the preview.
+//   variants[].pick : optional async () -> props | null — asks first (a
+//                  file, a dialog); null cancels the add
 //   toolbar      : optional; false hides the toolbar "add" button
 //   actions      : optional { name: fn(elIndex, arg, el) }. A button in
 //                  properties() HTML with data-element-action="name"

@@ -46,10 +46,22 @@ const el = () => app(async () => JSON.parse(JSON.stringify((await import('/core/
 const cellBox = (r, c) => app(([r, c]) => { const n = document.querySelector(`#slide-canvas [data-r="${r}"][data-c="${c}"]`); const b = n.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, [r, c]);
 const cellText = (r, c) => app(([r, c]) => document.querySelector(`#slide-canvas [data-r="${r}"][data-c="${c}"]`)?.textContent.trim(), [r, c]);
 
+const toClient = (x, y) => app(([x, y]) => {
+    const r = document.getElementById('slide-canvas').getBoundingClientRect();
+    const s = r.width / 1920; return [r.left + x * s, r.top + y * s];
+}, [x, y]);
+const textMenu = async (variant) => {
+    await page.click('[data-category="text"] .toolbar-split-caret');
+    await page.click(`[data-category="text"] .toolbar-menu [data-variant="${variant}"]`);
+};
+
 // ---------- Adding and editing ----------
-await page.click('[data-role="add-element"][data-type="table"]');
+await textMenu('draw');
+check('Table (draw it) starts a box tool', await page.isVisible('#tool-hint'));
+await page.mouse.click(...await toClient(200, 200));
+await page.waitForTimeout(150);
 let e = await el();
-check('added: 3×3 with a header row', e.type === 'table' && e.rows.length === 3 && e.rows[0].length === 3 && e.header === 'yes');
+check('a click: the usual box, 3×3 with a header row', e.type === 'table' && e.rows.length === 3 && e.rows[0].length === 3 && e.header === 'yes');
 check('drawn as a table, header cells as th', await app(() => document.querySelectorAll('#slide-canvas table.gl-table th').length === 3 && document.querySelectorAll('#slide-canvas table.gl-table td').length === 6));
 let [x, y] = await cellBox(2, 1);
 await page.mouse.dblclick(x, y);
@@ -180,6 +192,43 @@ check('.gl: the link, and the cells too', gl2.includes('\t.data {data/results.cs
 await page.click('[data-element-action="unlink"]');
 e = await el();
 check('Unlink keeps the cells', !e.data && e.rows.length === 4);
+
+// ---------- Drawing a box; from a CSV file; from pasted cells ----------
+const last = () => app(async () => JSON.parse(JSON.stringify((await import('/core/state.js')).state.slides[0].elements.at(-1), (k, v) => (k.startsWith('_') ? undefined : v))));
+await textMenu('draw');
+let [d0x, d0y] = await toClient(100, 600);
+let [d1x, d1y] = await toClient(1380, 1000);
+await page.mouse.move(d0x, d0y); await page.mouse.down();
+await page.mouse.move(d1x, d1y, { steps: 5 });
+const guides = await app(() => (document.querySelector('.tool-preview-close')?.getAttribute('d') || '').match(/M/g)?.length || 0);
+await page.mouse.up(); await page.waitForTimeout(150);
+let t = await last();
+check('the preview shows the grid while drawing', guides === 3 + 3, guides);
+check('a drawn box: 4 columns × 4 rows to fit it', t.type === 'table' && t.rows.length === 4 && t.rows[0].length === 4 && Math.abs(t.x - 100) <= 3 && Math.abs(t.width - 1280) <= 4, `${t.rows.length}x${t.rows[0].length} at ${t.x} w${t.width}`);
+
+await app(async () => { (await import('/core/state.js')).state.projectFolder = '/home/me/talk'; });
+await textMenu('csv');
+await page.waitForTimeout(250);
+t = await last();
+check('from a CSV file: linked, data/ copy + original', t.type === 'table' && t.data && t.data.src === 'data/results.csv' && t.data.original === '/home/me/run/results.csv' && t.rows[0][0] === 'Method', JSON.stringify(t.data));
+
+const before = await app(async () => (await import('/core/state.js')).state.slides[0].elements.length);
+await app(() => { window.__clip = { text: 'a;b;c\n1;"2;5";3\n' }; });
+await textMenu('paste');
+await page.waitForSelector('#table-paste-modal');
+check('pasted cells: the dialog starts from the clipboard', (await page.inputValue('#table-paste-modal textarea')).startsWith('a;b;c') && (await page.textContent('#table-paste-modal .table-paste-status')).includes('2 rows × 3 columns'));
+await page.keyboard.press('Escape');
+check('Esc cancels: nothing added', !(await page.$('#table-paste-modal')) && (await app(async () => (await import('/core/state.js')).state.slides[0].elements.length)) === before);
+await textMenu('paste');
+await page.waitForSelector('#table-paste-modal');
+await page.fill('#table-paste-modal textarea', '| x | y |\n|---|---|\n| $a$ | 2 |');
+await page.uncheck('#table-paste-modal .table-paste-header');
+await page.click('#table-paste-modal [data-paste="ok"]');
+await page.waitForTimeout(150);
+t = await last();
+check('a pasted Markdown table, no header', JSON.stringify(t.rows) === JSON.stringify([['x', 'y'], ['$a$', '2']]) && t.header === 'no', JSON.stringify(t.rows));
+const csvRows = await app(async () => (await import('/elements/table/table.js')).parseCellsText('a,"b, c",d\n1,"say ""hi"" now",3'));
+check('CSV quotes and commas inside cells', JSON.stringify(csvRows) === JSON.stringify([['a', 'b, c', 'd'], ['1', 'say "hi" now', '3']]), JSON.stringify(csvRows));
 
 // ---------- Pasting spreadsheet cells; export ----------
 await app(() => { window.__clip = { text: 'Name\tScore\nAna\t9\nBo\t7\n' }; });

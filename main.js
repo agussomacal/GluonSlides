@@ -139,7 +139,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 // (pywebview adds its functions asynchronously): both wait for it.
 startFigureSync(); // linked figures follow their original files
 startTableSync(); // linked tables follow their CSV files
-initFileDrop(props => insertElement('figure', props)); // images dropped on the window
+initFileDrop((type, props) => insertElement(type, props)); // images and CSV files dropped on the window
 initRecents();
 initPanes(); // hidden side panes (remembered)
 initUpdateNotice(); // "a new version is available" (backend/updates.py)

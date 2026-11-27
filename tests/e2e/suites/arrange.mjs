@@ -188,7 +188,7 @@ await page.mouse.up();
 await page.keyboard.up('Alt');
 await page.waitForTimeout(100);
 b = await byId(3);
-check('Alt: no snapping', Math.abs(b.x - 103) < 2 && b.x !== 100, JSON.stringify(b));
+check('Alt: no snapping', Math.abs(b.x - 103) <= 3 && b.x !== 100, JSON.stringify(b));
 // Resize: the right edge snaps to another object's left edge
 await setPos([[3, 500, 300]]);
 await select([]);

@@ -13,7 +13,11 @@ await page.evaluate(async () => { const m = await import('/core/state.js'); m.st
 
 // Toolbar layout
 const toolbar = await page.$$eval('[data-role="add-element"]', ns => ns.map(n => n.dataset.type || `[${n.dataset.category}]`));
-check('toolbar: Text, [columns], Table, [fields], [shapes], [lines], Figure', JSON.stringify(toolbar) === '["text","[columns]","table","[fields]","[shapes]","[lines]","figure"]', JSON.stringify(toolbar));
+check('toolbar: [text], [fields], [shapes], [lines], Figure', JSON.stringify(toolbar) === '["[text]","[fields]","[shapes]","[lines]","figure"]', JSON.stringify(toolbar));
+await page.click('[data-category="text"] .toolbar-split-caret');
+const textItems = await page.$$eval('[data-category="text"] .toolbar-menu [data-index]', ns => ns.map(n => n.textContent.trim().replace(/^\S+\s+/, '')));
+check('Text ▾: text box, columns, tables', JSON.stringify(textItems) === JSON.stringify(['Text Box', 'Two columns', 'Two columns, wide left (60/40)', 'Three columns', 'Table (draw it)', 'Table from a CSV file…', 'Table from pasted cells…']), JSON.stringify(textItems));
+await page.click('[data-category="text"] .toolbar-split-caret');
 await page.click('[data-category="shapes"] > .toolbar-btn');
 const items = await page.$$eval('[data-category="shapes"] .toolbar-menu button', ns => ns.map(n => n.textContent.trim()));
 check('shapes menu entries', items.length === 8, items.join(' | '));

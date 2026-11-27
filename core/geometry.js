@@ -220,8 +220,9 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
     const shift = (b, dx, dy) => ({ left: b.left + dx, right: b.right + dx, top: b.top + dy, bottom: b.bottom + dy });
 
     function onMouseMove(moveEvent) {
-        const dx = (moveEvent.clientX - startX) / sx;
-        const dy = (moveEvent.clientY - startY) / sy;
+        // Whole canvas pixels, whatever the zoom (no 999.9999 positions).
+        const dx = Math.round((moveEvent.clientX - startX) / sx);
+        const dy = Math.round((moveEvent.clientY - startY) / sy);
         if (Math.abs(dx) > DRAG_START_PX || Math.abs(dy) > DRAG_START_PX) hasDragged = true;
 
         const freeform = moveEvent.altKey;

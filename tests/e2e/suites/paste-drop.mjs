@@ -5,7 +5,7 @@
 //   are pasted); Ctrl+C in the app replaces the system clipboard.
 //   Files dropped on the window never open in place of the app; images
 //   become linked figures where they are dropped, or replace the figure
-//   they are dropped on.
+//   they are dropped on. A CSV becomes a linked table (data/ copy).
 import { launchBrowser, BASE_URL } from '../helpers.mjs';
 
 const browser = await launchBrowser();
@@ -34,6 +34,9 @@ await page.addInitScript(() => {
             return ok({ relative_path: `figures/${base}`, path: `${folder}/figures/${base}`, data_uri: red });
         },
         refresh_linked_figures: () => ok({ updated: [] }),
+        link_table_file: (folder, path) => ok({ rows: [['k', 'v'], ['a', '1']], mtime: 1, relative_path: `data/${path.split('/').pop()}`, original: path }),
+        read_table_file: () => ok({ rows: [['k', 'v'], ['a', '1']], mtime: 1 }),
+        refresh_tables: () => ok({ updated: [] }),
         load_figure_data_uri: () => ok({ data_uri: red }),
         get_recent_projects: () => ok({ projects: [] }),
         get_inspector_settings: () => ok({ settings: null }),
@@ -188,6 +191,35 @@ const nat = els.filter(e => (e.filePath || '').includes('native'));
 check('a drop sent by the backend: a linked figure where it was dropped, once', nat.length === 1 && nat[0].originalPath === '/home/me/analysis/native.png'
     && Math.abs(nat[0].x + nat[0].width / 2 - 1500) <= 1, JSON.stringify(nat));
 await app(async () => { const { state } = await import('/core/state.js'); state.slides[0].elements = state.slides[0].elements.filter(e => !(e.filePath || '').includes('native')); (await import('/editor/editor.js')).renderEditor(); });
+
+// A CSV: a table linked to the file (copied into data/), centred where dropped
+[cx, cy] = await toClient(960, 700);
+await app(([x, y]) => window.gluonNativeDrop(['/home/me/run/results.csv'], x, y), [cx, cy]);
+await page.waitForTimeout(400);
+els = await elements();
+let tab = els.find(e => e.type === 'table');
+check('a dropped CSV: a table linked to it, data/ copy + original', tab && tab.data && tab.data.src === 'data/results.csv' && tab.data.original === '/home/me/run/results.csv'
+    && JSON.stringify(tab.rows) === '[["k","v"],["a","1"]]', JSON.stringify(tab && tab.data));
+check('…centred where it was dropped', tab && Math.abs(tab.x + tab.width / 2 - 960) <= 3 && Math.abs(tab.y + tab.height / 2 - 700) <= 3, tab && `${tab.x},${tab.y} ${tab.width}x${tab.height}`);
+// Another CSV dropped on that table: the table takes it
+await app(async () => { const m = await import('/core/state.js'); m.state.slides[0].elements.find(e => e.type === 'table').rows = [['old']]; (await import('/editor/editor.js')).renderEditor(); });
+[cx, cy] = await app(() => { const b = document.querySelector('#slide-canvas .element-table').getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+await app(([x, y]) => window.gluonNativeDrop(['/home/me/run/other.csv'], x, y), [cx, cy]);
+await page.waitForTimeout(400);
+els = await elements();
+const tables = els.filter(e => e.type === 'table');
+check('a CSV dropped on a table: that table follows the new file', tables.length === 1 && tables[0].data.src === 'data/other.csv' && tables[0].rows.length === 2, JSON.stringify(tables.map(t => t.data)));
+// From a browser (no path): the cells, not linked
+await app(async ([x, y]) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['x;y\n1;2\n3;4\n'], 'plain.csv', { type: 'text/csv' }));
+    document.elementFromPoint(x, y).dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y }));
+}, await toClient(400, 200));
+await page.waitForTimeout(900);
+els = await elements();
+tab = els.find(e => e.type === 'table' && !e.data);
+check('a CSV without its path: a table of its cells', tab && JSON.stringify(tab.rows) === '[["x","y"],["1","2"],["3","4"]]', JSON.stringify(tab && tab.rows));
+await app(async () => { const { state } = await import('/core/state.js'); state.slides[0].elements = state.slides[0].elements.filter(e => e.type !== 'table'); (await import('/editor/editor.js')).renderEditor(); });
 
 // Text dragged into a text field is left to the field
 const fieldDrop = await app(() => {

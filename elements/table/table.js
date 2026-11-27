@@ -387,6 +387,144 @@ export function startTableSync(intervalMs = 3000) {
     window.addEventListener('focus', tick);
 }
 
+/** Cells of pasted text: tab-separated (a spreadsheet), a Markdown table,
+ *  or CSV (comma or semicolon, with "quoted, cells"). [] when empty. */
+export function parseCellsText(text) {
+    const t = String(text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    if (!t.trim()) return [];
+    const lines = t.split('\n');
+    let rows;
+    if (lines.every(l => /^\s*\|.*\|\s*$/.test(l))) {
+        rows = lines.filter(l => !/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(l => splitRow(l.trim()));
+    } else {
+        const first = lines.slice(0, 20).join('\n');
+        const count = (ch) => (first.match(new RegExp(ch, 'g')) || []).length;
+        const delim = count('\t') ? '\t' : count(';') > count(',') ? ';' : ',';
+        rows = [];
+        let row = [], cell = '', quoted = false;
+        for (let i = 0; i < t.length; i++) {
+            const ch = t[i];
+            if (quoted) {
+                if (ch === '"' && t[i + 1] === '"') { cell += '"'; i++; }
+                else if (ch === '"') quoted = false;
+                else cell += ch;
+            } else if (ch === '"' && cell === '') quoted = true;
+            else if (ch === delim) { row.push(cell); cell = ''; }
+            else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+            else cell += ch;
+        }
+        row.push(cell);
+        rows.push(row);
+        rows = rows.map(r => r.map(c => c.trim()));
+    }
+    const n = Math.max(...rows.map(r => r.length));
+    return rows.map(r => [...r, ...Array(n - r.length).fill('')]);
+}
+
+/** Props for a new table holding `rows`: the box grows to fit them. */
+function propsForRows(rows, extra = {}) {
+    const scale = state.slideWidth / 1920;
+    const cols = rows.length ? rows[0].length : 1;
+    const fontSize = Math.round(28 * scale);
+    return {
+        rows,
+        width: Math.round(Math.min(state.slideWidth * 0.85, Math.max(1000 * scale, cols * 200 * scale))),
+        height: Math.round(Math.min(state.slideHeight * 0.8, Math.max(120 * scale, rows.length * fontSize * 1.9))),
+        ...extra,
+    };
+}
+
+/**
+ * Props for a table made from a CSV file. Linked (copied into data/,
+ * following the original) when the project is saved; otherwise the
+ * cells are imported once. null if the file can't be read.
+ */
+export async function tablePropsFromCsv(path) {
+    const api = pyApi();
+    if (!api || !path) return null;
+    if (state.projectFolder && typeof api.link_table_file === 'function') {
+        const res = await api.link_table_file(state.projectFolder, path);
+        if (res && res.success) {
+            flashSaveIndicator(`Linked to ${res.relative_path} ✓`);
+            return propsForRows(res.rows, {
+                data: { src: res.relative_path, sync: 'yes', original: res.original }, _mtime: res.mtime,
+            });
+        }
+    }
+    const res = await api.read_table_file(state.projectFolder || '', path);
+    if (!res || !res.success) {
+        flashSaveIndicator(`Could not read ${path}${res && res.error ? ': ' + res.error : ''}`);
+        return null;
+    }
+    flashSaveIndicator('Imported (save the project to link the table to the file)');
+    return propsForRows(res.rows);
+}
+
+/** The "From pasted cells" dialog: resolves to rows, or null. */
+async function askPastedCells() {
+    let initial = '';
+    try {
+        const api = pyApi();
+        const clip = api && typeof api.read_clipboard === 'function' ? await api.read_clipboard() : null;
+        if (clip && typeof clip.text === 'string' && /[\t,;|]/.test(clip.text)) initial = clip.text;
+    } catch (e) { /* no clipboard: an empty box */ }
+    return new Promise((resolve) => {
+        const back = document.createElement('div');
+        back.className = 'modal-backdrop show';
+        back.id = 'table-paste-modal';
+        back.innerHTML = `
+            <div class="modal" style="width: 560px;">
+                <h3>Table from pasted cells</h3>
+                <p class="prop-hint">Paste cells copied from a spreadsheet, a CSV or a Markdown table.</p>
+                <textarea class="prop-control table-paste-text" rows="10" spellcheck="false"
+                    placeholder="Method&#9;Iterations&#9;Error&#10;NGD&#9;120&#9;0.00123"></textarea>
+                <label class="prop-check"><input type="checkbox" class="table-paste-header" checked> The first row is a header</label>
+                <div class="prop-hint table-paste-status"></div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" data-paste="cancel">Cancel</button>
+                    <button class="btn btn-primary" data-paste="ok">Create table</button>
+                </div>
+            </div>`;
+        document.body.appendChild(back);
+        const area = back.querySelector('.table-paste-text');
+        const status = back.querySelector('.table-paste-status');
+        const ok = back.querySelector('[data-paste="ok"]');
+        area.value = initial;
+        const update = () => {
+            const rows = parseCellsText(area.value);
+            ok.disabled = !rows.length;
+            status.textContent = rows.length ? `${rows.length} row${rows.length > 1 ? 's' : ''} × ${rows[0].length} column${rows[0].length > 1 ? 's' : ''}` : 'Nothing pasted yet';
+        };
+        const done = (value) => {
+            back.remove();
+            window.removeEventListener('keydown', onKey, true);
+            resolve(value);
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+        };
+        area.addEventListener('input', update);
+        back.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-paste]');
+            if (e.target === back || (b && b.dataset.paste === 'cancel')) done(null);
+            else if (b && b.dataset.paste === 'ok' && !ok.disabled) {
+                done({ rows: parseCellsText(area.value), header: back.querySelector('.table-paste-header').checked ? 'yes' : 'no' });
+            }
+        });
+        window.addEventListener('keydown', onKey, true);
+        update();
+        area.focus();
+    });
+}
+
+/** Rows × columns for a drawn box (about 320 × 100 px cells at 1920 wide:
+ *  the usual 1000 × 320 box is 3 × 3). */
+function gridForBox(w, h) {
+    const scale = state.slideWidth / 1920;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    return { rows: clamp(Math.round(h / (100 * scale)), 1, 40), cols: clamp(Math.round(w / (320 * scale)), 1, 12) };
+}
+
 /** Cells from text copied in a spreadsheet (tab-separated rows), or null. */
 export function rowsFromClipboardText(text) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n');
@@ -426,7 +564,37 @@ const TableElement = {
     label: 'Add Table',
     icon: '▦',
     className: 'element-table',
-    category: 'table',
+    category: 'text', // the Text ▾ menu
+
+    // Text ▾: draw the box (its grid follows the size), or start from a
+    // CSV file (linked) or from pasted cells.
+    variants: [
+        { id: 'draw', label: 'Table (draw it)', icon: '▦', create: 'box', preset: () => ({}) },
+        {
+            id: 'csv', label: 'Table from a CSV file…', icon: '📄', preset: () => ({}),
+            async pick() {
+                return tablePropsFromCsv(await chooseCsv());
+            },
+        },
+        {
+            id: 'paste', label: 'Table from pasted cells…', icon: '📋', preset: () => ({}),
+            async pick() {
+                const got = await askPastedCells();
+                return got && propsForRows(got.rows, { header: got.header });
+            },
+        },
+    ],
+
+    boxGuides: gridForBox,
+
+    /** A drawn box: a grid sized to it, with a header row. */
+    fromPoints([a, b]) {
+        const x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]);
+        const width = Math.abs(b[0] - a[0]), height = Math.abs(b[1] - a[1]);
+        const { rows, cols } = gridForBox(width, height);
+        const cells = Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => (r === 0 ? `Column ${c + 1}` : '')));
+        return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height), rows: cells };
+    },
 
     gl: {
         props: ['x', 'y', 'width', 'height', 'header', 'borders', 'stripes', 'headerBg', 'ruleColor',

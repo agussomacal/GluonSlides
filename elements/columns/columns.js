@@ -154,7 +154,7 @@ const ColumnsElement = {
     label: 'Add Columns',
     icon: '▥',
     className: 'element-columns',
-    category: 'columns',
+    category: 'text', // the Text ▾ menu
 
     variants: [
         { id: 'two', label: 'Two columns', icon: '◫', preset: () => ({ columns: [{ width: 50, content: 'Left column' }, { width: 50, content: 'Right column' }] }) },

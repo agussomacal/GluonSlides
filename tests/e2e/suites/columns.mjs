@@ -38,8 +38,8 @@ const el = () => app(async () => JSON.parse(JSON.stringify((await import('/core/
 const colTexts = () => app(() => [...document.querySelectorAll('#slide-canvas .gl-column-text')].map(n => n.textContent.trim()));
 
 // ---------- Adding ----------
-await page.click('[data-category="columns"] > .toolbar-btn');
-await page.click('[data-category="columns"] .toolbar-menu [data-variant="wide-left"]');
+await page.click('[data-category="text"] .toolbar-split-caret');
+await page.click('[data-category="text"] .toolbar-menu [data-variant="wide-left"]');
 let e = await el();
 check('added from the Columns menu: 60/40', e.type === 'columns' && e.columns.map(c => c.width).join(',') === '60,40', JSON.stringify(e.columns));
 check('drawn as two columns', JSON.stringify(await colTexts()) === '["Left column","Right column"]');

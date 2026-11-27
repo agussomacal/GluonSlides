@@ -28,6 +28,7 @@ const HINTS = {
     points: 'Click to place points · double-click or Enter to finish · Esc: cancel',
     pointsClosed: 'Click to place points · click the first point or double-click to close · Esc: cancel',
     freehand: 'Hold the mouse button and draw · release to finish · Esc: cancel',
+    box: 'Drag a box on the slide · a click gives the usual size · Esc: cancel',
 };
 
 let tool = null;        // { type, variant, mode, def, preset }
@@ -133,6 +134,34 @@ function nearFirstPoint(p) {
         && Math.hypot(p[0] - first[0], p[1] - first[1]) < CLOSE_RADIUS_PX * screenPx();
 }
 
+/** The box being dragged, as {x, y, w, h}. */
+function boxOf(a, b) {
+    return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) };
+}
+
+/** Box mode: the dragged rectangle, and the guides of what it will hold
+ *  (def.boxGuides(w, h) -> { rows, cols }, e.g. a table's grid). */
+function renderBoxPreview(px) {
+    const { preview } = draft;
+    const [a, b] = draft.points.length > 1 ? draft.points : [draft.points[0], draft.points[0]];
+    const { x, y, w, h } = boxOf(a, b);
+    const line = preview.querySelector('.tool-preview-line');
+    line.setAttribute('d', `M${x} ${y}H${x + w}V${y + h}H${x}Z`);
+    line.setAttribute('stroke-width', String(2 * px));
+    line.setAttribute('stroke-dasharray', `${6 * px} ${4 * px}`);
+    const guides = preview.querySelector('.tool-preview-close');
+    let d = '';
+    const g = typeof tool.def.boxGuides === 'function' && w > 0 && h > 0 ? tool.def.boxGuides(w, h) : null;
+    if (g) {
+        for (let i = 1; i < g.rows; i++) d += `M${x} ${y + (h * i) / g.rows}H${x + w}`;
+        for (let j = 1; j < g.cols; j++) d += `M${x + (w * j) / g.cols} ${y}V${y + h}`;
+    }
+    guides.setAttribute('d', d);
+    guides.setAttribute('stroke-width', String(1.5 * px));
+    guides.setAttribute('stroke-dasharray', `${3 * px} ${4 * px}`);
+    preview.querySelector('.tool-preview-points').replaceChildren();
+}
+
 /** Redraws the preview from draft.points (+ the cursor position). */
 function renderPreview() {
     // If the canvas was redrawn underneath us, re-attach the preview.
@@ -148,6 +177,10 @@ function renderPreview() {
     preview.setAttribute('viewBox', `0 0 ${container.offsetWidth} ${container.offsetHeight}`);
 
     const px = screenPx();
+    if (tool.mode === 'box') {
+        renderBoxPreview(px);
+        return;
+    }
     const smooth = tool.preset.curve === 'smooth';
     const pts = draft.cursor ? [...draft.points, draft.cursor] : draft.points;
 
@@ -187,7 +220,7 @@ function finish(points, { fromDblClick = false } = {}) {
     // slide; swallow that one (a dblclick has no click after it).
     swallowClickUntil = fromDblClick ? 0 : performance.now() + 500;
     if (!points || points.length < 2) return;
-    options.onCreate(def.type, variant, def.fromPoints(points));
+    options.onCreate(def.type, variant, def.fromPoints(points, variant));
 }
 
 /** Drops consecutive points closer than `minDist`. */
@@ -216,20 +249,32 @@ function onMouseDown(e) {
         draft.container.appendChild(draft.preview);
     }
 
-    if (tool.mode === 'drag' || tool.mode === 'freehand') {
-        const start = toLocal(e, { snap: tool.mode === 'drag' });
+    if (tool.mode === 'drag' || tool.mode === 'freehand' || tool.mode === 'box') {
+        const start = toLocal(e, { snap: tool.mode !== 'freehand' });
         draft.points = [start];
         draft.cursor = null;
         renderPreview();
         const onMove = (m) => {
             if (tool.mode === 'drag') draft.points = [start, toLocal(m, { from: start })];
+            else if (tool.mode === 'box') draft.points = [start, toLocal(m)];
             else draft.points.push(toLocal(m, { snap: false }));
             renderPreview();
         };
         const onUp = (u) => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
-            if (tool.mode === 'drag') {
+            if (tool.mode === 'box') {
+                const end = toLocal(u);
+                const { w, h } = boxOf(start, end);
+                // A click (or a sliver) gives the element's usual size.
+                if (w < 8 * screenPx() || h < 8 * screenPx()) {
+                    const d = tool.def.defaults({});
+                    finish([start, [start[0] + d.width, start[1] + d.height]]);
+                } else {
+                    const b = boxOf(start, end);
+                    finish([[b.x, b.y], [b.x + b.w, b.y + b.h]]);
+                }
+            } else if (tool.mode === 'drag') {
                 const end = toLocal(u, { from: start });
                 // A click without dragging draws a default-length line.
                 const tooShort = Math.hypot(end[0] - start[0], end[1] - start[1]) < 4 * screenPx();

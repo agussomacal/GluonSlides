@@ -67,7 +67,7 @@ export function renderToolbarButtons() {
 // ---------- Element lifecycle ----------
 
 /** Adds an element of `type`, optionally using one of its toolbar variants. */
-export function addElement(type, variantId = null) {
+export async function addElement(type, variantId = null) {
     if (!currentSlide()) return;
     const def = ElementRegistry.get(type);
     if (!def) {
@@ -77,10 +77,18 @@ export function addElement(type, variantId = null) {
     // Variants that are drawn (lines, curves, freehand) start a tool instead.
     if (startTool(type, variantId)) return;
 
+    // Variants that ask first (a CSV file, pasted cells); null cancels.
+    const variant = variantId && Array.isArray(def.variants) ? def.variants.find(v => v.id === variantId) : null;
+    let picked = {};
+    if (variant && typeof variant.pick === 'function') {
+        picked = await variant.pick();
+        if (!picked || !currentSlide()) return;
+    }
+
     const elements = activeElements(); // inside the group being edited, if any
     const stagger = elements.length * 30;
     const offset = isEditingGroup() ? 20 : 200;
-    insertNewElement(def, variantId, { x: offset + stagger, y: offset + stagger });
+    insertNewElement(def, variantId, { x: offset + stagger, y: offset + stagger, ...picked });
 }
 
 /** Adds an element of `type` with `props` (e.g. a pasted image), selected. */

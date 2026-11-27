@@ -11,9 +11,9 @@ import { escapeHtml } from '../core/render.js';
 // Toolbar order and labels for categories with several entries.
 // Unknown categories are appended after these, in registration order.
 const CATEGORIES = [
-    { id: 'text', label: 'Text', icon: '📝' },
-    { id: 'columns', label: 'Columns', icon: '▥', menu: true },
-    { id: 'table', label: 'Table', icon: '▦' },
+    // Text box, columns and tables. A split button: one click adds a text
+    // box, its ▾ lists the rest.
+    { id: 'text', label: 'Text', icon: '📝', split: true, order: ['text', 'columns', 'table'] },
     { id: 'fields', label: 'Fields', icon: '#', menu: true }, // slide number, footer, date...
     { id: 'shapes', label: 'Shapes', icon: '⬛' },
     { id: 'lines', label: 'Lines & curves', icon: '〰️' },
@@ -49,7 +49,14 @@ function entriesByCategory() {
     // A category lists its own types first, then variants borrowed from
     // other types (independent of module load order).
     for (const [id, entries] of groups) {
-        groups.set(id, [...entries.filter(e => !e.borrowed), ...entries.filter(e => e.borrowed)]);
+        const sorted = [...entries.filter(e => !e.borrowed), ...entries.filter(e => e.borrowed)];
+        // A category may fix the order of its types (stable within a type).
+        const order = (CATEGORIES.find(c => c.id === id) || {}).order;
+        if (order) {
+            const rank = (e) => (order.includes(e.type) ? order.indexOf(e.type) : order.length);
+            sorted.sort((a, b) => rank(a) - rank(b));
+        }
+        groups.set(id, sorted);
     }
     return groups;
 }
@@ -94,10 +101,17 @@ export function renderAddElementToolbar(container, onAdd) {
         dropdown.className = 'toolbar-dropdown';
         dropdown.dataset.role = 'add-element';
         dropdown.dataset.category = categoryId;
+        const first = entries[0];
+        if (meta.split) dropdown.classList.add('toolbar-split');
         dropdown.innerHTML = `
+            ${meta.split ? `
+            <button class="toolbar-btn toolbar-split-main" type="button" data-type="${escapeHtml(first.type)}" title="Add a ${escapeHtml(first.label.toLowerCase())}">
+                <span>${meta.icon}</span> ${escapeHtml(meta.label)}
+            </button>
+            <button class="toolbar-btn toolbar-split-caret" type="button" title="More: ${escapeHtml(entries.slice(1).map(e => e.label).join(', '))}"><span class="toolbar-caret">▾</span></button>` : `
             <button class="toolbar-btn" type="button">
                 <span>${meta.icon}</span> ${escapeHtml(meta.label)} <span class="toolbar-caret">▾</span>
-            </button>
+            </button>`}
             <div class="toolbar-menu" role="menu">
                 ${entries.map((e, i) => `
                     ${i > 0 && e.type !== entries[i - 1].type ? '<div class="toolbar-menu-divider"></div>' : ''}
@@ -114,14 +128,20 @@ export function renderAddElementToolbar(container, onAdd) {
             slot.replaceChildren(entry.iconNode());
         });
 
-        dropdown.querySelector('.toolbar-btn').addEventListener('click', (ev) => {
+        if (meta.split) {
+            dropdown.querySelector('.toolbar-split-main').addEventListener('click', () => {
+                closeMenus();
+                onAdd(first.type, first.variant);
+            });
+        }
+        dropdown.querySelector(meta.split ? '.toolbar-split-caret' : '.toolbar-btn').addEventListener('click', () => {
             const willOpen = !dropdown.classList.contains('open');
             closeMenus(dropdown);
             dropdown.classList.toggle('open', willOpen);
             if (willOpen) {
                 // The toolbar scrolls horizontally (overflow clips), so the
                 // menu is positioned relative to the window, under its button.
-                const r = ev.currentTarget.getBoundingClientRect();
+                const r = dropdown.getBoundingClientRect();
                 const menu = dropdown.querySelector('.toolbar-menu');
                 menu.style.left = `${r.left}px`;
                 menu.style.top = `${r.bottom + 4}px`;
