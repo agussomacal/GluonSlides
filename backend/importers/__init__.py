@@ -15,7 +15,7 @@ import zipfile
 
 from ..project_io import project_paths
 
-SUPPORTED = (".tex", ".zip", ".pptx", ".pdf")
+SUPPORTED = (".tex", ".zip", ".pptx", ".pdf", ".md")
 
 
 def _safe_extract(zf, dest):
@@ -37,7 +37,7 @@ def import_talk(source, parent_folder, name, options=None):
     options = options or {}
     ext = os.path.splitext(source or "")[1].lower()
     if ext not in SUPPORTED:
-        return {"success": False, "error": "Choose a Beamer .tex (or a .zip of it), a .pptx or a .pdf."}
+        return {"success": False, "error": "Choose a Beamer .tex, a Slidev .md (or a .zip of either), a .pptx or a .pdf."}
     if not os.path.isfile(source):
         return {"success": False, "error": f"File not found: {source}"}
     target = os.path.join(parent_folder or "", "".join(c for c in name if c.isalnum() or c in (" ", "-", "_")).strip() or "Presentation")
@@ -48,16 +48,20 @@ def import_talk(source, parent_folder, name, options=None):
         return paths
     folder = paths["folder"]
     try:
-        if ext in (".tex", ".zip"):
+        if ext in (".tex", ".zip", ".md"):
             from .beamer import find_main_tex, import_beamer
+            from .slidev import find_entry, import_slidev
             if ext == ".zip":
                 with tempfile.TemporaryDirectory(prefix="gluon-import-") as tmp:
                     with zipfile.ZipFile(source) as zf:
                         _safe_extract(zf, tmp)
                     main = find_main_tex(tmp)
-                    if not main:
-                        return {"success": False, "error": "No LaTeX document (\\documentclass ... \\begin{document}) in the zip."}
-                    result = import_beamer(main, folder, linked=False)
+                    entry = None if main else find_entry(tmp)
+                    if not main and not entry:
+                        return {"success": False, "error": "No LaTeX document (\\documentclass ... \\begin{document}) or Slidev slides.md in the zip."}
+                    result = import_beamer(main, folder, linked=False) if main else import_slidev(entry, folder, linked=False)
+            elif ext == ".md":
+                result = import_slidev(source, folder)
             else:
                 result = import_beamer(source, folder, linked=True)
         elif ext == ".pptx":

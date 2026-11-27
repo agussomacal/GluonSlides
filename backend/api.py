@@ -21,7 +21,7 @@ PROJECT_FILE_TYPES = ("Slide Project Files (*.gl)", "Legacy Projects (*.ssproj;*
 FIGURE_FILE_TYPES = ("Figure Files (*.png;*.jpg;*.jpeg;*.svg;*.pdf;*.eps)", "All Files (*.*)")
 PDF_FILE_TYPES = ("PDF Files (*.pdf)", "All Files (*.*)")
 TABLE_FILE_TYPES = ("Tables (*.csv;*.tsv;*.txt)", "All Files (*.*)")
-IMPORT_FILE_TYPES = ("Talks (*.tex;*.zip;*.pptx;*.pdf)", "All Files (*.*)")
+IMPORT_FILE_TYPES = ("Talks (*.tex;*.md;*.zip;*.pptx;*.pdf)", "All Files (*.*)")
 FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
 

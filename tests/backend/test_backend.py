@@ -831,6 +831,82 @@ class TablesTest(TempDirTest):
         self.assertFalse(tables.link_table_file("", "x.csv")["success"])
 
 
+SLIDEV_FIXTURE = REPO / "tests" / "backend" / "fixtures" / "slidev"
+
+
+class SlidevImportTest(TempDirTest):
+    """Slidev -> slides (backend/importers/slidev.py), on a small deck using each feature."""
+
+    def setUp(self):
+        super().setUp()
+        from backend.importers import import_talk
+        self.import_talk = import_talk
+        res = import_talk(str(SLIDEV_FIXTURE / "slides.md"), self.tmp, "Slidev Talk")
+        self.assertTrue(res["success"], res)
+        self.p = res["project"]
+        self.s = {s["title"]: s for s in self.p["slides"]}
+
+    def els(self, title, kind=None):
+        return [e for e in self.s[title]["elements"] if kind is None or e["type"] == kind]
+
+    def test_slides_includes_hidden_and_separators(self):
+        self.assertEqual([s["title"] for s in self.p["slides"]], ["A Slidev Talk", "Results", "Clicks in a grid", "Two columns"])
+        self.assertEqual((self.p["title"], self.p["author"], self.p["width"], self.p["height"]), ("A Slidev Talk", "Ana", 1920, 1080))
+
+    def test_katex_macros(self):
+        self.assertIn("\\newcommand{\\R}{\\mathbb{R}}", self.p["macros"])
+        self.assertIn("\\newcommand{\\pair}[2]{\\langle #1, #2 \\rangle}", self.p["macros"])
+
+    def test_cover_background_title_and_notes(self):
+        bg = self.els("A Slidev Talk", "figure")[0]
+        self.assertEqual((bg["filePath"], bg["width"], bg.get("locked")), ("figures/bg.png", 1920, "yes"))
+        texts = [e["content"] for e in self.els("A Slidev Talk", "text")]
+        self.assertIn("**A Slidev Talk**", texts)
+        self.assertTrue(all(e["textAlign"] == "center" for e in self.els("A Slidev Talk", "text")))  # class: text-center
+        self.assertEqual(self.s["A Slidev Talk"]["notes"], "Welcome everyone.")
+        self.assertEqual(self.s["Results"]["notes"], "Say the results slowly.")
+
+    def test_text_mdc_grid_table(self):
+        texts = [e["content"] for e in self.els("Results", "text")]
+        self.assertIn('Text with $x \\in \\R$ and <span style="color: white;">a ghost</span>.', texts)
+        cols = self.els("Results", "columns")[0]
+        self.assertEqual([c["content"] for c in cols["columns"]], ["Left column", "Right column"])
+        table = self.els("Results", "table")[0]
+        self.assertEqual(table["rows"], [["Method", "Error"], ["NGD", "0.1"]])
+        two = self.els("Two columns", "columns")[0]
+        self.assertEqual([c["content"] for c in two["columns"]], ["Left side", "Right side"])  # layout: two-cols
+
+    def test_clicks_become_steps(self):
+        steps = {e.get("content", e["type"]): e.get("step", 1) for e in self.els("Results")}
+        self.assertEqual(steps["$$\\pair{u}{v}$$"], 2)
+        self.assertEqual((steps["- first"], steps["- second"]), (3, 4))  # <v-clicks>: one per item
+        self.assertEqual((steps["figure"], steps["path"]), (1, 1))       # no click: from the start
+        grid = {e["content"]: e for e in self.els("Clicks in a grid", "text")}
+        self.assertEqual((grid["A"].get("step", 1), grid["B later"]["step"]), (1, 2))
+        self.assertGreater(grid["B later"]["x"], grid["A"]["x"])  # its own column
+
+    def test_absolute_boxes_and_arrows_are_placed_exactly(self):
+        fig = self.els("Results", "figure")[0]
+        k = 1920 / 980
+        self.assertAlmostEqual(fig["x"], 325 * k, delta=1)
+        self.assertAlmostEqual(fig["y"] + fig["height"], 1080 - 20 * k, delta=2)  # bottom-20px
+        self.assertAlmostEqual(fig["width"], 200 * k, delta=1)
+        arrow = self.els("Results", "path")[0]
+        self.assertEqual((arrow["stroke"], arrow.get("end")), ("#ff0000", "arrow"))
+        self.assertAlmostEqual(arrow["x"], 100 * k, delta=1)
+
+    def test_from_a_zip(self):
+        import zipfile
+        z = os.path.join(self.tmp, "deck.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            for f in SLIDEV_FIXTURE.rglob("*"):
+                if f.is_file():
+                    zf.write(f, Path("deck") / f.relative_to(SLIDEV_FIXTURE))
+        res = self.import_talk(z, self.tmp, "From Zip")
+        self.assertTrue(res["success"], res)
+        self.assertEqual(len(res["project"]["slides"]), 4)
+
+
 class PackagingTest(unittest.TestCase):
     """What the installable app relies on (packaging/)."""
 

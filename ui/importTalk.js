@@ -1,6 +1,6 @@
 // ============================================================
-// ui/importTalk.js — "Import talk…": a Beamer .tex (or a .zip of it, as
-// Overleaf exports), a PowerPoint .pptx or a PDF becomes a new project.
+// ui/importTalk.js — "Import talk…": a Beamer .tex, a Slidev slides.md (or a
+// .zip of either), a PowerPoint .pptx or a PDF becomes a new project.
 //
 // The backend (backend/importers/) converts the file, copies figures into
 // the new project folder and returns slides and elements; this module
@@ -16,7 +16,7 @@ const $ = (id) => document.getElementById(id);
 let chosen = { source: '', folder: '' };
 
 function baseName(path) {
-    return String(path || '').split(/[/\\]/).pop().replace(/\.(tex|zip|pptx|pdf)$/i, '').replace(/[_]+/g, ' ').trim();
+    return String(path || '').split(/[/\\]/).pop().replace(/\.(tex|zip|pptx|pdf|md)$/i, '').replace(/[_]+/g, ' ').trim();
 }
 
 function refresh() {
