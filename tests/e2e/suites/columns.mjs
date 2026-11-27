@@ -127,6 +127,21 @@ check('a Markdown image is loaded from the project folder', (await app(() => win
     && await app(() => (document.querySelector('#slide-canvas .gl-column img')?.getAttribute('src') || '').startsWith('data:image/png')));
 const html = await app(async () => (await import('/export/html.js')).getExportHtmlString());
 check('export: the columns and the image (embedded)', html.includes('gl-columns') && /<img[^>]+src="data:image\/png/.test(html) && html.includes('.gl-columns {'));
+{
+    // in an export the columns' text has the element's size (not the page default)
+    const size = await app(async () => (await import('/core/defaults.js')).forDrawing((await import('/core/state.js')).state.slides[0].elements[0]).fontSize);
+    const tag = (html.match(/<div class="el element-columns"[^>]*>/) || [''])[0];
+    check('export: the columns keep their font size', size > 0 && tag.includes(`font-size:${size}px`), `${size} ${tag.slice(0, 300)}`);
+}
+// A display equation follows its column's alignment on the canvas, as in exports
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    state.slides[0].elements[0].columns[0] = { width: 60, content: '$$x = y$$' };
+    document.dispatchEvent(new CustomEvent('slide-content-changed'));
+});
+await page.waitForTimeout(300);
+const mathAlign = await app(() => getComputedStyle(document.querySelector('#slide-canvas .gl-column .katex-display > .katex')).textAlign);
+check('canvas: an equation in a left column is on the left (as exported)', mathAlign === 'left' || mathAlign === 'start', mathAlign);
 await app(async () => {
     const { state } = await import('/core/state.js');
     state.defaults = { text: { fontFamily: 'Merriweather' } };

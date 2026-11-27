@@ -128,6 +128,8 @@ img.md-image { max-width: 100%; height: auto; }
 .gl-column-text ul ul { list-style-type: circle; }
 .gl-column-text li { margin-bottom: 0.15em; }
 .gl-column-text .katex-display { text-align: inherit; margin: 0.4em 0; }
+/* ...and the equation inside it too (KaTeX centres it), on the canvas as in exports */
+.gl-column-text .katex-display > .katex { text-align: inherit; }
 .gl-column[style*="text-align: center"] .gl-column-text ul,
 .gl-column[style*="text-align: center"] .gl-column-text ol { width: fit-content; margin-left: auto; margin-right: auto; }
 

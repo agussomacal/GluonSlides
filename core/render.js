@@ -217,7 +217,10 @@ export function exportElementMarkup(raw) {
     if (el.type === 'text') {
         return `<div class="el ${def.className} align-${el.textAlign || 'center'}" style="${geo} ${textElementSharedStyle(el)}">${def.exportInner(el)}</div>`;
     }
-    return `<div class="el" style="${geo}">${def.exportInner(el)}</div>`;
+    // Columns, tables...: their text takes the element's font, size and
+    // colour (on the canvas renderDom sets these on the box).
+    const font = el.fontSize ? `font-size:${el.fontSize}px;font-family:${fontStack(el.fontFamily).replace(/"/g, "'")};color:${el.fontColor || 'inherit'};` : '';
+    return `<div class="el ${def.className}" style="${geo}${font}">${def.exportInner(el)}</div>`;
 }
 
 // ---------- Grid + dimensions ----------
