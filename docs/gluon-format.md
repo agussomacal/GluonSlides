@@ -496,39 +496,68 @@ Children are `.element.*` or `.macro.*` lines; other directives aren't allowed i
 
 ### plot
 
-Curves `y = f(x)` computed from formulas, with the project's [variables](#vars): moving a [slider](#slider) redraws them, on the canvas, while presenting and in an exported HTML. The body is the formulas, kept exactly as written: a `.curve` line starts each curve, and its formula follows.
+A plot: **layers** drawn on shared axes, computed from formulas and data with the project's [variables](#vars). Moving a [slider](#slider) redraws it, on the canvas, while presenting and in an exported HTML. The body is kept exactly as written: a line per layer, `.kind key:value …`, followed by that layer's formula or rows.
 
 ```gl
 .project {Deck}
 .slide {Gauss} id:1
 .element.slider id:41 x:100 y:900 width:600 height:70 var:mu min:-3 max:3 step:0.1 value:0 label:"$\mu$"
-.element.slider id:42 x:800 y:900 width:600 height:70 var:sigma min:0.2 max:3 step:0.1 value:1 label:"$\sigma$"
-.element.plot id:40 x:100 y:100 width:1200 height:700 lang:python xmin:-6 xmax:6 ymin:0 ymax:1 xlabel:"$x$"
+.element.slider id:42 x:800 y:900 width:600 height:70 var:sigma min:0.5 max:3 step:0.1 value:1 label:"$\sigma$"
+.element.plot id:40 x:100 y:100 width:1200 height:700 lang:python xmin:-6 xmax:6 ymin:0 ymax:0.85 xlabel:"$x$"
+	.hist samples:3000 bins:40 density:yes color:@muted label:"samples"
+	y = normal(mu, sigma)
 	.curve color:@primary width:4 label:"$\mathcal{N}(\mu,\sigma^2)$"
 	s2 = sigma**2
 	y = exp(-(x - mu)**2 / (2*s2)) / sqrt(2*pi*s2)
+	.fill from:mu-sigma to:mu+sigma color:@primary opacity:0.2
+	y = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)
+	.vline x:mu label:"μ"
 	.curve color:@muted dash:dashed label:"standard" lang:latex
 	\frac{1}{\sqrt{2\pi}} e^{-x^2/2}
 ```
 
 | Parameter | Values | Built-in | Meaning |
 |---|---|---|---|
-| `lang` | `python` / `latex` | `python` | how the formulas are written (a `.curve` can say its own) |
-| `xmin`, `xmax` | numbers | `-5`, `5` | the x range |
-| `ymin`, `ymax` | numbers | from the curves | the y range; left out, it is found from the curves at the starting values and then kept while sliders move |
+| `lang` | `python` / `latex` | `python` | how the formulas are written (a layer can say its own) |
+| `xmin`, `xmax`, `ymin`, `ymax` | numbers | from the layers | the ranges; one left out is found from the layers at the starting values, then kept while sliders move |
+| `xscale`, `yscale` | `log` | linear | logarithmic axes (ticks at powers of 10) |
+| `xticks`, `yticks` | `pi` | numbers | ticks at multiples of π (π/2, π, 3π/2…) |
+| `aspect` | `equal` | | the same unit on x and y (a circle is round); the ranges grow to fit the box |
 | `xlabel`, `ylabel` | text (Markdown and math) | | axis labels |
 | `grid` | `yes` / `no` | `yes` | grid lines |
-| `legend` | `yes` / `no` | `yes` | the legend of the curves that have a `label` |
-| `samples` | number | `400` | points computed per curve |
+| `legend` | `yes` / `no` | `yes` | the legend of the layers that have a `label` |
+| `samples` | number | `400` | points computed per curve (a layer can say its own) |
 | `fontSize`, `fontFamily`, `fontColor` | | `28`, `sans-serif`, dark | tick labels, axis labels and legend; `fontColor` also draws the axes |
 
-**`.curve` lines** take `color` (a colour, `@theme` too), `width` (pixels, default `3`), `dash` (`dashed` / `dotted`), `label` (Markdown and math, for the legend) and `lang`. The lines under a `.curve` are its formula in `x`: helper lines `name = …` first, then the curve, `y = …` (or a last line with no name). Text before any `.curve` is a first curve. Formulas use the project's variables by name; an unknown name, or anything the reader doesn't understand, is written on the plot in red with its line.
+**Layers.** Every layer takes `color` (a colour, `@theme` too; else one of a set), `label` (Markdown and math, for the legend; on markers, plain text next to them) and `lang`. Lines take `width` and `dash` (`dashed` / `dotted`); areas take `opacity`. Parameters marked *formula* may be a number or a formula of the variables (`x:mu`, `from:mu-sigma`).
 
-**`lang:python`**: Python's syntax: `+ - * / // % **`, comparisons, `and` `or` `not`, `a if c else b`, `#` comments, a line ending in an operator or inside brackets continuing on the next. Functions: `exp log log10 log2 sqrt abs sin cos tan asin acos atan atan2 sinh cosh tanh floor ceil round min max pow sign erf erfc gamma factorial clip where heaviside sinc hypot`, constants `pi e tau inf nan`. `math.`, `np.` and `numpy.` in front of a name are ignored, so formulas copied from a script work as they are.
+| Layer | Its lines | Parameters |
+|---|---|---|
+| `.curve` | `y = …` in `x` (helper lines first) | `samples` |
+| `.fill` | `y = …` the top, and optionally `y0 = …` the bottom (else 0) | `from`, `to` (*formula*; else the x range), `opacity` (0.3) |
+| `.parametric` | `x = …` and `y = …` in `t` | `from`, `to` (*formula*; 0 and 2π), `samples` |
+| `.vline`, `.hline` | none | `x` / `y` (*formula*), `label`; dashed unless `dash:solid` |
+| `.point` | none | `x`, `y` (*formula*), `size` (7), `label` |
+| `.text` | none | `x`, `y` (*formula*), `label` (the text), `align` (`left` / `center` / `right`), `size` |
+| `.points` | rows `x, y` (or `x, y, err`), or `data:{file}` | `x`, `y`, `yerr`: columns by name or number (from 1); `size` (5). With one column, x is 1, 2, 3… |
+| `.line` | as `.points` | `markers:yes` adds the points |
+| `.hist` | one number per row, `data:{file}` with `column`, or a formula of samples | `bins` (30), `density:yes` (area 1; else counts), `from`, `to` (*formula*; else the x range), `samples` (draws of the formula; 1000), `seed` (1), `opacity` |
+| `.bar` | rows `name, value` (names make a category axis) or `number, value` | `x`, `y` (columns), `barwidth` (0.8), `offset` (to put several sets side by side) |
+| `.heatmap` | `z = …` in `x` and `y` | `colormap` (`viridis`, `magma`, `coolwarm`, `blues`, `gray`), `zmin`, `zmax` (else found once), `resolution` (120 cells across), `colorbar` (`yes` / `no`), `opacity` |
+| `.contour` | `z = …` in `x` and `y` | `levels` (how many, 10) or `at:"0.5, 1, 2"` (which values, *formulas*), `colormap` (else `color`), `resolution` (100) |
+| `.quiver` | `u = …` and `v = …` in `x` and `y` | `grid` (16 arrows across), `scale` (else the longest arrow fits a cell) |
+
+Text before any layer line is a first `.curve`. Rows are separated by commas, semicolons or tabs (or spaces); a first row of names only is a header, and `#` starts a comment.
+
+**Data files**: `data:{data/run.csv}` reads a CSV of the project folder (the panel's *＋ Data file…* copies one into `data/` and writes `original:"…"`, so the copy follows the file your script rewrites, like a linked table). Columns are chosen by their header's name (`x:step y:loss`, quoted if they have spaces) or by number. A file with very many rows is drawn from 20 000 of them, evenly spread (5 000 in an exported HTML), the last one always kept.
+
+**Histograms of a formula**: with `samples:N`, the formula is drawn N times: random functions give the samples (`y = normal(mu, sigma)`). The draws are seeded (`seed`), so moving a slider moves the same draws instead of making new noise; `i` is the draw's number (0 to N−1).
+
+**`lang:python`**: Python's syntax: `+ - * / // % **`, comparisons, `and` `or` `not`, `a if c else b`, `#` comments, a line ending in an operator or inside brackets continuing on the next. Functions: `exp log log10 log2 sqrt abs sin cos tan asin acos atan atan2 sinh cosh tanh floor ceil round min max pow sign erf erfc gamma factorial clip where heaviside sinc hypot`, constants `pi e tau inf nan`. Random draws: `normal(mu, sigma)` (also `gauss`, `randn()`), `uniform(a, b)`, `rand()`, `exponential(scale)`, `lognormal`, `poisson(lam)`, `binomial(n, p)`, `randint(a, b)`. `math.`, `np.`, `numpy.`, `np.random.` and `random.` in front of a name are ignored, so formulas copied from a script work as they are.
 
 **`lang:latex`**: the formula as you would typeset it: `\frac{a}{b}`, `\sqrt{…}` and `\sqrt[n]{…}`, `x^{2}`, `e^{…}` (the exponential), `\exp`, `\ln` and `\log` (natural), `\sin` and the other functions (with or without brackets: `\sin x`), `|x|`, `\left( … \right)`, `\cdot`, `\times`, products without a sign (`2\pi\sigma^2`), Greek letters (`\mu` is the variable `mu`), subscripts as part of a name (`x_0`, `\sigma_{1}`), `\pi`, `\infty`. Lines (or `\\`) can be `y = …` or `\sigma_2 = …` helpers; `f(x) = …` is the curve.
 
-Formulas are read by the app's own small parser: they can compute numbers and nothing else, so a shared file or an exported presentation can't run code.
+Formulas are read by the app's own small parser: they can compute numbers and nothing else, so a shared file or an exported presentation can't run code. A mistake (an unknown name, a missing column, a bracket) is written on the plot in red, with the layer and line.
 
 ### slider
 

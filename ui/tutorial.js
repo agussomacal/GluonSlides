@@ -97,8 +97,11 @@ export const TUTORIAL_GL = String.raw`# GluonSlides tutorial
 .element.text id:101 style:title x:100 y:60 width:1700 height:120
 	Plots that move: $\mu = \var{mu}[%.1f]$, $\sigma = \var{sigma}[%.1f]$
 .element.plot id:102 x:80 y:190 width:1100 height:640 lang:python xmin:-6 xmax:6 ymin:0 ymax:0.85 xlabel:"$x$" fontSize:26
+	.hist samples:2000 bins:48 density:yes from:-6 to:6 color:@muted opacity:0.35 label:"2000 samples"
+	y = normal(mu, sigma)
 	.curve color:@primary width:5 label:"$\mathcal{N}(\mu, \sigma^2)$"
 	y = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)
+	.vline x:mu color:@primary label:"μ"
 	.curve color:@muted dash:dashed label:"$\mathcal{N}(0, 1)$" lang:latex
 	\frac{1}{\sqrt{2\pi}} e^{-x^2/2}
 .element.slider id:103 x:120 y:870 width:520 height:70 var:mu min:-3 max:3 step:0.1 value:0 label:"$\mu$" format:%.1f fontSize:30
@@ -106,7 +109,7 @@ export const TUTORIAL_GL = String.raw`# GluonSlides tutorial
 .element.text id:105 style:hint x:1260 y:200 width:580 height:760
 	**Drag the sliders**: the curve and the numbers in the title follow, here, while presenting and in the exported HTML.
 
-	Select the plot: its formulas are in the panel, in **Python** or **LaTeX**. ${'`'}\var{name}${'`'} shows a variable in any text.
+	Select the plot: its layers (a histogram of samples, curves, a line at μ) are in the panel, in **Python** or **LaTeX**; **＋ Layer** adds areas, data, bars, heatmaps… ${'`'}\var{name}${'`'} shows a variable in any text.
 
 	Values can also come from your results: *Project settings → Variables* links a JSON or CSV file your script writes.
 

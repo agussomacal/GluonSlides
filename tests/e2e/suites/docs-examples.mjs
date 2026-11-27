@@ -48,6 +48,20 @@ const results = await page.evaluate(async (blocks) => {
         try {
             const p = parseProjectContent(text);
             r.slides = p.slides.length;
+            // plots draw without an error, with the example's sliders and values
+            const plots = p.slides.flatMap(sl => sl.elements.filter(e => e.type === 'plot'));
+            if (plots.length) {
+                const E = await import('/core/liveEngine.js');
+                const vars = { ...(p.vars || {}) };
+                p.slides.forEach(sl => sl.elements.filter(e => e.type === 'slider').forEach(e => { vars[e.var] = Number(e.value ?? e.min ?? 0); }));
+                for (const el of plots) {
+                    const spec = { ...el, layers: E.parseLayers(el.code || '', el.lang || 'python') };
+                    const div = document.createElement('div');
+                    div.innerHTML = E.plotSvg(spec, vars);
+                    const shown = [...div.querySelectorAll('g[fill="#dc2626"] text')].map(t => t.textContent);
+                    if (shown.length) r.errors.push(`plot ${el.id}: ${shown.join(' | ')}`);
+                }
+            }
             if (complete) {
                 // saved and read again: the same slides and elements
                 applyProjectData(p);

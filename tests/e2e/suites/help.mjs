@@ -39,6 +39,15 @@ check('…not saved anywhere', !tut.path);
 check('…a master, notes, and every kind of object', tut.masters === 1 && tut.notes.includes('Speaker notes') && tut.types === 'columns,figure,group,path,plot,slider,table,text', tut.types);
 check('…the connector attached by name', tut.connector && tut.connector.from === '{Data}@right' && tut.connector.to === '{Model}@left' && tut.connector.width > 300, JSON.stringify(tut.connector));
 check('…blank lines between paragraphs kept', /highlights\.\n\nTyping/.test(tut.hint || ''), JSON.stringify(tut.hint));
+const tutPlot = await app(async () => {
+    const { state } = await import('/core/state.js');
+    (await import('/editor/editor.js')).selectSlide(state.slides.findIndex(s => s.title === 'Interactive'));
+    await new Promise(r => setTimeout(r, 150));
+    const svg = document.querySelector('#slide-canvas .element-plot svg.gl-plot-svg');
+    return svg ? { errors: [...svg.querySelectorAll('g[fill="#dc2626"] text')].map(t => t.textContent), bars: svg.querySelectorAll('g[clip-path] rect').length } : null;
+});
+check('…its plot draws (histogram and curves), no error', tutPlot && !tutPlot.errors.length && tutPlot.bars > 20, JSON.stringify(tutPlot));
+await app(async () => (await import('/editor/editor.js')).selectSlide(0));
 check('no tour by itself in a browser', !(await page.$('.tour-layer')));
 await shot('tutorial');
 

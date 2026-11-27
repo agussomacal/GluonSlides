@@ -246,20 +246,30 @@ An unknown name shows as a red `[? name]`. In the file: `.vars alpha:0.05` and `
 
 ### Interactive plots and sliders
 
-**Interactive ▾** in the toolbar adds a **plot** (with a formula in Python or in LaTeX) and a **slider**. A slider sets a variable (*Variable* in its panel, `mu` say); plots that use it are redrawn as it moves, and text showing it with `\var{mu}` changes too. It works on the canvas (drag the knob: the slider itself stays put), while presenting, in the presenter view (the audience's screen follows), and in the exported HTML, which needs nothing installed. The PDF export shows the starting values.
+**Interactive ▾** in the toolbar adds a **plot** and a **slider**. A slider sets a variable (*Variable* in its panel, `mu` say); plots that use it are redrawn as it moves, and text showing it with `\var{mu}` changes too. It works on the canvas (drag the knob: the slider itself stays put), while presenting, in the presenter view (the audience's screen follows), and in the exported HTML, which needs nothing installed. The PDF export shows the starting values.
 
-A plot's panel has its formulas in a box:
+A plot is made of **layers** on the same axes, written in the box of its panel: a line per layer with its settings, then its formula or its rows.
 
 ```
+.hist samples:3000 bins:40 density:yes color:@muted label:"samples"
+y = normal(mu, sigma)
 .curve color:@primary width:4 label:"$\mathcal{N}(\mu,\sigma^2)$"
 y = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)
-.curve color:@muted dash:dashed label:"standard"
-y = exp(-x**2 / 2) / sqrt(2*pi)
+.fill from:mu-sigma to:mu+sigma color:@primary opacity:0.2
+y = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)
+.vline x:mu label:"μ"
 ```
 
-Each `.curve` line starts a curve (colour, width, `dash:dashed` or `dotted`, a legend `label` with math), and the lines below it are its formula in `x`: helper lines first (`s2 = sigma**2`), then `y = …`. **Formulas** chooses how they are written: *Python* (`x**2`, `exp(…)`, `np.sin(…)`: copied from a script, they work as they are) or *LaTeX* (`\frac{1}{\sqrt{2\pi\sigma^2}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}`: the same text you show on the slide). The panel also has the x range, the y range (empty: from the curves, then kept while sliders move), axis labels (Markdown and math), text size and colour, grid and legend. A mistake (an unknown name, a bracket missing) is written on the plot in red, with its line.
+**＋ Layer** in the panel adds a ready-to-edit one of each kind:
 
-Formulas are read by GluonSlides' own small calculator, never run as code, so a presentation someone sends you can only draw curves. See the [format reference](gluon-format.md#plot) for every function and command understood.
+- **Curves and areas**: a curve `y = …`; an *area* under it (or between `y` and `y0`) from one value to another, both possibly variables (a probability region that follows the sliders); a *parametric* curve `x = …`, `y = …` in `t` (circles, orbits).
+- **Markers**: vertical and horizontal lines, points and texts at values or variables (`x:mu`).
+- **Data**: *points* (with error bars), a *line*, *bars* by category (`Adam, 0.91`) and *histograms*, from rows typed in the box or from a CSV file. **＋ Data file…** copies a CSV your script writes into `data/` and keeps following it, like a linked table; columns are chosen by name (`x:step y:loss`). A histogram can also **sample a formula**: `samples:2000` draws `y = normal(mu, sigma)` that many times, and since the draws are seeded the bars slide smoothly with the slider instead of flickering.
+- **2D**: a *heatmap* of `z = …` in `x` and `y` with a colour bar (colour maps viridis, magma, coolwarm, blues, gray), *contour* lines (how many, or at which values), and *arrows* of a field `u = …`, `v = …`.
+
+**Formulas** chooses how formulas are written: *Python* (`x**2`, `exp(…)`, `np.sin(…)`, `np.random.normal(…)`: copied from a script, they work as they are) or *LaTeX* (`\frac{1}{\sqrt{2\pi\sigma^2}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}`: the same text you show on the slide); a layer can also say `lang:` itself. The panel also has the x and y ranges (empty: found from the layers, then kept while sliders move), log axes, ticks at multiples of π, equal proportions (a circle stays round), axis labels (Markdown and math), text size and colour, grid and legend. A mistake (an unknown name, a missing column, a bracket) is written on the plot in red, with its layer and line.
+
+Formulas are read by GluonSlides' own small calculator, never run as code, so a presentation someone sends you can only draw. These plots are for figures that move or follow your results; for a publication figure, your own plotting script and a [linked figure](#figures-pasting-and-linked-files) remain the right tool. See the [format reference](gluon-format.md#plot) for every layer, parameter, function and command.
 
 ## Drawing
 
