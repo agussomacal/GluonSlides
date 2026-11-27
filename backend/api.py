@@ -177,12 +177,13 @@ class Api:
         path = dialogs.ask_open(TABLE_FILE_TYPES)
         return {"success": True, "path": path} if path else _cancelled()
 
-    def read_table_file(self, project_folder, path):
-        return tables.read_table_file(project_folder, path)
+    def read_table_file(self, project_folder, path, max_rows=None):
+        """The first `max_rows` rows of a CSV (all when None) and how many it has."""
+        return tables.read_table_file(project_folder, path, max_rows)
 
-    def link_table_file(self, project_folder, source):
-        """Copy a CSV into <project>/data/ and return its cells (a linked table)."""
-        return tables.link_table_file(project_folder, source)
+    def link_table_file(self, project_folder, source, max_rows=None):
+        """Copy a CSV into <project>/data/ and return its first rows (a linked table)."""
+        return tables.link_table_file(project_folder, source, max_rows)
 
     def refresh_tables(self, project_folder, items):
         """Re-copy linked CSVs whose original changed; return the cells that changed."""

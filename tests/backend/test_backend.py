@@ -920,6 +920,69 @@ class GroundTruthTest(TempDirTest):
         self.assertEqual(self.run_import(z, "Zipped")["ground_truth"], "talk.pdf")
 
 
+class SlidevImageRowTest(TempDirTest):
+    """A row of images in an absolute box (<div class="absolute ..."><div class="grid grid-cols-3"><img width=300>...)."""
+
+    MD = """---
+theme: default
+---
+# Toy example
+
+Nonlinear manifold of functions.
+
+<div class="absolute left-10px bottom-7px">
+<div class="grid grid-cols-3">
+<img src="./figures/a.png" width="300">
+<img src="./figures/b.png" width="300">
+<img src="./figures/c.png" width="300">
+</div>
+</div>
+"""
+
+    def setUp(self):
+        super().setUp()
+        from backend.importers import import_talk
+        self.import_talk = import_talk
+        self.src = os.path.join(self.tmp, "talk")
+        os.makedirs(os.path.join(self.src, "figures"))
+        for n in "abc":
+            Image.new("RGB", (400, 300), "blue").save(os.path.join(self.src, "figures", f"{n}.png"))
+        with open(os.path.join(self.src, "slides.md"), "w") as f:
+            f.write(self.MD)
+
+    def row(self, res):
+        self.assertTrue(res["success"], res)
+        return next(e for e in res["project"]["slides"][0]["elements"] if e["type"] == "columns")
+
+    def test_the_row_is_as_wide_as_its_images(self):
+        row = self.row(self.import_talk(self.src, self.tmp, "Plain", {}))
+        k = 1920 / 980
+        self.assertGreater(row["width"], 900 * k * 0.95)  # 3 x 300 px (+ gaps), not the 360 px of a text box
+        self.assertTrue(all("![" in c["content"] for c in row["columns"]))
+        self.assertGreater(row["height"], 0.7 * row["width"] / 3 * 0.75)  # the images' own height
+        self.assertLessEqual(row["y"] + row["height"], 1080)  # anchored at the bottom
+
+    def test_the_compiled_pdf_places_the_row(self):
+        try:
+            import pymupdf as fz
+        except ImportError:
+            self.skipTest("PyMuPDF not installed")
+        doc = fz.open()
+        p = doc.new_page(width=980, height=551)
+        p.insert_text((60, 60), "Toy example", fontsize=30)
+        p.insert_text((60, 110), "Nonlinear manifold of functions.", fontsize=18)
+        png = os.path.join(self.src, "figures", "a.png")
+        for i in range(3):  # centred, larger than converted
+            p.insert_image(fz.Rect(140 + i * 240, 300, 360 + i * 240, 465), filename=png)
+        pdf = os.path.join(self.src, "slides-export.pdf")
+        doc.save(pdf)
+        row = self.row(self.import_talk(self.src, self.tmp, "Checked", {}))
+        k = 1920 / 980
+        self.assertLess(abs(row["x"] - 140 * k), 40, row)
+        self.assertLess(abs(row["y"] - 300 * k), 40, row)
+        self.assertLess(abs(row["width"] - 700 * k), 60, row)
+
+
 class ExtrasTest(TempDirTest):
     """The PDF component download (backend/importers/extras.py), with a fake download."""
 
@@ -953,11 +1016,26 @@ class TablesTest(TempDirTest):
     """CSV files for tables (backend/tables.py)."""
 
     def test_delimiters_and_quoting(self):
-        self.assertEqual(tables.parse_csv("a,b\n1,2\n"), [["a", "b"], ["1", "2"]])
-        self.assertEqual(tables.parse_csv("a;b\n1;2"), [["a", "b"], ["1", "2"]])
-        self.assertEqual(tables.parse_csv("a\tb\n1\t2"), [["a", "b"], ["1", "2"]])
-        self.assertEqual(tables.parse_csv('"x, y",z\n1,2'), [["x, y", "z"], ["1", "2"]])
-        self.assertEqual(tables.parse_csv("a,b,c\n1\n"), [["a", "b", "c"], ["1", "", ""]])  # padded
+        rows = lambda text: tables.parse_csv(text)[0]
+        self.assertEqual(rows("a,b\n1,2\n"), [["a", "b"], ["1", "2"]])
+        self.assertEqual(rows("a;b\n1;2"), [["a", "b"], ["1", "2"]])
+        self.assertEqual(rows("a\tb\n1\t2"), [["a", "b"], ["1", "2"]])
+        self.assertEqual(rows('"x, y",z\n1,2'), [["x, y", "z"], ["1", "2"]])
+        self.assertEqual(rows("a,b,c\n1\n"), [["a", "b", "c"], ["1", "", ""]])  # padded
+
+    def test_a_big_file_gives_its_first_rows(self):
+        big = os.path.join(self.tmp, "big.csv")
+        Path(big).write_text("step,loss,grad,time\n" + "".join(f"{i},{i * 0.5},{i},{i}\n" for i in range(50000)))
+        res = tables.read_table_file(self.tmp, big, 20)
+        self.assertTrue(res["success"], res)
+        self.assertEqual((len(res["rows"]), res["total"], res["rows"][0][0]), (20, 50001, "step"))
+        self.assertFalse(tables.read_table_file(self.tmp, big)["success"])  # all of it: too large for a slide
+        project = os.path.join(self.tmp, "talk")
+        os.makedirs(project)
+        linked = tables.link_table_file(project, big, 20)
+        self.assertEqual((len(linked["rows"]), linked["total"]), (20, 50001))
+        up = tables.refresh_tables(project, [{"src": linked["relative_path"], "original": big, "mtime": 0, "rows": 5}])["updated"]
+        self.assertEqual(len(up[0]["rows"]), 5)
 
     def test_link_copies_into_data_and_refresh_follows_the_original(self):
         project = os.path.join(self.tmp, "talk")

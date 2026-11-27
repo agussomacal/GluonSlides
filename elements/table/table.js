@@ -33,6 +33,9 @@ import { resolveColor } from '../../core/colors.js';
 import { busy } from '../../ui/busy.js';
 
 const STYLE_KEYS = ['bold', 'italic', 'color', 'bg', 'align', 'format'];
+// A big CSV shows its first rows (header included): a slide can't show
+// thousands, and drawing them would freeze the app. `rows:N` on .data.
+export const DEFAULT_CSV_ROWS = 20;
 const MIN_SHARE = 0.05;
 
 // Transient (not saved): the cell the panel styles, per table id; and what it styles.
@@ -355,14 +358,16 @@ export async function syncLinkedTables({ force = false } = {}) {
     if (!tables.length) return 0;
     syncBusy = true;
     try {
-        const items = tables.map(t => ({ src: t.data.src, original: t.data.original || '', mtime: force ? 0 : (t._mtime || 0) }));
+        const items = tables.map(t => ({ src: t.data.src, original: t.data.original || '', mtime: force ? 0 : (t._mtime || 0), rows: t.data.rows || null }));
         const res = await api.refresh_tables(state.projectFolder, items);
         let changed = 0;
         (res && res.updated || []).forEach(u => {
             tables.filter(t => t.data.src === u.src).forEach(t => {
                 const before = JSON.stringify(t.rows);
                 t._mtime = u.mtime;
-                t.rows = u.rows;
+                t._total = u.total;
+                // the backend answers per file: a table showing fewer rows keeps its count
+                t.rows = t.data.rows ? u.rows.slice(0, t.data.rows) : u.rows;
                 if (JSON.stringify(t.rows) !== before) changed++;
             });
         });
@@ -444,20 +449,24 @@ export async function tablePropsFromCsv(path) {
     const api = pyApi();
     if (!api || !path) return null;
     if (state.projectFolder && typeof api.link_table_file === 'function') {
-        const res = await busy(`Reading ${path.split(/[/\\]/).pop()}…`, api.link_table_file(state.projectFolder, path));
+        const res = await busy(`Reading ${path.split(/[/\\]/).pop()}…`, api.link_table_file(state.projectFolder, path, DEFAULT_CSV_ROWS));
         if (res && res.success) {
-            flashSaveIndicator(`Linked to ${res.relative_path} ✓`);
+            const partial = res.total > res.rows.length;
+            flashSaveIndicator(partial ? `Linked to ${res.relative_path}: its first ${res.rows.length} of ${res.total} rows (more in the panel)` : `Linked to ${res.relative_path} ✓`);
             return propsForRows(res.rows, {
-                data: { src: res.relative_path, sync: 'yes', original: res.original }, _mtime: res.mtime,
+                data: { src: res.relative_path, sync: 'yes', original: res.original, ...(partial ? { rows: res.rows.length } : {}) },
+                _mtime: res.mtime, _total: res.total,
             });
         }
     }
-    const res = await api.read_table_file(state.projectFolder || '', path);
+    const res = await busy(`Reading ${path.split(/[/\\]/).pop()}…`, api.read_table_file(state.projectFolder || '', path, DEFAULT_CSV_ROWS));
     if (!res || !res.success) {
         flashSaveIndicator(`Could not read ${path}${res && res.error ? ': ' + res.error : ''}`);
         return null;
     }
-    flashSaveIndicator('Imported (save the project to link the table to the file)');
+    flashSaveIndicator(res.total > res.rows.length
+        ? `Imported the first ${res.rows.length} of ${res.total} rows (save the project to link the table to the file)`
+        : 'Imported (save the project to link the table to the file)');
     return propsForRows(res.rows);
 }
 
@@ -546,6 +555,13 @@ document.addEventListener('change', (e) => {
         const [r, c] = activeCell.get(el.id) || [1, 1];
         const index = styleScope === 'row' ? r : styleScope === 'col' ? c : [r, c];
         setStyle(el, styleScope, index, t.dataset.tableStyle, t.value === 'transparent' ? '' : t.value);
+    } else if (t.dataset.tableRows !== undefined) {
+        const n = Math.max(1, Math.round(Number(t.value) || 0));
+        if (!el.data) return;
+        el.data.rows = n;
+        markDirty();
+        syncLinkedTables({ force: true }).then(() => notifyContentChanged());
+        return;
     } else if (t.dataset.tableFormat !== undefined) {
         const [, c] = activeCell.get(el.id) || [1, 1];
         setStyle(el, 'col', c, 'format', t.value.trim());
@@ -607,6 +623,7 @@ const TableElement = {
             if (el.data && el.data.src) {
                 const extra = [`sync:${el.data.sync === 'no' ? 'no' : 'yes'}`];
                 if (el.data.original) extra.push(`original:${quote(el.data.original)}`);
+                if (el.data.rows) extra.push(`rows:${el.data.rows}`);
                 lines.push(`\t.data {${el.data.src}} ${extra.join(' ')}`);
             }
             if (Array.isArray(el.widths) && el.widths.length) lines.push(`\t.widths ${el.widths.map(w => Math.round(Number(w) * 10) / 10).join(',')}`);
@@ -628,6 +645,7 @@ const TableElement = {
                     const p = params(m[2]);
                     el.data = { src: m[1].trim(), sync: p.sync === 'no' ? 'no' : 'yes' };
                     if (p.original) el.data.original = p.original;
+                    if (Number(p.rows) > 0) el.data.rows = Math.round(Number(p.rows));
                 } else if ((m = t.match(/^\.widths\s+([\d.,\s]+)$/))) {
                     el.widths = m[1].split(',').map(Number).filter(v => v > 0);
                 } else if ((m = t.match(/^\.(row|col|cell)\s+(\d+)(?:\s*,\s*(\d+))?(.*)$/))) {
@@ -770,7 +788,7 @@ const TableElement = {
         async importCsv(elIndex, arg, el) {
             const path = await chooseCsv();
             if (!path) return;
-            const res = await pyApi().read_table_file(state.projectFolder || '', path);
+            const res = await busy('Reading the file…', pyApi().read_table_file(state.projectFolder || '', path, DEFAULT_CSV_ROWS));
             if (!res || !res.success) { flashSaveIndicator(`Could not read ${path}: ${res && res.error}`); return; }
             el.rows = res.rows;
             delete el.widths;
@@ -778,16 +796,17 @@ const TableElement = {
             sizeToFit(el);
             markDirty();
             notifyContentChanged();
-            flashSaveIndicator(`${res.rows.length} rows imported ✓`);
+            flashSaveIndicator(res.total > res.rows.length ? `The first ${res.rows.length} of ${res.total} rows imported ✓` : `${res.rows.length} rows imported ✓`);
         },
         async linkCsv(elIndex, arg, el) {
             const path = await chooseCsv();
             if (!path) return;
-            const res = await pyApi().link_table_file(state.projectFolder || '', path);
+            const res = await busy('Reading the file…', pyApi().link_table_file(state.projectFolder || '', path, DEFAULT_CSV_ROWS));
             if (!res || !res.success) { flashSaveIndicator(res && res.error ? res.error : 'Could not link the file'); return; }
             el.rows = res.rows;
-            el.data = { src: res.relative_path, sync: 'yes', original: res.original };
+            el.data = { src: res.relative_path, sync: 'yes', original: res.original, ...(res.total > res.rows.length ? { rows: res.rows.length } : {}) };
             el._mtime = res.mtime;
+            el._total = res.total;
             delete el.widths;
             sizeToFit(el);
             markDirty();
@@ -898,6 +917,11 @@ const TableElement = {
                 ${linked ? `
                     <p class="prop-hint">🔗 Linked to <code>${escapeHtml(el.data.src)}</code>${el.data.original ? ` (from ${escapeHtml(el.data.original)})` : ''}: the cells follow the file; style them here.</p>
                     <label class="prop-check"><input type="checkbox" data-element-action="toggleSync" ${el.data.sync !== 'no' ? 'checked' : ''}> Update when the file changes</label>
+                    <div class="prop-inline" title="How many rows of the file the table shows (the header included)">
+                        <span class="prop-hint">Rows from the file</span>
+                        <input type="number" min="1" step="1" class="prop-control" data-table-rows="1" value="${el.data.rows || rowsOf(el).length}" style="width: 6em">
+                        <span class="prop-hint">${el._total ? `of ${el._total}` : ''}</span>
+                    </div>
                     <div class="arrange-row">${btn('refresh', '', '↻ Reload', 'Read the file again')}${btn('unlink', '', 'Unlink', 'Keep the cells; stop following the file')}</div>`
                 : `<div class="arrange-row">${btn('importCsv', '', 'Import CSV…', 'Copy the cells of a CSV file into the table')}${btn('linkCsv', '', 'Link CSV…', 'The table follows a CSV file (copied into data/, updated when the original changes)')}</div>`}
             </div>

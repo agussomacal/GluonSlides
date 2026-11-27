@@ -11,10 +11,11 @@ import io
 import os
 import shutil
 
-MAX_CELLS = 20000
+MAX_CELLS = 20000      # what a slide table may hold
+DEFAULT_ROWS = 20      # a big file shows its first rows (header included) until asked for more
 
 
-def parse_csv(text):
+def parse_csv(text, max_rows=None):
     """Rows of cells; the delimiter (comma, semicolon, tab) is detected."""
     text = text.lstrip("﻿")
     sample = text[:4096]
@@ -25,11 +26,14 @@ def parse_csv(text):
     rows = [row for row in csv.reader(io.StringIO(text), dialect)]
     while rows and not any(c.strip() for c in rows[-1]):
         rows.pop()
+    total = len(rows)
+    if max_rows:
+        rows = rows[:max(1, int(max_rows))]
     width = max((len(r) for r in rows), default=0)
     rows = [r + [""] * (width - len(r)) for r in rows]
     if width * len(rows) > MAX_CELLS:
-        raise ValueError(f"Too large for a slide table ({len(rows)} rows × {width} columns).")
-    return rows
+        raise ValueError(f"Too large for a slide table ({len(rows)} rows × {width} columns): show fewer rows.")
+    return rows, total
 
 
 def _resolve(project_folder, path):
@@ -38,18 +42,19 @@ def _resolve(project_folder, path):
     return os.path.join(project_folder or "", path)
 
 
-def read_table_file(project_folder, path):
-    """{"success", "rows", "mtime"} for a CSV (relative to the project, or absolute)."""
+def read_table_file(project_folder, path, max_rows=None):
+    """{"success", "rows", "total", "mtime"} for a CSV (relative to the project, or
+    absolute): its first `max_rows` rows (all when None), and how many it has."""
     try:
         p = _resolve(project_folder, path)
         with open(p, encoding="utf-8-sig", errors="replace", newline="") as f:
-            rows = parse_csv(f.read())
-        return {"success": True, "rows": rows, "mtime": os.path.getmtime(p)}
+            rows, total = parse_csv(f.read(), max_rows)
+        return {"success": True, "rows": rows, "total": total, "mtime": os.path.getmtime(p)}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-def link_table_file(project_folder, source):
+def link_table_file(project_folder, source, max_rows=None):
     """Copies `source` into <project>/data/ (unique name): the table's data."""
     try:
         if not project_folder or not os.path.isdir(project_folder):
@@ -65,7 +70,7 @@ def link_table_file(project_folder, source):
         if os.path.abspath(dest) != os.path.abspath(source):
             shutil.copy2(source, dest)
         rel = os.path.relpath(dest, project_folder).replace("\\", "/")
-        res = read_table_file(project_folder, rel)
+        res = read_table_file(project_folder, rel, max_rows)
         if not res.get("success"):
             return res
         return {**res, "relative_path": rel, "original": os.path.abspath(source)}
@@ -74,7 +79,7 @@ def link_table_file(project_folder, source):
 
 
 def refresh_tables(project_folder, items):
-    """items: [{"src", "original", "mtime"}]. Re-copies originals that changed
+    """items: [{"src", "original", "mtime", "rows"?}]. Re-copies originals that changed
     and returns the cells of every copy newer than `mtime` (what the page has)."""
     updated = []
     try:
@@ -87,9 +92,9 @@ def refresh_tables(project_folder, items):
                     os.makedirs(os.path.dirname(local), exist_ok=True)
                     shutil.copy2(original, local)
             if os.path.isfile(local) and os.path.getmtime(local) != (item.get("mtime") or 0):
-                res = read_table_file(project_folder, src)
+                res = read_table_file(project_folder, src, item.get("rows"))
                 if res.get("success"):
-                    updated.append({"src": src, "rows": res["rows"], "mtime": res["mtime"]})
+                    updated.append({"src": src, "rows": res["rows"], "total": res["total"], "mtime": res["mtime"]})
         return {"success": True, "updated": updated}
     except Exception as e:
         return {"success": False, "error": str(e), "updated": updated}

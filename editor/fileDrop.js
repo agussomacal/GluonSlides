@@ -22,7 +22,7 @@ import { state, pyApi, activeElements, flashSaveIndicator, markDirty } from '../
 import { renderEditor } from './editor.js';
 import { placeholder } from '../ui/busy.js';
 import { addImageFile, addImagePath, replaceFigureImage, replaceFigureImageData } from '../elements/figure/figure.js';
-import { tablePropsFromCsv, parseCellsText } from '../elements/table/table.js';
+import { tablePropsFromCsv, parseCellsText, DEFAULT_CSV_ROWS } from '../elements/table/table.js';
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|pdf|eps|bmp|tiff?)$/i;
 const TABLE_RE = /\.(csv|tsv)$/i;
@@ -206,9 +206,10 @@ function alreadyDropped(name) {
 async function tableProps(it) {
     if (it.path) return tablePropsFromCsv(it.path);
     if (!it.file) return null;
-    const rows = parseCellsText(await it.file.text());
-    if (!rows.length) return null;
-    flashSaveIndicator('Table added (its file path is unknown here, so it is not linked)');
+    const all = parseCellsText(await it.file.text());
+    if (!all.length) return null;
+    const rows = all.slice(0, DEFAULT_CSV_ROWS);
+    flashSaveIndicator(`Table added${all.length > rows.length ? `: the first ${rows.length} of ${all.length} rows` : ''} (its file path is unknown here, so it is not linked)`);
     const scale = state.slideWidth / 1920;
     return { rows, width: Math.round(Math.max(1000 * scale, rows[0].length * 200 * scale)), height: Math.round(rows.length * 28 * scale * 1.9) };
 }

@@ -25,6 +25,31 @@ async function fetchText(url, what) {
     }
 }
 
+/**
+ * KaTeX's fonts the app ships (libs/fonts) embedded in the CSS as data,
+ * so math looks right in an exported file opened offline; the others
+ * stay links. Cached: they don't change.
+ */
+let katexFontCache = null;
+async function embedKatexFonts(css) {
+    if (!katexFontCache) {
+        katexFontCache = {};
+        const names = [...new Set(css.match(/KaTeX_[A-Za-z0-9-]+\.woff2/g) || [])];
+        await Promise.all(names.map(async (name) => {
+            try {
+                const res = await fetch(`libs/fonts/${name}`);
+                if (!res.ok) return;
+                const bytes = new Uint8Array(await res.arrayBuffer());
+                let bin = '';
+                for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+                katexFontCache[name] = `data:font/woff2;base64,${btoa(bin)}`;
+            } catch (e) { /* stays a link */ }
+        }));
+    }
+    return css.replace(/url\((["']?)fonts\/(KaTeX_[A-Za-z0-9-]+\.woff2)\1\)/g,
+        (m, q, name) => (katexFontCache[name] ? `url(${katexFontCache[name]})` : m));
+}
+
 /** One slide: its elements, the ones that build up marked with data-step. */
 function slideMarkup(slide, idx, source = idx) {
     const bg = state.isDarkMode ? '#1e293b' : '#ffffff';
@@ -54,7 +79,7 @@ function slideMarkup(slide, idx, source = idx) {
  *   notes       include the speaker notes (for the presenter view)
  */
 export async function getExportHtmlString({ startSlide = 0, startAt = null, startStep = 1, localAssets = false, mode = 'audience', notes = true } = {}) {
-    let katexCss = await fetchText('libs/katex.min.css', 'KaTeX CSS');
+    let katexCss = await embedKatexFonts(await fetchText('libs/katex.min.css', 'KaTeX CSS'));
     katexCss = katexCss.replace(/url\((?!["']?(?:data:|https?:))/g, `url(${localAssets ? 'libs/' : KATEX_CDN}`);
     // Same stylesheet the editor uses — viewer matches canvas by construction.
     const textStyles = await fetchText('text-styles.css', 'text-styles.css');
@@ -84,7 +109,6 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
         <style>${textStyles}</style>
         <style>${fontCss}</style>
         <style>
-            .katex .mathbb { font-family: 'KaTeX_Math', 'Times New Roman', serif !important; font-weight: bold; letter-spacing: 0.05em; }
             body { background: #000000; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; overflow: hidden; cursor: default; }
             .slide-wrapper { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; position: relative; }
             .slide { display: none; transform-origin: center center; }

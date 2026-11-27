@@ -20,12 +20,12 @@ await page.addInitScript(() => {
     const ok = (o = {}) => Promise.resolve({ success: true, ...o });
     window.pywebview = { api: {
         select_table_file: () => ok({ path: '/home/me/run/results.csv' }),
-        read_table_file: () => ok({ rows: window.__csv, mtime: window.__mtime }),
-        link_table_file: () => {
-            const res = { success: true, rows: window.__csv, mtime: window.__mtime, relative_path: 'data/results.csv', original: '/home/me/run/results.csv' };
+        read_table_file: (folder, path, max) => ok({ rows: window.__csv.slice(0, max || undefined), total: window.__csv.length, mtime: window.__mtime }),
+        link_table_file: (folder, path, max) => {
+            const res = { success: true, rows: window.__csv.slice(0, max || undefined), total: window.__csv.length, mtime: window.__mtime, relative_path: 'data/results.csv', original: '/home/me/run/results.csv' };
             return window.__slowMs ? new Promise(r => setTimeout(() => r(res), window.__slowMs)) : Promise.resolve(res);
         },
-        refresh_tables: (folder, items) => ok({ updated: items.filter(i => i.mtime !== window.__mtime).map(i => ({ src: i.src, rows: window.__csv, mtime: window.__mtime })) }),
+        refresh_tables: (folder, items) => ok({ updated: items.filter(i => i.mtime !== window.__mtime).map(i => ({ src: i.src, rows: window.__csv.slice(0, i.rows || undefined), total: window.__csv.length, mtime: window.__mtime })) }),
         read_clipboard: () => ok(window.__clip),
         set_clipboard_text: () => ok(),
         get_recent_projects: () => ok({ projects: [] }), get_inspector_settings: () => ok({ settings: null }),
@@ -219,6 +219,23 @@ check('a busy bar while the CSV is read, gone afterwards', barDuring && !(await 
 await app(() => { window.__slowMs = 0; });
 t = await last();
 check('from a CSV file: linked, data/ copy + original', t.type === 'table' && t.data && t.data.src === 'data/results.csv' && t.data.original === '/home/me/run/results.csv' && t.rows[0][0] === 'Method', JSON.stringify(t.data));
+
+// A big results file: its first 20 rows, and the panel says how many there are
+await app(() => { window.__savedCsv = window.__csv; window.__csv = [['step', 'loss'], ...Array.from({ length: 5000 }, (_, i) => [String(i), String(i / 10)])]; });
+await textMenu('csv');
+await page.waitForTimeout(300);
+t = await last();
+check('a big CSV: its first 20 rows (header included), rows:20 kept', t.rows.length === 20 && t.rows[0][0] === 'step' && t.data.rows === 20, `${t.rows.length} ${JSON.stringify(t.data)}`);
+await app(async () => { const m = await import('/core/state.js'); const els = m.state.slides[0].elements; m.setSelectedElementIndices([els.length - 1], els.length - 1); (await import('/editor/editor.js')).renderEditor(); });
+check('the panel: rows from the file, of how many', (await page.inputValue('[data-table-rows]')) === '20' && (await page.textContent('#properties-body')).includes('of 5001'));
+await page.fill('[data-table-rows]', '5');
+await page.dispatchEvent('[data-table-rows]', 'change');
+await page.waitForTimeout(300);
+t = await last();
+check('fewer rows from the file', t.rows.length === 5 && t.data.rows === 5, t.rows.length);
+const bigGl = await app(async () => (await import('/core/state.js')).serializeProject());
+check('.gl: .data … rows:5', /\t\.data \{data\/results\.csv\} sync:yes original:\S+ rows:5/.test(bigGl));
+await app(() => { window.__csv = window.__savedCsv; });
 
 const before = await app(async () => (await import('/core/state.js')).state.slides[0].elements.length);
 await app(() => { window.__clip = { text: 'a;b;c\n1;"2;5";3\n' }; });

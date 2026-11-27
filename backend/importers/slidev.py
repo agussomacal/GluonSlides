@@ -401,7 +401,9 @@ def grid_block(n, inner, cls, ctx):
     for parts in columns:
         sub_ctx_blocks = convert("\n\n".join(parts), ctx) if has_clicks else None
         md = None if has_clicks else inline_html_to_md("\n\n".join(re.sub(r"^<div[^>]*>|</div>$", "", p.strip()) for p in parts), ctx)
-        cols.append({"md": md, "blocks": sub_ctx_blocks})
+        # its natural width (Slidev px): the widest <img width=...> in it
+        natural = max([float(w) for w in re.findall(r'<img\b[^>]*\bwidth="(\d+(?:\.\d+)?)"', "\n".join(parts))] or [0])
+        cols.append({"md": md, "blocks": sub_ctx_blocks, "natural": natural})
     return {"kind": "columns", "cols": cols, "gap": 5 * 4 if "gap-5" in cls else (40 if "gap-10" in cls else 16), "step": 1}
 
 
@@ -488,9 +490,26 @@ class Layout:
             return max(self.col_height(c, cw) for c in b["cols"])
         return 0
 
+    def natural_width(self, blocks):
+        """How wide blocks want to be (Slidev px): images by their width, grids
+        by their columns; 0 when unknown (text wraps to any width)."""
+        out = 0
+        for b in blocks:
+            if b["kind"] == "image":
+                out = max(out, b["width"] or 400)
+            elif b["kind"] == "columns":
+                cols = [c.get("natural") or self.natural_width(c.get("blocks") or []) for c in b["cols"]]
+                if all(cols):
+                    out = max(out, sum(cols) + b["gap"] * (len(cols) - 1))
+        return out
+
     def col_height(self, c, cw):
         if c["md"] is not None:
-            return text_height(re.sub(r"!\[[^\]]*\]\(([^)]+)\)", lambda m: "\n" * 8, c["md"]), cw, self.fs)
+            # Markdown images fill the column's width, at their own aspect ratio
+            imgs = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", c["md"])
+            text = re.sub(r"!\[[^\]]*\]\(([^)]+)\)", "", c["md"])
+            h = sum(cw * self.assets.aspect(rel) for rel in imgs)
+            return h + (text_height(text, cw, self.fs) if text.strip() else 0)
         return sum(self.height(b, cw) for b in c["blocks"] if b["kind"] not in ("abs", "arrow"))
 
     def place(self, blocks, x, y, width, out, base, center=False):
@@ -501,7 +520,9 @@ class Layout:
             extra = {"step": b["step"]} if b.get("step", 1) > 1 else {}
             if k == "abs":
                 left, right, top, bottom = b["left"], b["right"], b["top"], b["bottom"]
-                bw = 360 * K
+                # as wide as its content (a row of images), at least the usual box
+                bw = max(360, self.natural_width(b["blocks"])) * K
+                bw = min(bw, W - (left * K if left is not None else 0) - (right * K if right is not None else 0))
                 hs = sum(self.height(sb, bw, spacing=False) for sb in b["blocks"])  # anchored: exact size
                 ax = left * K if left is not None else (W - right * K - bw if right is not None else x)
                 ay = top * K if top is not None else (H - bottom * K - hs if bottom is not None else y)

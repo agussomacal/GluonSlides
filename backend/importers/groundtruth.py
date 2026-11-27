@@ -235,6 +235,26 @@ def place_figures(elements, page):
                 el["x"], el["y"], el["width"], el["height"] = placed[key]
                 n += 1
                 break
+    # Columns holding only images (a row of plots): onto a row of as many page images
+    md_img = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+    for el in elements:
+        if el.get("type") != "columns":
+            continue
+        cols = [c.get("content") or "" for c in el.get("columns") or []]
+        k = sum(len(md_img.findall(c)) for c in cols)
+        if not k or any(md_img.sub("", c).strip() for c in cols):
+            continue
+        free = [b for i, b in enumerate(images) if i not in used]
+        for a in free:
+            row = sorted((b for b in free if abs(b[1] - a[1]) < 0.3 * (a[3] - a[1])), key=lambda b: b[0])
+            if len(row) == k:
+                x0, y0, x1, y1 = _union(row)
+                pad = 0.02 * (x1 - x0)
+                el["x"], el["y"] = round(x0 - pad), round(y0 - pad)
+                el["width"], el["height"] = round(x1 - x0 + 2 * pad), round(y1 - y0 + 2 * pad)
+                used.update(images.index(b) for b in row)
+                n += k
+                break
     return n
 
 

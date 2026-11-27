@@ -45,6 +45,14 @@ check('an escaped dollar inside math stays in the formula', r.tex[0] === '\\$5 +
 r = await render('Text with <b>html</b> & a token-like word GLMATH7X');
 check('text that looks like a token is kept', r.text.includes('GLMATH7X'));
 
+// Exports: KaTeX's fonts embedded (\mathbb{R} in its AMS font, offline too), no override
+const exp = await page.evaluate(async () => {
+    await (await import('/ui/project.js')).openSampleProject();
+    const html = await (await import('/export/html.js')).getExportHtmlString();
+    return { ams: /KaTeX_AMS[^}]*url\(data:font\/woff2;base64,/.test(html), override: html.includes('.katex .mathbb {') };
+});
+check('export: KaTeX fonts embedded, \\mathbb drawn by KaTeX', exp.ams && !exp.override, JSON.stringify(exp));
+
 console.log(out.join('\n'));
 console.log('--- errors ---\n' + (errors.join('\n') || '(none)'));
 await browser.close();
