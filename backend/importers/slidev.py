@@ -221,6 +221,9 @@ def only_headings(md):
 
 
 def clean_md(md):
+    md = re.sub(r"<!--.*?-->", "", md, flags=re.S)  # comments (notes are taken before)
+    # v-mark (a hand-drawn underline / box around words while presenting): the words
+    md = re.sub(r"<span\b[^>]*\sv-mark[^>]*>(.*?)</span>", r"\1", md, flags=re.S)
     # HTML headings -> Markdown headings
     md = re.sub(r"<h([1-6])\b([^>]*)>(.*?)</h\1>", html_heading, md, flags=re.S | re.I)
     md = re.sub(r"\$\$[ \t]*\{[\d\s|,*\-]*(?:all|none)?[\d\s|,*\-]*\}", "$$", md)  # $${1|all}: line highlights
@@ -464,7 +467,7 @@ def grid_block(n, inner, cls, ctx):
         for part in re.split(r"\n\s*\n", md):
             if part.strip():
                 items.append(part)
-    s = inner
+    s = re.sub(r"<!--.*?-->", "", inner, flags=re.S)  # comments are not grid cells
     while i < len(s):
         if s[i] == "<" and re.match(r"<[A-Za-z]", s[i:i + 2]):
             el = take_element(s, i)
@@ -486,7 +489,9 @@ def grid_block(n, inner, cls, ctx):
     columns = [[] for _ in range(n)]
     for k, it in enumerate(items):
         columns[k % n].append(it)
-    has_clicks = re.search(r"v-click|v-after|v-switch", inner) is not None
+    # clicks, or a grid inside a column: each column converted block by block
+    has_clicks = re.search(r"v-click|v-after|v-switch", inner) is not None \
+        or re.search(r'<div[^>]*class="[^"]*grid-cols-', inner) is not None
     cols = []
     for parts in columns:
         sub_ctx_blocks = convert("\n\n".join(parts), ctx) if has_clicks else None

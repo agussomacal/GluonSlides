@@ -192,9 +192,16 @@ def place_text(elements, page, W, H):
             continue
         x0, y0, x1, y1 = _union([b["box"] for b in blocks])
         fs = median([b["size"] for b in blocks])
+        # Text that is only Markdown headings: the PDF's size is the heading's,
+        # which the browser draws larger than the box's size (# 2x, ## 1.5x, ### 1.17x)
+        if el.get("type") == "text":
+            lines = [l.strip() for l in re.sub(r"\$\$.*?\$\$", "", el.get("content") or "", flags=re.S).split("\n") if l.strip()]
+            levels = [len(re.match(r"^(#{1,6})\s", l).group(1)) for l in lines if re.match(r"^#{1,6}\s", l)]
+            if lines and len(levels) == len(lines):
+                fs /= {1: 2.0, 2: 1.5, 3: 1.17}.get(min(levels), 1.0)
         before = (el["x"], el["y"])
         kind = el.get("type")
-        if kind == "text" and (not el.get("fontSize") or abs(fs - el["fontSize"]) > 0.15 * el["fontSize"]):
+        if kind in ("text", "columns", "table") and (not el.get("fontSize") or abs(fs - el["fontSize"]) > 0.15 * el["fontSize"]):
             el["fontSize"] = round(fs)
         size = el.get("fontSize") or fs
         pad = 0.15 * size
