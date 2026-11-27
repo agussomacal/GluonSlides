@@ -16,6 +16,7 @@
 // ============================================================
 
 import { state, markDirty } from '../../core/state.js';
+import { clickedWord, selectWord } from '../../editor/clickedWord.js';
 import { fontStack } from '../../core/fonts.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { ElementRegistry } from '../../core/registry.js';
@@ -92,20 +93,14 @@ function commitColumn(domEl, el) {
     markDirty();
 }
 
-function startEditing(domEl, el, i) {
+function startEditing(domEl, el, i, word = null) {
     domEl.classList.add('editing-mode');
     domEl.dataset.editingColumn = String(i);
     buildColumns(domEl, el, { editing: i });
     const box = domEl.querySelector('.gl-column-editing .gl-column-text');
     if (!box) return;
     box.focus();
-    // caret at the end
-    const range = document.createRange();
-    range.selectNodeContents(box);
-    range.collapse(false);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    selectWord(box, word); // the double-clicked word, else the caret at the end
     box.addEventListener('input', () => {
         columnsOf(el)[i].content = box.innerText;
         markDirty();
@@ -243,8 +238,12 @@ const ColumnsElement = {
                 e.stopPropagation();
                 const col = e.target.closest('.gl-column');
                 const i = col ? Number(col.dataset.column) : 0;
-                if (domEl.classList.contains('editing-mode')) commitColumn(domEl, el);
-                startEditing(domEl, el, i);
+                if (domEl.classList.contains('editing-mode')) {
+                    // a double-click in the column being edited selects a word
+                    if (domEl.dataset.editingColumn === String(i)) return;
+                    commitColumn(domEl, el);
+                }
+                startEditing(domEl, el, i, clickedWord(col || domEl, e));
             };
             const editing = domEl.dataset.editingColumn;
             if (domEl.classList.contains('editing-mode') && editing !== undefined) {

@@ -5,6 +5,7 @@
 // ============================================================
 
 import { state, markDirty, flashSaveIndicator, pyApi } from '../../core/state.js';
+import { clickedWord, selectWord } from '../../editor/clickedWord.js';
 import { fontStack, fontGroups, importProjectFonts, fontLicense } from '../../core/fonts.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { ElementRegistry } from '../../core/registry.js';
@@ -188,10 +189,14 @@ const TextElement = {
         if (ctx.context === 'canvas') {
             domEl.ondblclick = (e) => {
                 e.stopPropagation();
+                // Already editing: the double-click selects a word, as in any text.
+                if (domEl.classList.contains('editing-mode')) return;
+                const word = clickedWord(domEl, e);
                 domEl.classList.add('editing-mode');
                 domEl.contentEditable = 'true';
                 domEl.innerText = el.content;
                 domEl.focus();
+                selectWord(domEl, word);
             };
 
             domEl.oninput = (e) => {

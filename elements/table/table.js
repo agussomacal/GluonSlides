@@ -24,6 +24,7 @@
 // ============================================================
 
 import { state, markDirty, pyApi, flashSaveIndicator, forEachElementDeep } from '../../core/state.js';
+import { clickedWord, selectWord } from '../../editor/clickedWord.js';
 import { fontStack } from '../../core/fonts.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { ElementRegistry } from '../../core/registry.js';
@@ -201,7 +202,7 @@ function commitCell(domEl, el) {
     markDirty();
 }
 
-function editCell(domEl, el, r, c) {
+function editCell(domEl, el, r, c, word = null) {
     if (el.data && el.data.src) {
         flashSaveIndicator(`Linked to ${el.data.src}: edit the file, or Unlink the table`);
         return;
@@ -213,12 +214,7 @@ function editCell(domEl, el, r, c) {
     const cell = domEl.querySelector('.gl-cell-editing');
     if (!cell) return;
     cell.focus();
-    const range = document.createRange();
-    range.selectNodeContents(cell);
-    range.collapse(false);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    selectWord(cell, word); // the double-clicked word, else the caret at the end
     const rows = rowsOf(el);
     const move = (dr, dc, grow) => {
         commitCell(domEl, el);
@@ -693,8 +689,12 @@ const TableElement = {
                 e.stopPropagation();
                 const cell = e.target.closest('td, th');
                 if (!cell) return;
-                if (domEl.classList.contains('editing-mode')) commitCell(domEl, el);
-                editCell(domEl, el, Number(cell.dataset.r), Number(cell.dataset.c));
+                if (domEl.classList.contains('editing-mode')) {
+                    // a double-click in the cell being edited selects a word
+                    if (cell.classList.contains('gl-cell-editing')) return;
+                    commitCell(domEl, el);
+                }
+                editCell(domEl, el, Number(cell.dataset.r), Number(cell.dataset.c), clickedWord(cell, e));
             };
             domEl.addEventListener('click', (e) => {
                 const cell = e.target.closest('td, th');

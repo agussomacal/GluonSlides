@@ -2,9 +2,10 @@
 // editor/formatBar.js — A small bar over the selected words while
 // editing text on the canvas (text boxes, columns, table cells): bold,
 // italic, underline, a text colour (the project's theme colours and a
-// few others), a highlight, and ✕ to remove them. It wraps the selection
-// in the text commands of core/textCommands.js, \textcolor{@accent}{…}
-// and so on, typed into the text like any edit (Ctrl+Z undoes it).
+// few others), a highlight, and ✕ to remove them. Markdown first: bold is
+// **…** and italic *…*; what Markdown can't say uses the text commands of
+// core/textCommands.js (\underline{…}, \textcolor{@accent}{…}, …). It is
+// typed into the text like any edit (Ctrl+Z undoes it).
 // ============================================================
 
 import { palette } from '../core/colors.js';
@@ -12,7 +13,9 @@ import { escapeHtml } from '../core/render.js';
 
 const EXTRA_COLORS = ['red', 'blue', 'ForestGreen', 'orange', 'gray'];
 const HIGHLIGHTS = ['yellow', 'lime!40', 'cyan!30', 'pink'];
-const WRAPPERS = /^\\(textcolor|highlight|colorbox)\{[^{}]*\}\{([\s\S]*)\}$|^\\(textbf|textit|emph|underline|texttt)\{([\s\S]*)\}$/;
+const WRAPPERS = /^\\(textcolor|highlight|colorbox)\{[^{}]*\}\{([\s\S]*)\}$|^\\(textbf|textit|emph|underline|texttt)\{([\s\S]*)\}$|^(\*\*|__|\*|_)(?=\S)([\s\S]*\S)\5$/;
+// Markdown marks for the buttons that have one.
+const MARKDOWN = { bold: '**', italic: '*' };
 
 let bar = null;
 
@@ -48,8 +51,8 @@ function build() {
 function fill() {
     const themed = palette().map(p => chip(`@${p.name}`, 'color', `${p.name} (theme colour)`));
     bar.innerHTML = `
-        <button type="button" data-cmd="textbf" title="Bold: \\textbf{…}"><b>B</b></button>
-        <button type="button" data-cmd="emph" title="Italic: \\emph{…}"><i>I</i></button>
+        <button type="button" data-md="bold" title="Bold: **…**"><b>B</b></button>
+        <button type="button" data-md="italic" title="Italic: *…*"><i>I</i></button>
         <button type="button" data-cmd="underline" title="Underlined: \\underline{…}"><u>U</u></button>
         <span class="format-sep"></span>
         ${themed.join('')}${EXTRA_COLORS.map(c => chip(c, 'color', c)).join('')}
@@ -79,8 +82,13 @@ function show(rect) {
 }
 
 /** Wraps each line of the selection (formatting does not cross paragraphs). */
-function wrapLines(text, open) {
-    return text.split('\n').map(line => (line.trim() ? `${open}${line}}` : line)).join('\n');
+function wrapLines(text, open, close = '}') {
+    return text.split('\n').map(line => {
+        if (!line.trim()) return line;
+        // Spaces stay outside the marks (**word ** is not bold in Markdown).
+        const [, lead, core, trail] = line.match(/^(\s*)([\s\S]*?)(\s*)$/);
+        return `${lead}${open}${core}${close}${trail}`;
+    }).join('\n');
 }
 
 function onClick(e) {
@@ -91,7 +99,9 @@ function onClick(e) {
     if (b.dataset.cmd === 'plain') {
         // peel the commands wrapped around the selection
         let m;
-        while ((m = WRAPPERS.exec(text.trim()))) text = m[2] !== undefined ? m[2] : m[4];
+        while ((m = WRAPPERS.exec(text.trim()))) text = m[2] ?? m[4] ?? m[6];
+    } else if (b.dataset.md) {
+        text = wrapLines(text, MARKDOWN[b.dataset.md], MARKDOWN[b.dataset.md]);
     } else if (b.dataset.cmd) {
         text = wrapLines(text, `\\${b.dataset.cmd}{`);
     } else if (b.dataset.color) {

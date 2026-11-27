@@ -88,6 +88,95 @@ const content = await app(async () => (await import('/core/state.js')).state.sli
 check('…saved in the text, and drawn red', content === 'Make this \\textcolor{red}{word} red'
     && await app(() => document.querySelector('#slide-canvas .element-text span[style*="color"]')?.textContent === 'word'), content);
 
+// ---------- Double-clicking words; Markdown first ----------
+/** Screen point of `word` in the shown text of the canvas text box. */
+const wordAt = (word) => app((w) => {
+    const root = document.querySelector('#slide-canvas .element-text');
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const i = n.textContent.indexOf(w);
+        if (i < 0) continue;
+        const r = document.createRange();
+        r.setStart(n, i); r.setEnd(n, i + w.length);
+        const b = r.getBoundingClientRect();
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    }
+    return null;
+}, word);
+const selected = () => app(() => window.getSelection().toString());
+const shown = () => app(() => document.querySelector('#slide-canvas .element-text').innerText);
+
+let p = await wordAt('Make');
+await page.mouse.dblclick(p.x, p.y);
+await page.waitForTimeout(200);
+check('double-click on a word: editing, that word selected in the source', await selected() === 'Make'
+    && await app(() => document.querySelector('#slide-canvas .element-text').classList.contains('editing-mode')), await selected());
+check('…with the format bar', await page.isVisible('.format-bar'));
+await page.click('.format-bar [data-md="bold"]', { timeout: 1500 }).catch(() => {});
+await page.waitForTimeout(100);
+check('bold is Markdown: **…**', (await shown()).startsWith('**Make** this'), await shown());
+
+p = await wordAt('this');
+await page.mouse.dblclick(p.x, p.y);
+await page.waitForTimeout(200);
+check('double-click while editing: the word stays selected, the text unchanged', await selected() === 'this' && (await shown()).startsWith('**Make** this'), JSON.stringify([await selected(), await shown()]));
+check('…and the format bar shows', await page.isVisible('.format-bar'));
+await page.click(".format-bar [data-md=\"italic\"]", { timeout: 1500 }).catch(() => {});
+await page.waitForTimeout(100);
+check('italic is Markdown: *…*', (await shown()).startsWith('**Make** *this*'), await shown());
+
+// ✕ takes the Markdown marks off too
+await app(() => {
+    const el = document.querySelector('#slide-canvas .element-text');
+    const n = [...el.childNodes].find(x => x.nodeType === 3);
+    const r = document.createRange();
+    r.setStart(n, 0); r.setEnd(n, '**Make**'.length);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(r);
+});
+await page.waitForTimeout(150);
+await page.click('.format-bar [data-cmd="plain"]');
+await page.waitForTimeout(100);
+check('✕ removes **…**', (await shown()).startsWith('Make *this*'), await shown());
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+
+// a table cell: double-click a word, it is selected; again inside, it stays
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    state.slides[0].elements = [{ type: 'table', id: 8, x: 200, y: 500, width: 900, height: 200, fontSize: 40,
+        rows: [['alpha beta', 'gamma'], ['delta', 'epsilon']] }];
+    (await import('/editor/editor.js')).renderEditor();
+});
+await page.waitForTimeout(200);
+const cellWord = (w) => app((w) => {
+    for (const td of document.querySelectorAll('#slide-canvas td, #slide-canvas th')) {
+        const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const i = n.textContent.indexOf(w);
+            if (i < 0) continue;
+            const r = document.createRange();
+            r.setStart(n, i); r.setEnd(n, i + w.length);
+            const b = r.getBoundingClientRect();
+            return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+        }
+    }
+    return null;
+}, w);
+p = await cellWord('beta');
+if (p) {
+    await page.mouse.dblclick(p.x, p.y);
+    await page.waitForTimeout(200);
+    check('table cell: the double-clicked word selected', await selected() === 'beta', await selected());
+    p = await cellWord('alpha');
+    await page.mouse.dblclick(p.x, p.y);
+    await page.waitForTimeout(200);
+    check('table cell: double-click inside the cell being edited selects a word', await selected() === 'alpha', await selected());
+    await page.keyboard.press('Escape');
+} else {
+    check('table cell shown', false, await app(() => document.querySelector('#slide-canvas').innerHTML.slice(0, 300)));
+}
+
 console.log(out.join('\n'));
 console.log('--- errors ---\n' + (errors.join('\n') || '(none)'));
 await browser.close();
