@@ -183,7 +183,15 @@ class Api:
 
     def link_table_file(self, project_folder, source, max_rows=None):
         """Copy a CSV into <project>/data/ and return its first rows (a linked table)."""
-        return tables.link_table_file(project_folder, source, max_rows)
+        desktop.debug(f"[table] linking {source} into {project_folder}")
+        res = tables.link_table_file(project_folder, source, max_rows)
+        desktop.debug(f"[table] linked: {res.get('success')} {res.get('error', '')} {len(res.get('rows') or [])} rows")
+        return res
+
+    def debug_log(self, message):
+        """The page's own steps, printed with --debug."""
+        desktop.debug(f"[page] {message}")
+        return {"success": True}
 
     def refresh_tables(self, project_folder, items):
         """Re-copy linked CSVs whose original changed; return the cells that changed."""

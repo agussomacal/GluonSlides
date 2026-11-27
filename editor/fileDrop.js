@@ -24,6 +24,14 @@ import { placeholder } from '../ui/busy.js';
 import { addImageFile, addImagePath, replaceFigureImage, replaceFigureImageData } from '../elements/figure/figure.js';
 import { tablePropsFromCsv, parseCellsText, DEFAULT_CSV_ROWS } from '../elements/table/table.js';
 
+/** A step of a drop, printed in the terminal when the app runs with --debug. */
+function trace(message) {
+    try {
+        const api = pyApi();
+        if (api && typeof api.debug_log === 'function') api.debug_log(message);
+    } catch (e) { /* never in the way */ }
+}
+
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|pdf|eps|bmp|tiff?)$/i;
 const TABLE_RE = /\.(csv|tsv)$/i;
 const PATH_WAIT_MS = 600;
@@ -147,8 +155,10 @@ export function initFileDrop(insert) {
         e.preventDefault(); // never let the window open what was dropped
         const dt = e.dataTransfer;
         const zone = activeZone();
+        trace(`page drop event: types ${[...(dt && dt.types) || []].join(',')}, ${dt && dt.files ? dt.files.length : 0} file(s)`);
         if (!dt || (!zone && !editorActive())) return;
         const items = await droppedItems(dt);
+        trace(`page drop items: ${items.map(it => `${it.name}${it.path ? ' @ ' + it.path : ''}`).join('; ')}`);
         if (zone) {
             if (items.length) zone.onDrop(items);
             return;
@@ -165,6 +175,7 @@ export function initFileDrop(insert) {
     window.gluonNativeDrop = (paths, x, y) => {
         document.body.classList.remove('file-drag-over');
         if (!Array.isArray(paths) || !paths.length) return;
+        trace(`native drop: ${paths.join('; ')} at ${Math.round(x)},${Math.round(y)}`);
         const items = paths.map(path => ({ name: baseName(path), path }));
         const zone = activeZone();
         if (zone) {
@@ -218,6 +229,7 @@ async function tableProps(it) {
 async function importTables(tables, insert, target, at) {
     const onTable = elementUnder(target, 'table');
     for (const [i, it] of tables.entries()) {
+        trace(`table from ${it.path || it.name}`);
         const props = await placeholder(at && { x: at.x + i * 40, y: at.y + i * 40 }, `Reading ${it.name}…`, tableProps(it), { width: 640, height: 260 });
         if (!props) continue;
         if (onTable !== null && i === 0) {
@@ -235,13 +247,16 @@ async function importTables(tables, insert, target, at) {
         const cx = at ? at.x + i * 40 : state.slideWidth / 2, cy = at ? at.y + i * 40 : state.slideHeight / 2;
         props.x = Math.round(Math.max(0, Math.min(state.slideWidth - w, cx - w / 2)));
         props.y = Math.round(Math.max(0, Math.min(state.slideHeight - h, cy - h / 2)));
+        trace(`table: ${props.rows.length} rows, inserting at ${props.x},${props.y}`);
         insert('table', props);
+        trace('table inserted');
     }
 }
 
 /** Adds the dropped images (or replaces the figure they were dropped on), and CSV tables. */
 async function importDropped(items, insertAny, target, at) {
     const fresh = items.filter(it => !alreadyDropped(it.name));
+    trace(`importing ${fresh.length} new of ${items.length}`);
     if (!fresh.length) return;
     const insert = (props) => insertAny('figure', props);
     const tables = fresh.filter(isTableItem);

@@ -225,6 +225,12 @@ def set_clipboard_text(text):
         return {"success": False, "error": str(e)}
 
 
+def debug(message):
+    """Printed with `--debug` (app.py), for following a drop or a paste."""
+    if os.environ.get("GLUONSLIDES_DEBUG"):
+        print(message, flush=True)
+
+
 def should_block_navigation(app_url, uri, navigation_type_is_link):
     """Whether the main window may not go to `uri` (it would leave the app).
 
@@ -311,12 +317,14 @@ def watch_native_drops(window):
         except Exception:
             uris = []
         paths = [p for p in _paths_from_uris(uris) if os.path.exists(p)]  # folders too (import a talk)
+        debug(f"[drop] drag data: {len(uris)} uri(s) -> {paths}")
         if paths:
             pending.update(paths=paths, received=time.monotonic())
             deliver()
         return False  # WebKit handles the drop too (the page prevents opening it)
 
     def on_drop(_widget, _context, x, y, _time):
+        debug(f"[drop] dropped at ({x}, {y})")
         pending["point"] = (x, y)
         deliver()  # the data may have come while dragging, or comes next
         GLib.timeout_add(1500, lambda: pending.update(point=None) and False)

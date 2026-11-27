@@ -231,7 +231,15 @@ def main():
         if sys.stderr is not None and hasattr(sys.stderr, "fileno"):
             faulthandler.dump_traceback_later(SMOKE_LIMIT_S, exit=True, file=sys.stderr)
         threading.Thread(target=_smoke_test, args=(window, result), daemon=True).start()
-    webview.start(http_server=True, icon=_window_icon())
+    # --debug: the page's inspector (right click > Inspect Element: its
+    # console), Python tracebacks on a crash, and each step of a drop logged.
+    debug = "--debug" in sys.argv
+    if debug:
+        import faulthandler
+        faulthandler.enable(all_threads=True)
+        os.environ["GLUONSLIDES_DEBUG"] = "1"
+        print("[debug] on: right click > Inspect Element opens the page's console")
+    webview.start(http_server=True, icon=_window_icon(), debug=debug)
     # The window is closed. Threads still waiting on the page (calls from
     # the page in flight, event handlers) would keep Python from exiting:
     # stop now, as a window app does.
