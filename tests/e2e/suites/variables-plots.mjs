@@ -94,7 +94,7 @@ check('`\\var{n}` in inline code stays as written', text.text.includes('code \\v
 
 const plot = await app(() => {
     const p = document.querySelector('#slide-canvas [data-element-id="4"]');
-    const paths = [...p.querySelectorAll('svg.gl-plot-svg path[clip-path]')].map(x => x.getAttribute('d'));
+    const paths = [...p.querySelectorAll('svg.gl-plot-svg g[clip-path] path')].map(x => x.getAttribute('d'));
     return { paths, legend: p.querySelector('.gl-plot-legend .katex-html')?.textContent || '', label: !!p.querySelector('.gl-plot-label .katex'), err: p.querySelector('svg text[fill="#dc2626"], g[fill="#dc2626"] text')?.textContent || '' };
 });
 check('the plot draws both curves', plot.paths.length === 2 && plot.paths.every(d => d.length > 200), JSON.stringify(plot.paths.map(d => d.length)));
@@ -106,10 +106,10 @@ await page.screenshot({ path: 'tests/e2e/output/plots-editor.png' });
 // the slider on the canvas
 const slid = await app(() => {
     const input = document.querySelector('#slide-canvas [data-element-id="3"] input[type=range]');
-    const before = document.querySelector('#slide-canvas [data-element-id="4"] svg.gl-plot-svg path[clip-path]').getAttribute('d');
+    const before = document.querySelector('#slide-canvas [data-element-id="4"] svg.gl-plot-svg g[clip-path] path').getAttribute('d');
     input.value = '1.5';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    const after = document.querySelector('#slide-canvas [data-element-id="4"] svg.gl-plot-svg path[clip-path]').getAttribute('d');
+    const after = document.querySelector('#slide-canvas [data-element-id="4"] svg.gl-plot-svg g[clip-path] path').getAttribute('d');
     const shown = document.querySelector('#slide-canvas [data-element-id="2"] [data-glvar="mu"]').textContent;
     const value = document.querySelector('#slide-canvas [data-element-id="3"] .gl-slider-value').textContent;
     return { moved: before !== after, shown, value };
@@ -184,7 +184,7 @@ await exp.waitForTimeout(300);
 const live = await exp.evaluate(() => {
     const slide = document.querySelector('.slide.active');
     const input = slide.querySelector('input[data-glslider="mu"]');
-    const path = () => slide.querySelector('svg.gl-plot-svg path[clip-path]').getAttribute('d');
+    const path = () => slide.querySelector('svg.gl-plot-svg g[clip-path] path').getAttribute('d');
     const before = path();
     input.value = '-2';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -201,7 +201,7 @@ const still = await exp.evaluate(() => document.querySelector('.slide.active').i
 check('export: clicking the slider stays on the slide', still === 'slide-0', still);
 // the presenter view's values reach the audience window
 const followed = await exp.evaluate(async () => {
-    const path = () => document.querySelector('.slide.active svg.gl-plot-svg path[clip-path]').getAttribute('d');
+    const path = () => document.querySelector('.slide.active svg.gl-plot-svg g[clip-path] path').getAttribute('d');
     const before = path();
     window.postMessage({ type: 'gluon-control', action: 'vars', vars: { mu: 2.5 } }, '*');
     await new Promise(r => setTimeout(r, 100));
@@ -222,7 +222,7 @@ const sent = await pres.evaluate(async () => {
     window.addEventListener('gluon-vars-out', (e) => { out = e.detail; });
     const input = document.querySelector('.gp-current .gp-copy input[data-glslider="mu"]');
     if (!input) return { error: 'no slider in the presenter copy' };
-    const path = () => document.querySelector('.gp-current .gp-copy svg.gl-plot-svg path[clip-path]').getAttribute('d');
+    const path = () => document.querySelector('.gp-current .gp-copy svg.gl-plot-svg g[clip-path] path').getAttribute('d');
     const before = path();
     input.value = '-1';
     input.dispatchEvent(new Event('input', { bubbles: true }));

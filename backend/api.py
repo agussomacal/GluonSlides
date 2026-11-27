@@ -203,6 +203,20 @@ class Api:
         """Re-copy variable files whose original changed; the values of those that changed."""
         return variables.refresh_vars(project_folder, items)
 
+    # --- plot data: CSV files for plots (backend/tables.py) --------------------
+
+    def read_plot_data(self, project_folder, path):
+        """A CSV's rows for a plot (header apart, thinned when huge)."""
+        return tables.read_plot_data(project_folder, path)
+
+    def link_plot_data(self, project_folder, source):
+        """Copy a CSV into <project>/data/ for a plot; its rows."""
+        return tables.link_plot_data(project_folder, source)
+
+    def refresh_plot_data(self, project_folder, items):
+        """Re-copy plot data files whose original changed; the rows of those that changed."""
+        return tables.refresh_plot_data(project_folder, items)
+
     # --- tables: CSV files (backend/tables.py) --------------------------------
 
     def select_table_file(self):

@@ -1481,6 +1481,44 @@ class VariablesTest(TempDirTest):
         self.assertEqual(up[0]["values"], {"err": 0.5, "n": 3})
 
 
+class PlotDataTest(TempDirTest):
+    """CSV files for plots (backend/tables.py read_plot_data / link / refresh)."""
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_header_only_when_the_first_row_is_names(self):
+        from backend.tables import read_plot_data
+        res = read_plot_data(self.tmp, self.write("run.csv", "step;loss\n1;0.9\n2;0.4\n"))
+        self.assertEqual((res["header"], res["rows"]), (["step", "loss"], [["1", "0.9"], ["2", "0.4"]]))
+        bars = read_plot_data(self.tmp, self.write("bars.csv", "Adam,3\nSGD,5\n"))
+        self.assertEqual((bars["header"], len(bars["rows"])), (None, 2))  # "Adam,3" is data
+
+    def test_big_files_are_thinned_keeping_the_last_row(self):
+        from backend import tables
+        lines = "x,y\n" + "".join(f"{i},{i * i}\n" for i in range(50000))
+        res = tables.read_plot_data(self.tmp, self.write("big.csv", lines))
+        self.assertEqual((res["total"], len(res["rows"])), (50000, tables.MAX_PLOT_ROWS))
+        self.assertEqual(res["rows"][-1], ["49999", str(49999 * 49999)])
+
+    def test_link_and_follow(self):
+        from backend.tables import link_plot_data, refresh_plot_data
+        project = os.path.join(self.tmp, "proj")
+        os.makedirs(project)
+        src = self.write("run.csv", "step,loss\n1,0.9\n")
+        res = link_plot_data(project, src)
+        self.assertEqual((res["relative_path"], res["rows"]), ("data/run.csv", [["1", "0.9"]]))
+        item = {"src": res["relative_path"], "original": src, "mtime": res["mtime"]}
+        self.assertEqual(refresh_plot_data(project, [item])["updated"], [])
+        self.write("run.csv", "step,loss\n1,0.9\n2,0.5\n")
+        os.utime(src, (time.time() + 5, time.time() + 5))
+        self.assertEqual(refresh_plot_data(project, [item])["updated"][0]["rows"], [["1", "0.9"], ["2", "0.5"]])
+        self.assertFalse(refresh_plot_data(project, [{"src": "data/none.csv", "mtime": 0}])["updated"][0]["success"])
+
+
 class TablesTest(TempDirTest):
     """CSV files for tables (backend/tables.py)."""
 

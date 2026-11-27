@@ -84,6 +84,51 @@ const FUNCTIONS = {
     degrees: (x) => x * 180 / Math.PI, radians: (x) => x * Math.PI / 180, deg2rad: (x) => x * Math.PI / 180,
     mod: (a, b) => ((a % b) + b) % b, float: Number, int: Math.trunc,
 };
+// Random numbers (histograms sampled from a formula): a seeded generator, so a
+// slider moving the distribution moves the same draws instead of new noise.
+function mulberry32(seed) {
+    let a = (Number(seed) || 1) >>> 0;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+let rng = mulberry32(1);
+/** Runs `fn` with the random generator started at `seed`. */
+function seeded(seed, fn) {
+    const previous = rng;
+    rng = mulberry32(seed);
+    try {
+        return fn();
+    } finally {
+        rng = previous;
+    }
+}
+const normal = (mu = 0, sigma = 1) => {
+    const u = 1 - rng();
+    const v = rng();
+    return mu + sigma * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+};
+Object.assign(FUNCTIONS, {
+    rand: () => rng(), random: () => rng(), uniform: (a = 0, b = 1) => a + (b - a) * rng(),
+    normal, gauss: normal, randn: () => normal(),
+    lognormal: (mu = 0, sigma = 1) => Math.exp(normal(mu, sigma)),
+    exponential: (scale = 1) => -scale * Math.log(1 - rng()), expovariate: (rate = 1) => -Math.log(1 - rng()) / rate,
+    poisson: (lam = 1) => {
+        if (lam > 50) return Math.max(0, Math.round(normal(lam, Math.sqrt(lam))));
+        const l = Math.exp(-lam);
+        let k = 0;
+        let p = 1;
+        do { k++; p *= rng(); } while (p > l);
+        return k - 1;
+    },
+    binomial: (n = 1, p = 0.5) => { let k = 0; for (let i = 0; i < n; i++) if (rng() < p) k++; return k; },
+    randint: (a, b) => a + Math.floor(rng() * (b - a + 1)),
+});
+
 const CONSTANTS = { pi: Math.PI, e: Math.E, tau: 2 * Math.PI, inf: Infinity, nan: NaN, True: 1, False: 0, infty: Infinity };
 
 // ---------- the expression tree and its evaluation ----------
@@ -151,7 +196,7 @@ function namesIn(node, out = new Set()) {
 // ---------- lang:python ----------
 
 const PY_TOKEN = /\s*(?:(\d+(?:_\d+)*(?:\.\d*)?(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(\*\*|\/\/|<=|>=|==|!=|[-+*/%()<>,=]))/y;
-const PY_MODULES = /^(?:math|np|numpy|scipy\.special|special|sp|cmath)\./;
+const PY_MODULES = /^(?:(?:np|numpy)\.random\.|random\.|math\.|np\.|numpy\.|scipy\.special\.|special\.|sp\.|cmath\.)/;
 
 function tokenizePython(src, line) {
     const out = [];
@@ -531,6 +576,20 @@ export function compileFormula(code, lang = 'python') {
         result = {
             error: null,
             names: [...names],
+            /** Runs every line on `env` (names set there): the last line's value. */
+            exec(env) {
+                let out = NaN;
+                for (const step of steps) {
+                    try {
+                        out = step.run(env);
+                    } catch (e) {
+                        if (e instanceof FormulaError && e.line === undefined) e.line = step.line;
+                        throw e;
+                    }
+                    if (step.name) env[step.name] = out;
+                }
+                return out;
+            },
             evaluate(vars) {
                 return (x) => {
                     const env = Object.assign(Object.create(null), vars, { x });
@@ -552,7 +611,7 @@ export function compileFormula(code, lang = 'python') {
             },
         };
     } catch (e) {
-        result = { error: e.line ? `line ${e.line}: ${e.message}` : e.message, names: [], evaluate: null };
+        result = { error: e.line ? `line ${e.line}: ${e.message}` : e.message, names: [], evaluate: null, exec: null };
     }
     if (formulaCache.size > 500) formulaCache.clear();
     formulaCache.set(key, result);
@@ -560,50 +619,425 @@ export function compileFormula(code, lang = 'python') {
 }
 
 // ---------- plots ----------
+//
+// A plot is a frame (axes, ranges, labels) holding layers, one per
+// ".kind key:value …" line of its body, followed by that layer's formula
+// or data rows:
+//   curve       y = f(x)
+//   fill        the area between y = f(x) and y0 (default 0), from:a to:b
+//   parametric  x = f(t), y = g(t), from:… to:… (default 0 to 2π)
+//   vline hline point text   markers at values (x:mu, y:…, label:…)
+//   points line             data: a CSV's columns (data:{data/run.csv} x:step y:loss yerr:std)
+//                           or rows written in the body ("1, 0.5")
+//   hist        a column of data, or samples of a formula (samples:2000 seed:1),
+//               in bins:30 (density:yes: area 1)
+//   bar         categories (or numbers) and values, from data or rows
+//   heatmap contour quiver  z = f(x, y) as colours / level lines; u, v as arrows
 
-/**
- * The curves of a plot's text: ".curve key:value …" lines, each followed by
- * its formula lines (text before any .curve is a first curve).
- * -> [{ code, lang, color, width, dash, label, line }]
- */
-export function parseCurves(text, lang = 'python') {
-    const curves = [];
+export const LAYER_KINDS = ['curve', 'fill', 'parametric', 'vline', 'hline', 'point', 'text', 'points', 'line', 'hist', 'bar', 'heatmap', 'contour', 'quiver'];
+const GRID_KINDS = new Set(['heatmap', 'contour', 'quiver']);
+const LINE_KINDS = new Set(['curve', 'parametric', 'line', 'contour', 'vline', 'hline']);
+export const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
+
+const num = (v, d) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? d : Number(v));
+const isSet = (v) => v !== '' && v !== null && v !== undefined && Number.isFinite(Number(v));
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function parseLayerParams(text) {
+    const out = {};
+    for (const [, k, v] of String(text || '').matchAll(/([A-Za-z]+):("(?:[^"\\]|\\.)*"|\{[^}]*\}|\S+)/g)) {
+        // inside quotes only \" and \\ are escapes (as in .gl): "$\mu$" keeps its backslash
+        let value = v.startsWith('"') ? v.slice(1, -1).replace(/\\(["\\])/g, '$1') : v;
+        if (value.startsWith('{') && value.endsWith('}')) value = value.slice(1, -1);
+        out[k] = value;
+    }
+    return out;
+}
+
+/** A plot's body as layers: [{ kind, code, lang, line, ...params }]. */
+export function parseLayers(text, lang = 'python') {
+    const layers = [];
     let current = null;
     String(text || '').split('\n').forEach((raw, i) => {
-        const m = raw.match(/^\s*\.curve\b(.*)$/);
-        if (m) {
-            current = { code: '', lang, line: i + 1 };
-            for (const [, k, v] of m[1].matchAll(/([A-Za-z]+):("(?:[^"\\]|\\.)*"|\S+)/g)) {
-                // inside quotes only \" and \\ are escapes (as in .gl): "$\mu$" keeps its backslash
-                current[k] = v.startsWith('"') ? v.slice(1, -1).replace(/\\(["\\])/g, '$1') : v;
-            }
-            curves.push(current);
+        const m = raw.match(/^\s*\.([a-z]+)\b(.*)$/);
+        if (m && LAYER_KINDS.includes(m[1])) {
+            current = { lang, ...parseLayerParams(m[2]), kind: m[1], code: '', line: i + 1 };
+            layers.push(current);
             return;
         }
         if (!current) {
             if (!raw.trim()) return;
-            current = { code: '', lang, line: i + 1 };
-            curves.push(current);
+            current = { kind: 'curve', code: '', lang, line: i + 1 };
+            layers.push(current);
         }
         current.code += (current.code ? '\n' : '') + raw;
     });
-    return curves.filter(c => c.code.trim());
+    const needsCode = (l) => ['curve', 'fill', 'parametric', 'heatmap', 'contour', 'quiver'].includes(l.kind);
+    return layers.filter(l => !needsCode(l) || l.code.trim());
 }
 
-const num = (v, d) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? d : Number(v));
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** The curves only (older callers). */
+export function parseCurves(text, lang = 'python') {
+    return parseLayers(text, lang).filter(l => l.kind === 'curve');
+}
 
-/** Margins around a plot's drawing area (labels and ticks go there), in pixels. */
+/** Margins around a plot's drawing area (labels, ticks, colour bar), in pixels. */
 export function plotLayout(spec) {
     const fs = num(spec.fontSize, 24);
+    const bar = (spec.layers || []).some(l => l.kind === 'heatmap' && l.colorbar !== 'no');
     const left = fs * 3.4 + (spec.ylabel ? fs * 1.6 : 0);
     const bottom = fs * 2 + (spec.xlabel ? fs * 1.6 : 0);
     const top = fs * 0.8;
-    const right = fs * 1.2;
+    const right = fs * 1.2 + (bar ? fs * 4.4 : 0);
     const w = Math.max(10, num(spec.width, 800) - left - right);
     const h = Math.max(10, num(spec.height, 500) - top - bottom);
-    return { left, top, right, bottom, w, h, fs };
+    return { left, top, right, bottom, w, h, fs, bar };
 }
+
+// ---------- evaluating layers ----------
+
+class LayerError extends Error {}
+
+/** A formula of a layer, checked: its compiled form, or a LayerError naming what's wrong. */
+function formulaOf(layer, coords, vars) {
+    const f = compileFormula(layer.code || '', layer.lang || 'python');
+    if (f.error) throw new LayerError(f.error);
+    const missing = f.names.filter(n => !coords.includes(n) && !(n in vars) && !(n in CONSTANTS));
+    if (missing.length) throw new LayerError(`unknown name${missing.length > 1 ? 's' : ''}: ${missing.join(', ')} (a slider sets one; or Project settings → Variables)`);
+    return f;
+}
+
+/** A parameter that may be a formula (x:mu, from:a-1): its number, else `fallback`. */
+function paramValue(layer, key, vars, fallback) {
+    const v = layer[key];
+    if (v === undefined || v === '') return fallback;
+    if (isSet(v)) return Number(v);
+    const f = compileFormula(String(v), layer.lang || 'python');
+    if (f.error) throw new LayerError(`${key}: ${f.error}`);
+    const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
+    if (missing.length) throw new LayerError(`${key}: unknown name ${missing.join(', ')}`);
+    return Number(f.exec(Object.assign(Object.create(null), vars)));
+}
+
+/** Rows of a data layer: its file's (layer.table, given by the page) or the rows in its body. */
+function tableOf(layer) {
+    if (layer.tableError) throw new LayerError(layer.tableError);
+    if (layer.table && Array.isArray(layer.table.rows)) return layer.table;
+    if (layer.data) throw new LayerError(`${layer.data}: not read yet`);
+    const lines = String(layer.code || '').split('\n').map(l => l.replace(/#.*$/, '').trim()).filter(Boolean);
+    const split = (l) => (/[,;\t]/.test(l) ? l.split(/\s*[,;\t]\s*/) : l.split(/\s+/));
+    const rows = lines.map(split);
+    if (!rows.length) return { header: null, rows: [] };
+    const numeric = (c) => c !== '' && Number.isFinite(Number(c));
+    // a header: a first row of names only (a row like "Adam, 3" is data)
+    const header = rows.length > 1 && rows[0].every(c => !numeric(c)) && rows[1].some(numeric) ? rows.shift() : null;
+    return { header, rows };
+}
+
+/** A column of a table by name (the header) or number (from 1). */
+function columnOf(table, which, fallback) {
+    let i = fallback;
+    if (which !== undefined && which !== '') {
+        if (isSet(which)) i = Number(which) - 1;
+        else {
+            i = (table.header || []).findIndex(h => String(h).trim() === String(which).trim());
+            if (i < 0) throw new LayerError(`no column “${which}”${table.header ? ` (columns: ${table.header.join(', ')})` : ''}`);
+        }
+    }
+    return table.rows.map(r => r[i]);
+}
+
+const numbers = (col) => col.map(v => (v === undefined || v === '' ? NaN : Number(v)));
+
+/** Grows an extent { x: [lo, hi], y: [lo, hi] } with a point. */
+function grow(ext, axis, v) {
+    if (!Number.isFinite(v)) return;
+    const e = ext[axis];
+    if (v < e[0]) e[0] = v;
+    if (v > e[1]) e[1] = v;
+}
+
+function sampleXs(xr, n, log) {
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        out.push(log ? Math.pow(10, Math.log10(xr[0]) + (Math.log10(xr[1]) - Math.log10(xr[0])) * t) : xr[0] + (xr[1] - xr[0]) * t);
+    }
+    return out;
+}
+
+function evalPointsLayer(layer, vars, ext) {
+    const table = tableOf(layer);
+    const ys = numbers(columnOf(table, layer.y, table.rows[0] && table.rows[0].length > 1 ? 1 : 0));
+    const xs = table.rows[0] && table.rows[0].length > 1 ? numbers(columnOf(table, layer.x, 0)) : ys.map((_, i) => i + 1);
+    const err = layer.yerr ? numbers(columnOf(table, layer.yerr, 2)) : null;
+    xs.forEach((x, i) => {
+        grow(ext, 'x', x);
+        grow(ext, 'y', ys[i] - (err ? err[i] || 0 : 0));
+        grow(ext, 'y', ys[i] + (err ? err[i] || 0 : 0));
+    });
+    return { xs, ys, err };
+}
+
+/** First pass: layers that don't need the x range (data, markers, samples). */
+function evalFirst(layer, vars, ext, spec) {
+    switch (layer.kind) {
+        case 'points':
+        case 'line':
+            return evalPointsLayer(layer, vars, ext);
+        case 'vline': {
+            const x = paramValue(layer, 'x', vars, NaN);
+            grow(ext, 'x', x);
+            return { x };
+        }
+        case 'hline': {
+            const y = paramValue(layer, 'y', vars, NaN);
+            grow(ext, 'y', y);
+            return { y };
+        }
+        case 'point':
+        case 'text': {
+            const x = paramValue(layer, 'x', vars, NaN);
+            const y = paramValue(layer, 'y', vars, NaN);
+            grow(ext, 'x', x);
+            grow(ext, 'y', y);
+            return { x, y };
+        }
+        case 'parametric': {
+            const f = formulaOf(layer, ['t'], vars);
+            const t0 = paramValue(layer, 'from', vars, 0);
+            const t1 = paramValue(layer, 'to', vars, 2 * Math.PI);
+            const n = Math.max(20, Math.min(5000, num(layer.samples, num(spec.samples, 400))));
+            const pts = [];
+            for (let i = 0; i <= n; i++) {
+                const env = Object.assign(Object.create(null), vars, { t: t0 + (t1 - t0) * i / n });
+                f.exec(env);
+                if (!('x' in env) || !('y' in env)) throw new LayerError('a parametric curve sets x = … and y = … (in t)');
+                pts.push([Number(env.x), Number(env.y)]);
+                grow(ext, 'x', Number(env.x));
+                grow(ext, 'y', Number(env.y));
+            }
+            return { pts };
+        }
+        case 'hist': {
+            let values;
+            // rows of numbers (a file, or written in the body), else samples of a formula
+            const inline = !layer.data && !layer.table ? tableOf(layer) : null;
+            const allNumbers = inline && inline.rows.length && inline.rows.every(r => r.every(c => isSet(c)));
+            if (layer.samples !== undefined || (inline && !allNumbers)) {
+                const f = formulaOf(layer, ['i'], vars);
+                const n = Math.max(1, Math.min(200000, Math.round(num(layer.samples, 1000))));
+                values = seeded(num(layer.seed, 1), () => {
+                    const out = new Array(n);
+                    for (let i = 0; i < n; i++) out[i] = Number(f.exec(Object.assign(Object.create(null), vars, { i })));
+                    return out;
+                });
+            } else {
+                const table = tableOf(layer);
+                values = numbers(columnOf(table, layer.column, 0));
+            }
+            values = values.filter(Number.isFinite);
+            if (!values.length) throw new LayerError('no values to count');
+            let lo = Infinity;
+            let hi = -Infinity;
+            values.forEach(v => { if (v < lo) lo = v; if (v > hi) hi = v; });
+            return { values, lo, hi };
+        }
+        case 'bar': {
+            const table = tableOf(layer);
+            const two = table.rows[0] && table.rows[0].length > 1;
+            const ys = numbers(columnOf(table, layer.y, two ? 1 : 0));
+            const keys = two ? columnOf(table, layer.x, 0).map(k => String(k ?? '').trim()) : ys.map((_, i) => String(i + 1));
+            const categorical = keys.some(k => !isSet(k));
+            ys.forEach(y => { grow(ext, 'y', y); grow(ext, 'y', 0); });
+            if (!categorical) keys.forEach(k => grow(ext, 'x', Number(k)));
+            return { keys, ys, categorical };
+        }
+        default:
+            return null;
+    }
+}
+
+/** Second pass: layers sampled over the x range (curves, fills, histogram bins). */
+function evalSecond(layer, first, vars, ext, xr, spec, frozen) {
+    const n = Math.max(20, Math.min(4000, num(layer.samples, num(spec.samples, 400))));
+    if (layer.kind === 'curve' || layer.kind === 'fill') {
+        const f = formulaOf(layer, ['x'], vars);
+        const a = layer.kind === 'fill' ? paramValue(layer, 'from', vars, xr[0]) : xr[0];
+        const b = layer.kind === 'fill' ? paramValue(layer, 'to', vars, xr[1]) : xr[1];
+        const lo = Math.max(Math.min(a, b), xr[0]);
+        const hi = Math.min(Math.max(a, b), xr[1]);
+        const top = [];
+        const bottom = [];
+        if (hi > lo) {
+            sampleXs([lo, hi], n, spec.xscale === 'log' && lo > 0).forEach(x => {
+                const env = Object.assign(Object.create(null), vars, { x });
+                const last = f.exec(env);
+                const y = Number('y' in env ? env.y : last);
+                top.push([x, y]);
+                grow(ext, 'y', y);
+                if (layer.kind === 'fill') {
+                    const y0 = Number('y0' in env ? env.y0 : 0);
+                    bottom.push([x, y0]);
+                    grow(ext, 'y', y0);
+                }
+            });
+        }
+        return { pts: top, bottom };
+    }
+    if (layer.kind === 'hist') {
+        const bins = Math.max(1, Math.min(500, Math.round(num(layer.bins, 30))));
+        const fixedRange = isSet(spec.xmin) && isSet(spec.xmax);
+        const from = paramValue(layer, 'from', vars, fixedRange || frozen ? xr[0] : first.lo);
+        const to = paramValue(layer, 'to', vars, fixedRange || frozen ? xr[1] : (first.hi > first.lo ? first.hi : first.lo + 1));
+        const width = (to - from) / bins;
+        const counts = new Array(bins).fill(0);
+        first.values.forEach(v => {
+            if (v < from || v > to) return;
+            counts[Math.min(bins - 1, Math.floor((v - from) / width))] += 1;
+        });
+        const density = layer.density === 'yes';
+        const total = first.values.length;
+        const heights = counts.map(c => (density ? c / (total * width) : c));
+        heights.forEach(hh => grow(ext, 'y', hh));
+        grow(ext, 'y', 0);
+        return { from, width, heights };
+    }
+    return first;
+}
+
+/** Third pass: layers over the x × y area (heatmap, contour, quiver). */
+function evalGrid(layer, vars, xr, yr, L) {
+    const f = formulaOf(layer, ['x', 'y'], vars);
+    const aspect = L.h / L.w;
+    if (layer.kind === 'quiver') {
+        const nx = Math.max(2, Math.min(60, Math.round(num(layer.grid, 16))));
+        const ny = Math.max(2, Math.round(nx * aspect));
+        const arrows = [];
+        for (let j = 0; j < ny; j++) {
+            for (let i = 0; i < nx; i++) {
+                const x = xr[0] + (xr[1] - xr[0]) * (i + 0.5) / nx;
+                const y = yr[0] + (yr[1] - yr[0]) * (j + 0.5) / ny;
+                const env = Object.assign(Object.create(null), vars, { x, y });
+                f.exec(env);
+                if (!('u' in env) || !('v' in env)) throw new LayerError('arrows set u = … and v = … (in x and y)');
+                arrows.push([x, y, Number(env.u), Number(env.v)]);
+            }
+        }
+        return { arrows, nx, ny };
+    }
+    const nx = Math.max(4, Math.min(400, Math.round(num(layer.resolution, layer.kind === 'contour' ? 100 : 120))));
+    const ny = Math.max(4, Math.round(nx * aspect));
+    // heatmap: cell centres; contour: the corners of the cells
+    const corners = layer.kind === 'contour';
+    const cols = corners ? nx + 1 : nx;
+    const rows = corners ? ny + 1 : ny;
+    const z = new Float64Array(cols * rows);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+            const x = xr[0] + (xr[1] - xr[0]) * (corners ? i / nx : (i + 0.5) / nx);
+            const y = yr[0] + (yr[1] - yr[0]) * (corners ? j / ny : (j + 0.5) / ny);
+            const env = Object.assign(Object.create(null), vars, { x, y });
+            const last = f.exec(env);
+            const v = Number('z' in env ? env.z : last);
+            z[j * cols + i] = v;
+            if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+        }
+    }
+    return { z, cols, rows, nx, ny, lo, hi };
+}
+
+/** The range of an axis: what the plot sets, else frozen (found once), else from the layers. */
+function axisRange(min, max, frozen, ext, log, fallback) {
+    let lo = isSet(min) ? Number(min) : null;
+    let hi = isSet(max) ? Number(max) : null;
+    if (lo !== null && hi !== null && hi > lo) return [lo, hi];
+    let a = frozen ? frozen[0] : ext[0];
+    let b = frozen ? frozen[1] : ext[1];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) [a, b] = fallback;
+    if (log) {
+        a = Math.max(a, 1e-12);
+        b = Math.max(b, a * 10);
+    }
+    if (!frozen) {
+        if (b - a < 1e-12) { a -= 1; b += 1; }
+        if (log) { a /= 1.3; b *= 1.3; } else { const pad = (b - a) * 0.06; a -= pad; b += pad; }
+    }
+    return [lo !== null ? lo : a, hi !== null ? hi : b];
+}
+
+/**
+ * Everything a plot shows, computed for these variables: { xr, yr, results,
+ * categories, z }. `frozen` ({ x, y, z }) keeps ranges found once (at the
+ * starting values) so the axes don't jump while a slider moves.
+ */
+function evaluatePlot(spec, vars, frozen = null) {
+    const layers = spec.layers || [];
+    const L = plotLayout(spec);
+    const ext = { x: [Infinity, -Infinity], y: [Infinity, -Infinity] };
+    const results = layers.map(() => ({}));
+    const fail = (i, e) => { results[i] = { error: e instanceof LayerError || e instanceof FormulaError ? (e.line ? `line ${e.line}: ${e.message}` : e.message) : String(e.message || e) }; };
+    layers.forEach((layer, i) => {
+        try {
+            results[i] = evalFirst(layer, vars, ext, spec) || {};
+        } catch (e) { fail(i, e); }
+    });
+    // a categorical axis: the bars' keys
+    let categories = null;
+    layers.forEach((layer, i) => {
+        const r = results[i];
+        if (layer.kind === 'bar' && r.categorical && !categories) categories = r.keys;
+    });
+    if (categories) { grow(ext, 'x', -0.5); grow(ext, 'x', categories.length - 0.5); }
+    layers.forEach((layer, i) => {
+        if (layer.kind === 'hist' && results[i].values) { grow(ext, 'x', results[i].lo); grow(ext, 'x', results[i].hi); }
+    });
+    const xlog = spec.xscale === 'log';
+    const ylog = spec.yscale === 'log';
+    let xr = axisRange(spec.xmin, spec.xmax, frozen && frozen.x, ext.x, xlog, xlog ? [0.1, 10] : [-5, 5]);
+    layers.forEach((layer, i) => {
+        if (results[i].error || GRID_KINDS.has(layer.kind)) return;
+        try {
+            results[i] = evalSecond(layer, results[i], vars, ext, xr, spec, frozen) || results[i];
+        } catch (e) { fail(i, e); }
+    });
+    let yr = axisRange(spec.ymin, spec.ymax, frozen && frozen.y, ext.y, ylog, ylog ? [0.1, 10] : [-1, 1]);
+    // bars and histograms stand on 0
+    const fromZero = layers.some((l, i) => (l.kind === 'bar' || l.kind === 'hist') && !results[i].error);
+    if (fromZero && !frozen && !isSet(spec.ymin) && !ylog && ext.y[0] >= 0) yr = [0, yr[1]];
+    if (spec.aspect === 'equal' && !xlog && !ylog) {
+        const ux = (xr[1] - xr[0]) / L.w;
+        const uy = (yr[1] - yr[0]) / L.h;
+        if (ux > uy) { const c = (yr[0] + yr[1]) / 2; const half = ux * L.h / 2; yr = [c - half, c + half]; }
+        else { const c = (xr[0] + xr[1]) / 2; const half = uy * L.w / 2; xr = [c - half, c + half]; }
+    }
+    const z = {};
+    layers.forEach((layer, i) => {
+        if (!GRID_KINDS.has(layer.kind)) return;
+        try {
+            const r = evalGrid(layer, vars, xr, yr, L);
+            results[i] = r;
+            if (layer.kind !== 'quiver') {
+                const zr = [isSet(layer.zmin) ? Number(layer.zmin) : (frozen && frozen.z && frozen.z[i] ? frozen.z[i][0] : r.lo),
+                    isSet(layer.zmax) ? Number(layer.zmax) : (frozen && frozen.z && frozen.z[i] ? frozen.z[i][1] : r.hi)];
+                if (!(zr[1] > zr[0])) zr[1] = zr[0] + 1;
+                r.zr = zr;
+                z[i] = zr;
+            }
+        } catch (e) { fail(i, e); }
+    });
+    return { xr, yr, results, categories, z, L };
+}
+
+/** Ranges found at these values, to keep while sliders move: { x, y, z }. */
+export function autoRanges(spec, vars) {
+    const r = evaluatePlot(spec, vars, null);
+    return { x: r.xr, y: r.yr, z: r.z };
+}
+
+// ---------- drawing ----------
 
 function niceStep(range, count) {
     const raw = range / Math.max(1, count);
@@ -612,129 +1046,380 @@ function niceStep(range, count) {
     return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
 }
 
-function ticks(min, max, count) {
+const SUPERSCRIPT = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+
+function piLabel(v) {
+    const r = v / Math.PI;
+    for (const d of [1, 2, 3, 4, 6]) {
+        const n = Math.round(r * d);
+        if (Math.abs(r * d - n) < 1e-6) {
+            if (n === 0) return '0';
+            const sign = n < 0 ? '−' : '';
+            const a = Math.abs(n);
+            return d === 1 ? `${sign}${a === 1 ? '' : a}π` : `${sign}${a === 1 ? '' : a}π/${d}`;
+        }
+    }
+    return v.toFixed(2).replace(/^-/, '−');
+}
+
+/** Ticks of an axis: [{ v, text }]. */
+function axisTicks(range, count, kind) {
+    const [min, max] = range;
     if (!(max > min)) return [];
+    if (kind === 'log') {
+        const out = [];
+        for (let k = Math.ceil(Math.log10(min) - 1e-9); k <= Math.floor(Math.log10(max) + 1e-9); k++) {
+            out.push({ v: Math.pow(10, k), text: k >= 0 && k <= 3 ? String(Math.pow(10, k)) : `10${String(k).split('').map(c => SUPERSCRIPT[c]).join('')}` });
+        }
+        if (out.length >= 2) return out;
+    }
+    if (kind === 'pi') {
+        const step = Math.PI * niceStep((max - min) / Math.PI, count);
+        const candidates = [0.25, 0.5, 1, 2, 5, 10].map(k => k * Math.PI).filter(s => s >= step * 0.7);
+        const s = candidates[0] || step;
+        const out = [];
+        for (let v = Math.ceil(min / s - 1e-9) * s; v <= max + s * 1e-9; v += s) out.push({ v, text: piLabel(v) });
+        return out;
+    }
     const step = niceStep(max - min, count);
-    const out = [];
-    for (let v = Math.ceil(min / step - 1e-9) * step; v <= max + step * 1e-9; v += step) out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
-    return { values: out, step };
-}
-
-function tickText(v, step) {
     const digits = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
-    const a = Math.abs(v);
-    if (a !== 0 && (a >= 1e5 || a < 1e-3)) return v.toExponential(1).replace(/^-/, '−');
-    return v.toFixed(digits).replace(/^-/, '−');
+    const out = [];
+    for (let v = Math.ceil(min / step - 1e-9) * step; v <= max + step * 1e-9; v += step) {
+        const val = Math.abs(v) < step * 1e-9 ? 0 : v;
+        const a = Math.abs(val);
+        const text = a !== 0 && (a >= 1e5 || a < 1e-3) ? val.toExponential(1) : val.toFixed(digits);
+        out.push({ v: val, text: text.replace(/^-/, '−') });
+    }
+    return out;
 }
 
-/** Sampled curves of a plot: [{ points: [[x, y]...] | null, error }] for these variables. */
-export function sampleCurves(spec, vars) {
-    const xmin = num(spec.xmin, -5);
-    const xmax = num(spec.xmax, 5);
-    const n = Math.max(20, Math.min(4000, Math.round(num(spec.samples, 400))));
-    return (spec.curves || []).map(c => {
-        const f = compileFormula(c.code || '', c.lang || spec.lang || 'python');
-        if (f.error) return { points: null, error: f.error };
-        const missing = f.names.filter(name => !(name in vars) && !(name in CONSTANTS));
-        if (missing.length) return { points: null, error: `unknown name${missing.length > 1 ? 's' : ''}: ${missing.join(', ')} (a slider sets one; or Project settings → Variables)` };
-        let fx;
-        try {
-            fx = f.evaluate(vars);
-        } catch (e) {
-            return { points: null, error: e.message };
+const COLORMAPS = {
+    viridis: ['#440154', '#482878', '#3e4989', '#31688e', '#26828e', '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725'],
+    magma: ['#000004', '#1c1044', '#4f127b', '#812581', '#b5367a', '#e55964', '#fb8761', '#fec287', '#fcfdbf'],
+    coolwarm: ['#3b4cc0', '#6889ee', '#9abbff', '#c9d7f0', '#edd1c2', '#f7a889', '#e26952', '#b40426'],
+    blues: ['#f7fbff', '#c6dbef', '#6baed6', '#2171b5', '#08306b'],
+    gray: ['#000000', '#ffffff'],
+};
+export const COLORMAP_NAMES = Object.keys(COLORMAPS);
+
+function hexRgb(h) {
+    return [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+}
+
+/** [r, g, b] of colour map `name` at t in 0..1. */
+function colormap(name, t) {
+    const stops = COLORMAPS[name] || COLORMAPS.viridis;
+    const x = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0)) * (stops.length - 1);
+    const i = Math.min(stops.length - 2, Math.floor(x));
+    const a = hexRgb(stops[i]);
+    const b = hexRgb(stops[i + 1]);
+    const f = x - i;
+    return a.map((c, k) => Math.round(c + (b[k] - c) * f));
+}
+
+/** A heatmap's colours as a PNG (needs a page: none in a plain script). */
+function heatmapImage(r, cmap) {
+    if (typeof document === 'undefined') return '';
+    const canvas = document.createElement('canvas');
+    canvas.width = r.cols;
+    canvas.height = r.rows;
+    const g = canvas.getContext('2d');
+    if (!g) return '';
+    const img = g.createImageData(r.cols, r.rows);
+    for (let j = 0; j < r.rows; j++) {
+        for (let i = 0; i < r.cols; i++) {
+            const v = r.z[j * r.cols + i];
+            const at = ((r.rows - 1 - j) * r.cols + i) * 4; // y goes up
+            if (!Number.isFinite(v)) { img.data[at + 3] = 0; continue; }
+            const [cr, cg, cb] = colormap(cmap, (v - r.zr[0]) / (r.zr[1] - r.zr[0]));
+            img.data[at] = cr; img.data[at + 1] = cg; img.data[at + 2] = cb; img.data[at + 3] = 255;
         }
-        const points = [];
-        try {
-            for (let i = 0; i <= n; i++) {
-                const x = xmin + (xmax - xmin) * i / n;
-                points.push([x, fx(x)]);
+    }
+    g.putImageData(img, 0, 0);
+    return canvas.toDataURL('image/png');
+}
+
+// marching squares: corner bits (v0 bottom-left, v1 bottom-right, v2 top-right, v3 top-left) -> edge pairs
+const MS = [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], [[3, 0], [1, 2]], [[0, 2]], [[3, 2]], [[2, 3]], [[0, 2]], [[0, 1], [2, 3]], [[1, 2]], [[1, 3]], [[0, 1]], [[3, 0]], []];
+
+/** Level lines of a grid at `levels`: [[level, [[x1, y1, x2, y2], ...]], ...] in data units. */
+function contourSegments(r, xr, yr, levels) {
+    const dx = (xr[1] - xr[0]) / r.nx;
+    const dy = (yr[1] - yr[0]) / r.ny;
+    const at = (i, j) => r.z[j * r.cols + i];
+    return levels.map(L => {
+        const segs = [];
+        for (let j = 0; j < r.ny; j++) {
+            for (let i = 0; i < r.nx; i++) {
+                const v = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
+                if (v.some(c => !Number.isFinite(c))) continue;
+                const idx = (v[0] > L ? 1 : 0) | (v[1] > L ? 2 : 0) | (v[2] > L ? 4 : 0) | (v[3] > L ? 8 : 0);
+                if (!MS[idx].length) continue;
+                const x0 = xr[0] + i * dx;
+                const y0 = yr[0] + j * dy;
+                const corner = [[x0, y0], [x0 + dx, y0], [x0 + dx, y0 + dy], [x0, y0 + dy]];
+                const edge = (e) => {
+                    const a = e;
+                    const b = (e + 1) % 4;
+                    const t = (L - v[a]) / ((v[b] - v[a]) || 1e-12);
+                    return [corner[a][0] + (corner[b][0] - corner[a][0]) * t, corner[a][1] + (corner[b][1] - corner[a][1]) * t];
+                };
+                MS[idx].forEach(([e1, e2]) => { const p = edge(e1); const q = edge(e2); segs.push([p[0], p[1], q[0], q[1]]); });
             }
-        } catch (e) {
-            return { points: null, error: e.line ? `line ${e.line}: ${e.message}` : e.message };
         }
-        return { points, error: null };
+        return [L, segs];
     });
 }
 
-/** The y range a plot shows: its own, else the curves' (with a margin). */
-export function yRange(spec, sampled) {
-    let ymin = num(spec.ymin, null);
-    let ymax = num(spec.ymax, null);
-    if (ymin !== null && ymax !== null && ymax > ymin) return [ymin, ymax];
-    let lo = Infinity;
-    let hi = -Infinity;
-    sampled.forEach(s => (s.points || []).forEach(([, y]) => {
-        if (Number.isFinite(y)) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
-    }));
-    if (!Number.isFinite(lo)) { lo = -1; hi = 1; }
-    if (hi - lo < 1e-12) { lo -= 1; hi += 1; }
-    const pad = (hi - lo) * 0.06;
-    return [ymin !== null ? ymin : lo - pad, ymax !== null ? ymax : hi + pad];
+/** Pieces of level lines chained into lines: [[x, y], ...] each (continuous strokes, smaller files). */
+function chainSegments(segs) {
+    const key = (x, y) => `${Math.round(x * 1e6)},${Math.round(y * 1e6)}`;
+    const ends = new Map();
+    segs.forEach((s, i) => {
+        [key(s[0], s[1]), key(s[2], s[3])].forEach(k => { if (!ends.has(k)) ends.set(k, []); ends.get(k).push(i); });
+    });
+    const used = new Uint8Array(segs.length);
+    const lines = [];
+    const extend = (line, atEnd) => {
+        for (;;) {
+            const [x, y] = atEnd ? line[line.length - 1] : line[0];
+            const next = (ends.get(key(x, y)) || []).find(i => !used[i]);
+            if (next === undefined) return;
+            used[next] = 1;
+            const s = segs[next];
+            const p = key(s[0], s[1]) === key(x, y) ? [s[2], s[3]] : [s[0], s[1]];
+            if (atEnd) line.push(p); else line.unshift(p);
+        }
+    };
+    segs.forEach((s, i) => {
+        if (used[i]) return;
+        used[i] = 1;
+        const line = [[s[0], s[1]], [s[2], s[3]]];
+        extend(line, true);
+        extend(line, false);
+        lines.push(line);
+    });
+    return lines;
 }
 
 const DASH = { dashed: (w) => `${w * 3} ${w * 2}`, dotted: (w) => `${w} ${w * 1.6}` };
 
 /**
  * The plot as SVG for these variables. spec: { width, height, xmin, xmax,
- * ymin, ymax (none: from the curves), grid, fontSize, fontFamily, color,
- * samples, lang, curves: [{ code, lang, color, width, dash }], yAuto }
- * (yAuto: the range found once, kept while sliders move).
+ * ymin, ymax (empty: from the layers), xscale, yscale (log), xticks, yticks
+ * (pi), aspect (equal), grid, fontSize, fontFamily, color, samples,
+ * layers: [{ kind, code, lang, color, width, dash, opacity, …, table }],
+ * auto: { x, y, z } (ranges found once, kept while sliders move) }.
  */
 export function plotSvg(spec, vars) {
-    const L = plotLayout(spec);
     const W = num(spec.width, 800);
     const H = num(spec.height, 500);
-    const xmin = num(spec.xmin, -5);
-    const xmax = num(spec.xmax, 5) > xmin ? num(spec.xmax, 5) : xmin + 1;
-    const sampled = sampleCurves(spec, vars || {});
-    const [ymin, ymax] = spec.yAuto && (num(spec.ymin, null) === null || num(spec.ymax, null) === null) ? spec.yAuto : yRange(spec, sampled);
-    const X = (x) => L.left + (x - xmin) / (xmax - xmin) * L.w;
-    const Y = (y) => L.top + (1 - (y - ymin) / (ymax - ymin)) * L.h;
+    const ev = evaluatePlot(spec, vars || {}, spec.auto || null);
+    const { xr, yr, results, categories, L } = ev;
+    const xlog = spec.xscale === 'log';
+    const ylog = spec.yscale === 'log';
+    const tx = (v) => (xlog ? Math.log10(v) : v);
+    const ty = (v) => (ylog ? Math.log10(v) : v);
+    const X = (x) => L.left + (tx(x) - tx(xr[0])) / (tx(xr[1]) - tx(xr[0])) * L.w;
+    const Y = (y) => L.top + (1 - (ty(y) - ty(yr[0])) / (ty(yr[1]) - ty(yr[0]))) * L.h;
+    const ok = (x, y) => Number.isFinite(x) && Number.isFinite(y) && (!xlog || x > 0) && (!ylog || y > 0);
     const colour = spec.color || '#0f172a';
     const font = esc(spec.fontFamily || 'sans-serif');
     const fs = L.fs * 0.8;
+    const layers = spec.layers || [];
+    const colourOf = (layer, i) => layer.color || PALETTE[i % PALETTE.length];
     const parts = [];
-    const clip = `glc${Math.abs(Math.round(W * 7 + H * 13 + xmin * 31 + ymax * 17)) % 100000}${Math.random().toString(36).slice(2, 6)}`;
+    const clip = `glc${Math.random().toString(36).slice(2, 9)}`;
     parts.push(`<defs><clipPath id="${clip}"><rect x="${L.left}" y="${L.top}" width="${L.w}" height="${L.h}"/></clipPath></defs>`);
-    const tx = ticks(xmin, xmax, Math.max(2, Math.round(L.w / (L.fs * 5))));
-    const ty = ticks(ymin, ymax, Math.max(2, Math.round(L.h / (L.fs * 3))));
+    const xt = categories ? categories.map((c, i) => ({ v: i, text: c })) : axisTicks(xr, Math.max(2, Math.round(L.w / (L.fs * 5))), xlog ? 'log' : spec.xticks === 'pi' ? 'pi' : '');
+    const yt = axisTicks(yr, Math.max(2, Math.round(L.h / (L.fs * 3))), ylog ? 'log' : spec.yticks === 'pi' ? 'pi' : '');
     if (spec.grid !== 'no') {
         const g = [];
-        tx.values.forEach(v => g.push(`M${X(v).toFixed(1)} ${L.top}V${L.top + L.h}`));
-        ty.values.forEach(v => g.push(`M${L.left} ${Y(v).toFixed(1)}H${L.left + L.w}`));
+        xt.forEach(t => { if (t.v >= xr[0] && t.v <= xr[1]) g.push(`M${X(t.v).toFixed(1)} ${L.top}V${L.top + L.h}`); });
+        yt.forEach(t => g.push(`M${L.left} ${Y(t.v).toFixed(1)}H${L.left + L.w}`));
         parts.push(`<path d="${g.join('')}" stroke="${esc(colour)}" stroke-opacity="0.12" stroke-width="1" fill="none"/>`);
     }
-    // the axes at zero when it is inside, else at the edge
-    parts.push(`<path d="M${L.left} ${L.top}V${L.top + L.h}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.7" stroke-width="1.5" fill="none"/>`);
-    if (ymin < 0 && ymax > 0) parts.push(`<path d="M${L.left} ${Y(0).toFixed(1)}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
-    if (xmin < 0 && xmax > 0) parts.push(`<path d="M${X(0).toFixed(1)} ${L.top}V${L.top + L.h}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
-    const labels = [];
-    tx.values.forEach(v => labels.push(`<text x="${X(v).toFixed(1)}" y="${(L.top + L.h + fs * 1.4).toFixed(1)}" text-anchor="middle">${tickText(v, tx.step)}</text>`));
-    ty.values.forEach(v => labels.push(`<text x="${(L.left - fs * 0.5).toFixed(1)}" y="${(Y(v) + fs * 0.35).toFixed(1)}" text-anchor="end">${tickText(v, ty.step)}</text>`));
-    parts.push(`<g fill="${esc(colour)}" font-size="${fs.toFixed(1)}" font-family="${font}">${labels.join('')}</g>`);
+    const body = [];        // drawn inside the clip
+    const over = [];        // markers' labels: outside the clip
     const errors = [];
-    const far = (ymax - ymin) * 50;
-    sampled.forEach((s, i) => {
-        const c = spec.curves[i] || {};
-        if (s.error) { errors.push(`${spec.curves.length > 1 ? `curve ${i + 1}: ` : ''}${s.error}`); return; }
+    const order = ['heatmap', 'fill', 'hist', 'bar', 'contour', 'curve', 'parametric', 'line', 'quiver', 'points', 'vline', 'hline', 'point', 'text'];
+    const indices = layers.map((_, i) => i).sort((a, b) => order.indexOf(layers[a].kind) - order.indexOf(layers[b].kind));
+    const polyline = (pts) => {
         let d = '';
         let pen = false;
-        s.points.forEach(([x, y]) => {
-            if (!Number.isFinite(y) || y > ymax + far || y < ymin - far) { pen = false; return; }
+        const far = (yr[1] - yr[0]) * 50;
+        pts.forEach(([x, y]) => {
+            if (!ok(x, y) || (!ylog && (y > yr[1] + far || y < yr[0] - far))) { pen = false; return; }
             d += `${pen ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(y).toFixed(1)}`;
             pen = true;
         });
-        const w = num(c.width, 3);
-        const dash = DASH[c.dash] ? ` stroke-dasharray="${DASH[c.dash](w)}"` : '';
-        parts.push(`<path d="${d}" clip-path="url(#${clip})" fill="none" stroke="${esc(c.color || PALETTE[i % PALETTE.length])}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"${dash}/>`);
+        return d;
+    };
+    const stroke = (layer, c, defaultWidth = 3) => {
+        const w = num(layer.width, defaultWidth);
+        const dash = DASH[layer.dash] ? ` stroke-dasharray="${DASH[layer.dash](w)}"` : '';
+        return `fill="none" stroke="${esc(c)}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"${dash}`;
+    };
+    indices.forEach(i => {
+        const layer = layers[i];
+        const r = results[i] || {};
+        const c = colourOf(layer, i);
+        if (r.error) { errors.push(`${layers.length > 1 ? `${layer.kind} ${i + 1}: ` : ''}${r.error}`); return; }
+        switch (layer.kind) {
+            case 'curve':
+            case 'parametric':
+                body.push(`<path d="${polyline(r.pts || [])}" ${stroke(layer, c)}/>`);
+                break;
+            case 'fill': {
+                const top = (r.pts || []).filter(([x, y]) => ok(x, y));
+                const bottom = (r.bottom || []).filter(([x, y]) => ok(x, y)).reverse();
+                if (top.length > 1) {
+                    const d = [...top, ...bottom].map(([x, y], k) => `${k ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(Math.max(Math.min(y, yr[1] + (yr[1] - yr[0])), yr[0] - (yr[1] - yr[0]))).toFixed(1)}`).join('') + 'Z';
+                    body.push(`<path d="${d}" fill="${esc(c)}" fill-opacity="${num(layer.opacity, 0.3)}" stroke="none"/>`);
+                }
+                break;
+            }
+            case 'hist': {
+                const rects = (r.heights || []).map((h, k) => {
+                    const x0 = X(r.from + k * r.width);
+                    const x1 = X(r.from + (k + 1) * r.width);
+                    const y0 = Y(ylog ? Math.max(yr[0], 1e-12) : 0);
+                    const y1 = Y(ylog ? Math.max(h, 1e-12) : h);
+                    return h > 0 ? `<rect x="${Math.min(x0, x1).toFixed(1)}" y="${Math.min(y0, y1).toFixed(1)}" width="${Math.abs(x1 - x0).toFixed(1)}" height="${Math.abs(y0 - y1).toFixed(1)}"/>` : '';
+                }).join('');
+                body.push(`<g fill="${esc(c)}" fill-opacity="${num(layer.opacity, 0.55)}" stroke="${esc(c)}" stroke-opacity="0.9" stroke-width="1">${rects}</g>`);
+                break;
+            }
+            case 'bar': {
+                const width = num(layer.barwidth, 0.8);
+                const offset = num(layer.offset, 0);
+                const rects = (r.ys || []).map((y, k) => {
+                    const at = r.categorical ? (categories ? categories.indexOf(r.keys[k]) : k) : Number(r.keys[k]);
+                    if (!Number.isFinite(at) || at < 0 || !Number.isFinite(y)) return '';
+                    const x0 = X(at + offset - width / 2);
+                    const x1 = X(at + offset + width / 2);
+                    const y0 = Y(0);
+                    const y1 = Y(y);
+                    return `<rect x="${Math.min(x0, x1).toFixed(1)}" y="${Math.min(y0, y1).toFixed(1)}" width="${Math.abs(x1 - x0).toFixed(1)}" height="${Math.abs(y0 - y1).toFixed(1)}"/>`;
+                }).join('');
+                body.push(`<g fill="${esc(c)}" fill-opacity="${num(layer.opacity, 0.85)}">${rects}</g>`);
+                break;
+            }
+            case 'line':
+                body.push(`<path d="${polyline((r.xs || []).map((x, k) => [x, r.ys[k]]))}" ${stroke(layer, c, 2.5)}/>`);
+                if (layer.markers === 'yes') body.push(`<g fill="${esc(c)}">${(r.xs || []).map((x, k) => (ok(x, r.ys[k]) ? `<circle cx="${X(x).toFixed(1)}" cy="${Y(r.ys[k]).toFixed(1)}" r="${num(layer.size, 4)}"/>` : '')).join('')}</g>`);
+                break;
+            case 'points': {
+                const size = num(layer.size, 5);
+                const bars = r.err ? (r.xs || []).map((x, k) => {
+                    const e = r.err[k];
+                    if (!ok(x, r.ys[k]) || !Number.isFinite(e)) return '';
+                    return `M${X(x).toFixed(1)} ${Y(r.ys[k] - e).toFixed(1)}V${Y(r.ys[k] + e).toFixed(1)}M${(X(x) - size).toFixed(1)} ${Y(r.ys[k] - e).toFixed(1)}h${size * 2}M${(X(x) - size).toFixed(1)} ${Y(r.ys[k] + e).toFixed(1)}h${size * 2}`;
+                }).join('') : '';
+                if (bars) body.push(`<path d="${bars}" stroke="${esc(c)}" stroke-width="1.5" fill="none"/>`);
+                body.push(`<g fill="${esc(c)}">${(r.xs || []).map((x, k) => (ok(x, r.ys[k]) ? `<circle cx="${X(x).toFixed(1)}" cy="${Y(r.ys[k]).toFixed(1)}" r="${size}"/>` : '')).join('')}</g>`);
+                break;
+            }
+            case 'heatmap': {
+                const href = heatmapImage(r, layer.colormap);
+                if (href) body.push(`<image href="${href}" x="${L.left}" y="${L.top}" width="${L.w}" height="${L.h}" preserveAspectRatio="none" opacity="${num(layer.opacity, 1)}"/>`);
+                if (layer.colorbar !== 'no' && L.bar) {
+                    const bx = L.left + L.w + L.fs * 0.9;
+                    const bw = L.fs * 0.8;
+                    const gid = `${clip}g${i}`;
+                    const stops = Array.from({ length: 11 }, (_, k) => `<stop offset="${k / 10}" stop-color="rgb(${colormap(layer.colormap, 1 - k / 10).join(',')})"/>`).join('');
+                    parts.push(`<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">${stops}</linearGradient></defs>`);
+                    over.push(`<rect x="${bx}" y="${L.top}" width="${bw}" height="${L.h}" fill="url(#${gid})" stroke="${esc(colour)}" stroke-opacity="0.4"/>`);
+                    axisTicks(r.zr, 5, '').forEach(t => {
+                        if (t.v < r.zr[0] || t.v > r.zr[1]) return;
+                        const yy = L.top + (1 - (t.v - r.zr[0]) / (r.zr[1] - r.zr[0])) * L.h;
+                        over.push(`<text x="${bx + bw + fs * 0.4}" y="${(yy + fs * 0.35).toFixed(1)}" font-size="${fs.toFixed(1)}" font-family="${font}" fill="${esc(colour)}">${t.text}</text>`);
+                    });
+                }
+                break;
+            }
+            case 'contour': {
+                // at:"0.5, 1, 2": those values; levels:N: N levels across the range
+                const levels = layer.at !== undefined && layer.at !== '' ? String(layer.at).split(/[,;\s]+/).map(v => paramValue({ v, lang: layer.lang }, 'v', vars, NaN)).filter(Number.isFinite)
+                    : (() => { const n = Math.max(1, Math.round(Number(layer.levels) || 10)); return Array.from({ length: n }, (_, k) => r.zr[0] + (r.zr[1] - r.zr[0]) * (k + 0.5) / n); })();
+                contourSegments(r, xr, yr, levels).forEach(([level, segs]) => {
+                    if (!segs.length) return;
+                    const lc = layer.colormap ? `rgb(${colormap(layer.colormap, (level - r.zr[0]) / (r.zr[1] - r.zr[0])).join(',')})` : c;
+                    const d = chainSegments(segs).map(line => line.map(([x, y], k) => `${k ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(y).toFixed(1)}`).join('')).join('');
+                    body.push(`<path d="${d}" ${stroke(layer, lc, 2)}/>`);
+                });
+                break;
+            }
+            case 'quiver': {
+                const cell = Math.min(L.w / r.nx, L.h / r.ny);
+                const px = (a) => [a[2] * L.w / (xr[1] - xr[0]), -a[3] * L.h / (yr[1] - yr[0])];
+                let longest = 0;
+                r.arrows.forEach(a => { const [u, v] = px(a); const m = Math.hypot(u, v); if (Number.isFinite(m) && m > longest) longest = m; });
+                const k = isSet(layer.scale) ? Number(layer.scale) : (longest ? cell * 0.85 / longest : 0);
+                const d = r.arrows.map(a => {
+                    const [u, v] = px(a).map(q => q * k);
+                    const m = Math.hypot(u, v);
+                    if (!Number.isFinite(m) || m < 0.5) return '';
+                    const x1 = X(a[0]) - u / 2;
+                    const y1 = Y(a[1]) - v / 2;
+                    const x2 = x1 + u;
+                    const y2 = y1 + v;
+                    const hl = Math.min(m * 0.35, cell * 0.3);
+                    const ang = Math.atan2(v, u);
+                    const h1 = [x2 - hl * Math.cos(ang - 0.45), y2 - hl * Math.sin(ang - 0.45)];
+                    const h2 = [x2 - hl * Math.cos(ang + 0.45), y2 - hl * Math.sin(ang + 0.45)];
+                    return `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}M${h1[0].toFixed(1)} ${h1[1].toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}L${h2[0].toFixed(1)} ${h2[1].toFixed(1)}`;
+                }).join('');
+                body.push(`<path d="${d}" ${stroke(layer, c, 2)}/>`);
+                break;
+            }
+            case 'vline':
+                if (ok(r.x, yr[0]) && r.x >= xr[0] && r.x <= xr[1]) {
+                    body.push(`<path d="M${X(r.x).toFixed(1)} ${L.top}V${L.top + L.h}" ${stroke({ dash: 'dashed', ...layer }, c, 2)}/>`);
+                    if (layer.label) over.push(`<text x="${(X(r.x) + fs * 0.3).toFixed(1)}" y="${(L.top + fs * 1.1).toFixed(1)}" font-size="${fs.toFixed(1)}" font-family="${font}" fill="${esc(c)}">${esc(layer.label)}</text>`);
+                }
+                break;
+            case 'hline':
+                if (ok(xr[0], r.y) && r.y >= yr[0] && r.y <= yr[1]) {
+                    body.push(`<path d="M${L.left} ${Y(r.y).toFixed(1)}H${L.left + L.w}" ${stroke({ dash: 'dashed', ...layer }, c, 2)}/>`);
+                    if (layer.label) over.push(`<text x="${(L.left + L.w - fs * 0.3).toFixed(1)}" y="${(Y(r.y) - fs * 0.4).toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" font-family="${font}" fill="${esc(c)}">${esc(layer.label)}</text>`);
+                }
+                break;
+            case 'point':
+                if (ok(r.x, r.y)) {
+                    body.push(`<circle cx="${X(r.x).toFixed(1)}" cy="${Y(r.y).toFixed(1)}" r="${num(layer.size, 7)}" fill="${esc(c)}"/>`);
+                    if (layer.label) over.push(`<text x="${(X(r.x) + fs * 0.6).toFixed(1)}" y="${(Y(r.y) - fs * 0.5).toFixed(1)}" font-size="${fs.toFixed(1)}" font-family="${font}" fill="${esc(c)}">${esc(layer.label)}</text>`);
+                }
+                break;
+            case 'text':
+                if (ok(r.x, r.y)) over.push(`<text x="${X(r.x).toFixed(1)}" y="${Y(r.y).toFixed(1)}" text-anchor="${{ left: 'start', center: 'middle', right: 'end' }[layer.align] || 'start'}" font-size="${(num(layer.size, fs)).toFixed(1)}" font-family="${font}" fill="${esc(layer.color || colour)}">${esc(layer.label || layer.code || '')}</text>`);
+                break;
+            default:
+                errors.push(`unknown layer: .${layer.kind}`);
+        }
     });
+    parts.push(`<g clip-path="url(#${clip})">${body.join('')}</g>`);
+    // axes (zero lines when inside), ticks
+    parts.push(`<path d="M${L.left} ${L.top}V${L.top + L.h}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.7" stroke-width="1.5" fill="none"/>`);
+    if (!ylog && yr[0] < 0 && yr[1] > 0) parts.push(`<path d="M${L.left} ${Y(0).toFixed(1)}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
+    if (!xlog && !categories && xr[0] < 0 && xr[1] > 0) parts.push(`<path d="M${X(0).toFixed(1)} ${L.top}V${L.top + L.h}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
+    const labels = [];
+    xt.forEach(t => { if (t.v >= xr[0] - 1e-9 && t.v <= xr[1] + 1e-9) labels.push(`<text x="${X(t.v).toFixed(1)}" y="${(L.top + L.h + fs * 1.4).toFixed(1)}" text-anchor="middle">${esc(t.text)}</text>`); });
+    yt.forEach(t => labels.push(`<text x="${(L.left - fs * 0.5).toFixed(1)}" y="${(Y(t.v) + fs * 0.35).toFixed(1)}" text-anchor="end">${esc(t.text)}</text>`));
+    parts.push(`<g fill="${esc(colour)}" font-size="${fs.toFixed(1)}" font-family="${font}">${labels.join('')}</g>`);
+    parts.push(over.join(''));
     if (errors.length) {
-        parts.push(`<g font-size="${fs.toFixed(1)}" font-family="${font}" fill="#dc2626">${errors.slice(0, 4).map((e, i) => `<text x="${L.left + fs}" y="${L.top + fs * (1.5 + i * 1.3)}">${esc(e)}</text>`).join('')}</g>`);
+        parts.push(`<g font-size="${fs.toFixed(1)}" font-family="${font}" fill="#dc2626">${errors.slice(0, 4).map((e, k) => `<text x="${L.left + fs}" y="${L.top + fs * (1.5 + k * 1.3)}">${esc(e)}</text>`).join('')}</g>`);
     }
     return `<svg class="gl-plot-svg" xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;left:0;top:0;overflow:visible">${parts.join('')}</svg>`;
 }
 
-export const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
+/** How a layer shows in a legend: 'line', 'area' or 'dot'. */
+export function legendStyle(kind) {
+    if (LINE_KINDS.has(kind)) return 'line';
+    if (kind === 'points' || kind === 'point') return 'dot';
+    return 'area';
+}
 
 // ---------- live values in a page ----------
 

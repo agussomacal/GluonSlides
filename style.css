@@ -2159,3 +2159,6 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .var-table th { color: var(--text-muted); font-weight: 600; }
 .plot-code { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; white-space: pre; tab-size: 4; resize: vertical; margin-top: 6px; }
 .element-slider input[type=range] { pointer-events: auto; }
+.plot-layer-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.plot-layer-buttons .btn { width: auto; margin: 0; padding: 3px 8px; font-size: 11px; }
+.plot-files { margin-top: 4px; }

@@ -98,3 +98,90 @@ def refresh_tables(project_folder, items):
         return {"success": True, "updated": updated}
     except Exception as e:
         return {"success": False, "error": str(e), "updated": updated}
+
+
+# ---------- data for plots (elements/plot: .points, .line, .hist, .bar) ----------
+
+MAX_PLOT_ROWS = 20000   # a plot draws at most this many rows of a file (evenly thinned, the last kept)
+
+
+def copy_into_data(project_folder, source):
+    """Copies `source` into <project>/data/ (a unique name); its path relative to the project."""
+    if not project_folder or not os.path.isdir(project_folder):
+        raise ValueError("Save the project first: the file is copied into its folder.")
+    data_dir = os.path.join(project_folder, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    base, ext = os.path.splitext(os.path.basename(source))
+    dest = os.path.join(data_dir, base + ext)
+    n = 1
+    while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(source):
+        dest = os.path.join(data_dir, f"{base}_{n}{ext}")
+        n += 1
+    if os.path.abspath(dest) != os.path.abspath(source):
+        shutil.copy2(source, dest)
+    return os.path.relpath(dest, project_folder).replace("\\", "/")
+
+
+def read_plot_data(project_folder, path):
+    """{"success", "header", "rows", "total", "mtime"}: a CSV's rows for a plot (the
+    header apart when the first row isn't numbers), thinned to MAX_PLOT_ROWS."""
+    try:
+        p = _resolve(project_folder, path)
+        with open(p, encoding="utf-8-sig", errors="replace", newline="") as f:
+            text = f.read()
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel_tab if sample.count("\t") > sample.count(",") else csv.excel
+        rows = [[c.strip() for c in r] for r in csv.reader(io.StringIO(text), dialect) if any(c.strip() for c in r)]
+
+        def number(c):
+            try:
+                float(c)
+                return True
+            except ValueError:
+                return False
+        header = None
+        if len(rows) > 1 and all(not number(c) for c in rows[0]) and any(number(c) for c in rows[1]):
+            header = rows.pop(0)
+        total = len(rows)
+        if total > MAX_PLOT_ROWS:
+            step = total / MAX_PLOT_ROWS
+            rows = [rows[int(i * step)] for i in range(MAX_PLOT_ROWS - 1)] + [rows[-1]]
+        return {"success": True, "header": header, "rows": rows, "total": total, "mtime": os.path.getmtime(p)}
+    except Exception as e:
+        return {"success": False, "error": f"{os.path.basename(str(path))}: {e}"}
+
+
+def link_plot_data(project_folder, source):
+    """Copies a data file into <project>/data/; its rows and where it went."""
+    try:
+        rel = copy_into_data(project_folder, source)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    res = read_plot_data(project_folder, rel)
+    if not res.get("success"):
+        return res
+    return {**res, "relative_path": rel, "original": os.path.abspath(source)}
+
+
+def refresh_plot_data(project_folder, items):
+    """items: [{"src", "original", "mtime"}]. Re-copies originals that changed; the rows
+    of every file newer than `mtime` (what the page has)."""
+    updated = []
+    for item in items or []:
+        src, original = item.get("src") or "", item.get("original") or ""
+        local = _resolve(project_folder, src)
+        try:
+            if original and os.path.isfile(original) and os.path.abspath(original) != os.path.abspath(local):
+                o, l = os.stat(original), (os.stat(local) if os.path.isfile(local) else None)
+                if l is None or int(o.st_mtime) != int(l.st_mtime) or o.st_size != l.st_size:
+                    os.makedirs(os.path.dirname(local), exist_ok=True)
+                    shutil.copy2(original, local)
+        except OSError:
+            pass
+        mtime = os.path.getmtime(local) if os.path.isfile(local) else -1
+        if mtime != (item.get("mtime") or 0):
+            updated.append({"src": src, **read_plot_data(project_folder, src)})
+    return {"success": True, "updated": updated}
