@@ -3,6 +3,7 @@
 // an instance back into an ordinary group.
 // ============================================================
 
+import { remapConnectors } from '../core/connectors.js';
 import {
     state,
     activeElements,
@@ -113,7 +114,12 @@ export function detachSelected() {
             x: inst.x, y: inst.y, width: inst.width, height: inst.height,
             frameWidth: macro.width, frameHeight: macro.height,
             bg: 'transparent', borderCol: 'transparent', borderWidth: 0, borderStyle: 'solid',
-            children: children.map(c => reassignIdsDeep(c)),
+            children: (() => {
+                const idMap = new Map();
+                const out = children.map(c => reassignIdsDeep(c, idMap));
+                remapConnectors(out, idMap, []);
+                return out;
+            })(),
         };
         elements[i] = group;
         count++;

@@ -4,6 +4,7 @@
 // and undo/redo.
 // ============================================================
 
+import { remapConnectors } from './connectors.js';
 import { clipboardSourceNow, fromAnotherProject, bringAlong } from './projectTransfer.js';
 import { busy } from '../ui/busy.js';
 import {
@@ -258,10 +259,12 @@ async function pasteInternal(onMaster, slide) {
         // and the objects keep their place (a duplicate here would be offset).
         const other = fromAnotherProject(state.clipboardSource);
         const missing = other ? await busy('Copying the files they use…', bringAlong(copies, state.clipboardSource)) : [];
+        // Paste mints fresh IDs (copy keeps the original's identity); connectors
+        // among the pasted objects attach to the pasted copies (core/connectors.js).
+        const idMap = new Map();
+        copies.forEach(newEl => reassignIdsDeep(newEl, idMap));
+        remapConnectors(copies, idMap, other ? [] : activeElements());
         copies.forEach(newEl => {
-            // Paste mints a fresh ID: copy keeps the original's identity,
-            // paste creates a distinct element so IDs stay unique.
-            reassignIdsDeep(newEl);
             if (!other) {
                 newEl.x += PASTE_OFFSET_PX;
                 newEl.y += PASTE_OFFSET_PX;
@@ -291,7 +294,9 @@ async function pasteInternal(onMaster, slide) {
             if (!otherProject) newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
             // Pasted slides carry their elements with their original
             // IDs; those are remapped below to stay unique.
-            newSlide.elements = (newSlide.elements || []).map(el => reassignIdsDeep(el));
+            const idMap = new Map();
+            newSlide.elements = (newSlide.elements || []).map(el => reassignIdsDeep(el, idMap));
+            remapConnectors(newSlide.elements, idMap, []);
             const targetIdx = insertAfter + 1 + offset;
             state.slides.splice(targetIdx, 0, newSlide);
             pastedSlideIndices.push(targetIdx);

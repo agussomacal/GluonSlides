@@ -5,6 +5,7 @@
 // cut/copy/paste, and deletion.
 // ============================================================
 
+import { updateAllConnectors, updateConnectors, isConnector, parseEnd, findTarget, anchor, formatEnd, SIDES } from '../core/connectors.js';
 import {
     state,
     markDirty,
@@ -821,6 +822,9 @@ function appendHandles(container, domEl, el, def, elIndex) {
         const start = { x: el.x, y: el.y, width: el.width, height: el.height };
         const { stepX, stepY } = gridSteps();
         let moved = false;
+        // A line's end can be attached to a shape: dropped on one of its anchors.
+        const endKey = el.type === 'path' && el.closed !== 'yes' ? lineEndKey(el, id) : null;
+        let snap = null;
         const onMove = (m) => {
             const r = container.getBoundingClientRect();
             let px = Math.round((m.clientX - r.left) * ((container.offsetWidth || 1) / (r.width || 1)));
@@ -829,6 +833,13 @@ function appendHandles(container, domEl, el, def, elIndex) {
                 px = snapToGridPoint(px, stepX);
                 py = snapToGridPoint(py, stepY);
             }
+            if (endKey && !m.altKey) {
+                snap = anchorUnder(activeElements(), el, px, py, container);
+                if (snap) [px, py] = snap.point;
+            } else {
+                snap = null;
+                clearAnchorDots(container);
+            }
             moved = true;
             def.dragHandle(el, id, px, py, { shiftKey: m.shiftKey, start });
             repaint();
@@ -836,6 +847,12 @@ function appendHandles(container, domEl, el, def, elIndex) {
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            clearAnchorDots(container);
+            if (moved && endKey) {
+                if (snap) el[endKey] = formatEnd(snap.target, snap.side, activeElements());
+                else delete el[endKey];
+                if (!el.from && !el.to) delete el.route;
+            }
             if (moved) {
                 markDirty();
                 renderEditor();
@@ -864,6 +881,90 @@ function guideTargets(container, elements, movingIndices) {
         targets: targets.map(el => ({ x: el.x, y: el.y, width: el.width, height: el.height })),
         frame: { width: container.offsetWidth || state.slideWidth, height: container.offsetHeight || state.slideHeight },
     };
+}
+
+// ---------- Attaching lines to shapes (core/connectors.js) ----------
+
+const ANCHOR_SIDES = ['top', 'right', 'bottom', 'left', 'center'];
+
+/** 'from' / 'to' when handle `id` is the first / last point of an open path. */
+function lineEndKey(el, id) {
+    if (!/^p\d+$/.test(id)) return null;
+    const i = Number(id.slice(1));
+    const n = (el.points || []).length;
+    return i === 0 ? 'from' : (i === n - 1 ? 'to' : null);
+}
+
+/** The shape under (px, py) and its anchor nearest to it ({ target, side, point }), dots shown. */
+function anchorUnder(elements, self, px, py, container) {
+    const slack = 24 * ((container.offsetWidth || 1) / (container.getBoundingClientRect().width || 1)) / 2;
+    let best = null;
+    for (const el of elements) {
+        if (el === self || el.type === 'path' || isLocked(el)) continue;
+        const box = findTarget(elements, { id: el.id, side: 'auto' });
+        if (!box || px < box.x - slack || px > box.x + box.width + slack || py < box.y - slack || py > box.y + box.height + slack) continue;
+        for (const side of ANCHOR_SIDES) {
+            const a = anchor(box, side);
+            const d = Math.hypot(a.point[0] - px, a.point[1] - py);
+            if (!best || d < best.d) best = { target: el, box, side, point: a.point, d };
+        }
+    }
+    showAnchorDots(container, best);
+    return best;
+}
+
+function clearAnchorDots(container) {
+    container.querySelectorAll(':scope > .anchor-dot').forEach(n => n.remove());
+}
+
+function showAnchorDots(container, best) {
+    clearAnchorDots(container);
+    if (!best) return;
+    const unit = (container.offsetWidth || 1) / (container.getBoundingClientRect().width || 1);
+    ANCHOR_SIDES.forEach(side => {
+        const [x, y] = anchor(best.box, side).point;
+        const dot = document.createElement('div');
+        dot.className = `anchor-dot${side === best.side ? ' active' : ''}`;
+        dot.style.left = `${x}px`;
+        dot.style.top = `${y}px`;
+        dot.style.setProperty('--ui-unit', String(unit));
+        container.appendChild(dot);
+    });
+}
+
+/** A line just drawn: ends that start or stop on a shape attach to it (side facing the other end). */
+export function attachDrawnLine(el, elements) {
+    if (el.type !== 'path' || el.closed === 'yes' || (el.points || []).length !== 2) return;
+    const pts = el.points.map(([fx, fy]) => [el.x + fx * el.width, el.y + fy * el.height]);
+    ['from', 'to'].forEach((key, i) => {
+        const [px, py] = pts[i];
+        const hit = [...elements].reverse().find(t => t !== el && t.type !== 'path' && !isLocked(t)
+            && px >= t.x && px <= t.x + t.width && py >= t.y && py <= t.y + t.height);
+        if (hit) el[key] = formatEnd(hit, 'auto', elements);
+    });
+    if (el.from || el.to) updateConnectors(elements);
+}
+
+/** While dragging: connectors attached to what moves are redrawn at once. */
+function refreshConnectorsLive(container, elements) {
+    updateConnectors(elements).forEach(conn => {
+        const node = container.querySelector(`:scope > [data-element-id="${conn.id}"]`);
+        const def = ElementRegistry.get('path');
+        if (!node || !def) return;
+        const view = forDrawing(conn);
+        applyCommonBoxStyles(node, view);
+        def.renderDom(node, view, { context: 'canvas', elIndex: elements.indexOf(conn) });
+    });
+}
+
+/** A connector dragged away from its shapes: its ends come loose (unless they moved with it). */
+function detachMovedConnector(el, elements) {
+    const moved = new Set(getSelectedElementIndices().map(i => elements[i]).filter(Boolean));
+    for (const key of ['from', 'to']) {
+        const end = parseEnd(el[key]);
+        const target = end && findTarget(elements, end, el);
+        if (end && !(target && moved.has(target.el))) delete el[key];
+    }
 }
 
 function renderInteractiveElements(container, elements) {
@@ -915,6 +1016,7 @@ function renderInteractiveElements(container, elements) {
 
         const dragCallbacks = {
             onGeometryChanged() {
+                refreshConnectorsLive(container, elements);
                 if (el.type === 'group') {
                     // Rescale the contents live while the group is resized.
                     const frame = container.querySelector(`:scope > [data-element-id="${el.id}"] > .group-frame`);
@@ -927,6 +1029,8 @@ function renderInteractiveElements(container, elements) {
                 if (yInput) yInput.value = Math.round(el.y);
             },
             onFinish(hasDragged, isResizing) {
+                // A connector moved on its own (not with its shapes) comes loose.
+                if (hasDragged && !isResizing && isConnector(el)) detachMovedConnector(el, elements);
                 if (hasDragged) markDirty();
                 renderPropertiesPanel();
                 if (hasDragged) {
@@ -1390,6 +1494,12 @@ initDrawingTools({
     getContainer: activeContainer,
     onCreate(type, variantId, props) {
         insertNewElement(ElementRegistry.get(type), variantId, props);
+        const elements = activeElements();
+        const made = elements[elements.length - 1];
+        if (made && made.type === 'path') {
+            attachDrawnLine(made, elements);
+            renderEditor();
+        }
     },
 });
 
@@ -1596,6 +1706,7 @@ function syncToolbarSelectsNow() {
 }
 
 export function renderEditor() {
+    updateAllConnectors(); // lines attached to shapes follow them (core/connectors.js)
     beginCitationPass();
     invalidateNumbering(); // slides may have changed: recount \slidenumber
     updateDimensionsCSS();

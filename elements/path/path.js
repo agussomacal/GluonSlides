@@ -15,6 +15,9 @@
 //   fill      none (default) | color — for closed paths
 //   stroke, strokeWidth, dash (solid | dashed | dotted)
 //   start, end   none (default) | arrow | dot — markers on open paths
+//   from, to  attached ends: <id>@<side> or {<name>}@<side>, with
+//             route straight | curved | elbow (core/connectors.js); the
+//             points then follow the shapes (curve:bezier for curved)
 //
 // Editing: drag point handles; drag corner handles to scale (Shift
 // keeps proportions); double-click the stroke to add a point and a
@@ -26,6 +29,7 @@ import { state, markDirty } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml } from '../../core/render.js';
 import { colorField } from '../../ui/colorPicker.js';
+import { parseEnd } from '../../core/connectors.js';
 
 const MIN_BOX = 1;              // a horizontal line still gets a 1px-tall box
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
@@ -60,9 +64,15 @@ function absolutePoints(el) {
 }
 
 /** SVG path data through `pts` ([[x, y], ...] in drawing units). */
-export function pathData(pts, { smooth = false, closed = false } = {}) {
+export function pathData(pts, { smooth = false, closed = false, bezier = false } = {}) {
     if (pts.length === 0) return '';
     const P = (p) => `${fmt(p[0])},${fmt(p[1])}`;
+    // Cubic Bézier: start, then (control, control, end) triples (curved connectors).
+    if (bezier && pts.length >= 4 && (pts.length - 1) % 3 === 0) {
+        let d = `M${P(pts[0])}`;
+        for (let i = 1; i + 2 < pts.length; i += 3) d += ` C${P(pts[i])} ${P(pts[i + 1])} ${P(pts[i + 2])}`;
+        return d;
+    }
     if (!smooth || pts.length < 3) {
         return `M${pts.map(P).join(' L')}${closed && pts.length > 2 ? ' Z' : ''}`;
     }
@@ -138,7 +148,7 @@ function svgMarkup(el, { interactive = false } = {}) {
     const h = el.height || MIN_BOX;
     const pts = (el.points || []).map(([fx, fy]) => [fx * w, fy * h]);
     const closed = el.closed === 'yes';
-    const d = pathData(pts, { smooth: el.curve === 'smooth', closed });
+    const d = pathData(pts, { smooth: el.curve === 'smooth', bezier: el.curve === 'bezier', closed });
     const stroke = el.stroke || '#0f172a';
     const sw = Number(el.strokeWidth) || 1;
     // "None" in the color picker is stored as transparent: same as no fill.
@@ -198,7 +208,8 @@ const PathElement = {
     ],
 
     gl: {
-        props: ['x', 'y', 'width', 'height', 'curve', 'closed', 'fill', 'stroke', 'strokeWidth', 'dash', 'start', 'end'],
+        props: ['x', 'y', 'width', 'height', 'curve', 'closed', 'fill', 'stroke', 'strokeWidth', 'dash', 'start', 'end',
+            'from', 'to', 'route'], // attached ends (core/connectors.js)
         numericProps: ['x', 'y', 'width', 'height', 'strokeWidth'],
         body: 'points',
         serializeBody(el) {
@@ -384,9 +395,42 @@ const PathElement = {
                 <input type="checkbox" data-prop="closed" ${closed ? 'checked' : ''}>
                 Closed shape
             </label>
+            ${closed ? '' : connectorSection(el)}
             <p class="prop-hint">Drag the points to reshape. Double-click the line to add a point, double-click a point to remove it. Shift: 45° angles / keep proportions.</p>
         `;
     },
+
+    actions: {
+        detach(elIndex, which, el) {
+            if (which === 'from' || which === 'both') delete el.from;
+            if (which === 'to' || which === 'both') delete el.to;
+            if (!el.from && !el.to) delete el.route;
+        },
+    },
 };
+
+/** Panel: what the line's ends are attached to, the route, and detaching. */
+function connectorSection(el) {
+    const describe = (spec) => {
+        const end = parseEnd(spec);
+        if (!end) return '<span class="prop-hint">not attached</span>';
+        const who = end.name !== undefined ? `“${escapeHtml(end.name)}”` : `#${end.id}`;
+        return `${who} · ${end.side}`;
+    };
+    const attached = parseEnd(el.from) || parseEnd(el.to);
+    const opt = (v, label) => `<option value="${v}" ${(el.route || 'straight') === v ? 'selected' : ''}>${label}</option>`;
+    return `
+        <div class="prop-divider"></div>
+        <div class="prop-group">
+            <label title="Drag an end of the line onto a shape to attach it: the line then follows the shape">Attached ends</label>
+            <div class="prop-hint">Start: ${describe(el.from)}${parseEnd(el.from) ? ` <button type="button" class="link-btn" data-element-action="detach" data-arg="from">detach</button>` : ''}</div>
+            <div class="prop-hint">End: ${describe(el.to)}${parseEnd(el.to) ? ` <button type="button" class="link-btn" data-element-action="detach" data-arg="to">detach</button>` : ''}</div>
+        </div>
+        ${attached ? `
+        <div class="prop-group">
+            <label>Route</label>
+            <select class="prop-control" data-prop="route">${opt('straight', 'Straight')}${opt('curved', 'Curved')}${opt('elbow', 'Elbow')}</select>
+        </div>` : '<p class="prop-hint">Drag an end onto a shape to attach the line to it.</p>'}`;
+}
 
 ElementRegistry.register(PathElement);

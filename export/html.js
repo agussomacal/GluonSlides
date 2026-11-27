@@ -6,6 +6,7 @@
 // Present mode shows — one HTML serves all three.
 // ============================================================
 
+import { updateAllConnectors } from '../core/connectors.js';
 import { state } from '../core/state.js';
 import { escapeHtml, exportElementMarkup } from '../core/render.js';
 import { exportFontCss } from '../core/fonts.js';
@@ -82,6 +83,7 @@ function slideMarkup(slide, idx, source = idx) {
  *   notes       include the speaker notes (for the presenter view)
  */
 export async function getExportHtmlString({ startSlide = 0, startAt = null, startStep = 1, localAssets = false, mode = 'audience', notes = true } = {}) {
+    updateAllConnectors(); // attached lines where their shapes are
     let katexCss = await embedKatexFonts(await fetchText('libs/katex.min.css', 'KaTeX CSS'));
     katexCss = katexCss.replace(/url\((?!["']?(?:data:|https?:))/g, `url(${localAssets ? 'libs/' : KATEX_CDN}`);
     // Same stylesheet the editor uses — viewer matches canvas by construction.

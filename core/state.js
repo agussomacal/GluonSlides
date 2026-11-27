@@ -160,8 +160,12 @@ export function ensureIds() {
 }
 
 /** Gives `el` (and, for groups, every descendant) fresh IDs. */
-export function reassignIdsDeep(el) {
-    forEachElementDeep([el], e => { e.id = allocateId(); });
+export function reassignIdsDeep(el, idMap = null) {
+    forEachElementDeep([el], e => {
+        const fresh = allocateId();
+        if (idMap && e.id !== undefined && e.id !== null) idMap.set(e.id, fresh);
+        e.id = fresh;
+    });
     return el;
 }
 
