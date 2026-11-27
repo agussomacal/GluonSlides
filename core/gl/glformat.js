@@ -310,12 +310,14 @@ function serializeElementDirective(el) {
     if (el.style) head.push(`style:${encodeParamValue(el.style)}`);
     // Builds: the click at which the element appears (1 = from the start).
     if (Number(el.step) > 1) head.push(`step:${Math.round(Number(el.step))}`);
+    // ...and the last step it is shown at (it disappears after it).
+    if (Number(el.until) >= Math.max(1, Number(el.step) || 1)) head.push(`until:${Math.round(Number(el.until))}`);
     // Locked in the editor (can't be dragged); no effect on the slides.
     if (el.locked === 'yes') head.push('locked:yes');
 
     if (!spec.registered) {
         const raw = Object.keys(el)
-            .filter(k => !['type', 'id', 'name', 'style', 'step', 'locked'].includes(k) && el[k] !== undefined && el[k] !== null)
+            .filter(k => !['type', 'id', 'name', 'style', 'step', 'until', 'locked'].includes(k) && el[k] !== undefined && el[k] !== null)
             .filter(k => !(typeof el[k] === 'string' && el[k].startsWith('data:')))
             .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`);
         return `.element.${el.type} ${[...head, ...raw].join(' ')}`.trimEnd();
@@ -680,10 +682,12 @@ function buildElement(type, params) {
     if (params.style) el.style = params.style;
     const step = Math.round(Number(params.step));
     if (step > 1) el.step = step;
+    const until = Math.round(Number(params.until));
+    if (until >= Math.max(1, step || 1)) el.until = until;
     if (params.locked === 'yes') el.locked = 'yes';
     const spec = getElementGlSpec(type);
 
-    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step', 'locked'].includes(k));
+    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step', 'until', 'locked'].includes(k));
     keysToRead.forEach(key => {
         if (params[key] === undefined) return;
         const raw = params[key];

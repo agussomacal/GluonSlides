@@ -34,7 +34,7 @@ await page.fill('[data-prop="step"]', '2');
 await page.waitForTimeout(150);
 let st = await getState();
 check('"Appears at step" sets step', st.slides[0].elements.find(e => e.id === 90).step === 2);
-check('step badge on the canvas', await page.getAttribute('[data-element-id="90"]', 'data-step') === '2'
+check('step badge on the canvas', await page.getAttribute('[data-element-id="90"]', 'data-step-label') === '2'
     && await page.$eval('[data-element-id="90"]', n => getComputedStyle(n, '::after').content) === '"2"');
 await page.fill('[data-prop="step"]', '1');
 await page.waitForTimeout(150);

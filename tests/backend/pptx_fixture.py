@@ -82,7 +82,7 @@ def build(path):
     g1.fill.fore_color.rgb = RGBColor(0xAA, 0, 0)
     s2.notes_slide.notes_text_frame.text = "Speaker notes here"
 
-    # click animations: the picture on the 1st click, the oval on the 2nd
+    # click animations: the picture on the 1st click, the oval on the 2nd; the picture leaves on the 3rd
     timing = f'''<p:timing xmlns:p="{P}"><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>
       <p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>
         <p:par><p:cTn id="3" fill="hold"><p:childTnLst><p:par><p:cTn id="4" fill="hold"><p:childTnLst>
@@ -92,6 +92,10 @@ def build(path):
         <p:par><p:cTn id="7" fill="hold"><p:childTnLst><p:par><p:cTn id="8" fill="hold"><p:childTnLst>
           <p:par><p:cTn id="9" presetID="1" presetClass="entr" fill="hold" nodeType="clickEffect"><p:childTnLst>
             <p:set><p:cBhvr><p:cTn id="10"/><p:tgtEl><p:spTgt spid="{oval.shape_id}"/></p:tgtEl></p:cBhvr></p:set>
+          </p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>
+        <p:par><p:cTn id="11" fill="hold"><p:childTnLst><p:par><p:cTn id="12" fill="hold"><p:childTnLst>
+          <p:par><p:cTn id="13" presetID="1" presetClass="exit" fill="hold" nodeType="clickEffect"><p:childTnLst>
+            <p:set><p:cBhvr><p:cTn id="14"/><p:tgtEl><p:spTgt spid="{pic.shape_id}"/></p:tgtEl></p:cBhvr></p:set>
           </p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>
       </p:childTnLst></p:cTn></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>'''
     s2._element.append(etree.fromstring(timing))

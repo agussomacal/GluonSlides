@@ -12,7 +12,7 @@ What becomes what:
   \\includegraphics                 a figure (copied into figures/)
   tabular                          a Markdown table
   tcolorbox, block, custom boxes   a framed box around their content
-  \\pause, <2->, \\only, \\onslide     build steps (later versions cover earlier ones)
+  \\pause, <2->, \\only, \\onslide     build steps; \\only<1-2> etc. disappear after their last step (until)
   \\tableofcontents, bibliography   the app's own fields
   macros (\\newcommand ...)         macros.tex, for the math
 LaTeX's own layout isn't available: blocks are stacked with estimated
@@ -539,22 +539,22 @@ def math_rows(body):
 def math_block(env_kind, body, ctx):
     """A display math block; rows wrapped in \\only<n>/\\onslide<n> become steps."""
     rows = math_rows(body) if env_kind else [body]
-    row_steps, clean = [], []
+    row_steps, row_untils, clean = [], [], []
     for r in rows:
         m = re.match(r"\s*\\(only|onslide|uncover|visible)\s*<([^>]*)>\s*\{", r)
         if m:
             inner, _ = read_group(r, m.end() - 1)
             first, last = overlay_start(m.group(2), ctx.counter) or (1, None)
-            if last is not None:
-                ctx.bounded = True
             row_steps.append(max(first, ctx.step))
+            row_untils.append(last if last is not None and last >= max(first, ctx.step) else None)
             clean.append(inner)
         else:
             row_steps.append(ctx.step)
+            row_untils.append(None)
             clean.append(r)
     ctx.max_step = max([ctx.max_step] + row_steps)
     return {"kind": "math", "env": env_kind, "rows": [fix_math(r, ctx.doc) for r in clean],
-            "row_steps": row_steps, "step": ctx.step, "align": "center"}
+            "row_steps": row_steps, "row_untils": row_untils, "step": ctx.step, "align": "center"}
 
 
 def parse_width(spec):
@@ -646,10 +646,10 @@ def convert(s, ctx):
                 ctx.max_step = max(ctx.max_step, ctx.step)
             inner = convert(args[0], ctx)
             if span and name == "only" and span[1] is not None:
-                # content shown only for some steps: one unit that a later version covers
-                for b in inner:
-                    b["cover"] = True
-                blocks.append({"kind": "stack", "blocks": inner, "replaces": True, "step": ctx.step if not span else max(saved, span[0])})
+                # content shown only for some steps: one unit, gone after its last step
+                first = max(saved, span[0])
+                blocks.append({"kind": "stack", "blocks": inner, "replaces": True, "step": ctx.step if not span else first,
+                               **({"until": span[1]} if span[1] >= first else {})})
             else:
                 blocks.extend(inner)
             ctx.step = saved
@@ -739,8 +739,8 @@ def image_block(path, opt, ctx, span):
         first, last = span
         block["step"] = max(ctx.step, first)
         ctx.max_step = max(ctx.max_step, block["step"])
-        if last is not None:
-            ctx.bounded = True
+        if last is not None and last >= block["step"]:
+            block["until"] = last
         block["replaces"] = True
     return block
 
@@ -1044,6 +1044,7 @@ class Layout:
         """Elements for blocks stacked from (x, y) (pt); returns the bottom (pt)."""
         doc = self.doc
         alt_top = None  # replacing alternatives (images, \only) share the place of the first
+        alt_open = False
         for b in blocks:
             k = b["kind"]
             fs = self.fs * b.get("size", 1.0)
@@ -1053,9 +1054,14 @@ class Layout:
             else:
                 yy = y
                 alt_top = yy if b.get("replaces") else None
+                alt_open = False  # an earlier alternative that never goes away
             step = b.get("step", 1)
             extra = {"step": step} if step > 1 else {}
-            cover = {"bg": "#ffffff"} if (b.get("replaces") or b.get("cover")) else {}
+            # A later alternative covers an earlier one only if that one stays.
+            cover = {"bg": "#ffffff"} if (b.get("replaces") or b.get("cover")) and alt_open else {}
+            if b.get("replaces"):
+                alt_open = alt_open or b.get("until") is None
+            first_new = len(out)
             if k == "text":
                 out.append(model.text(self.X(x), self.Y(yy), self.L(width), self.L(h), b["md"], self.L(fs),
                                       align=b["align"], family=doc.font, **cover, **extra))
@@ -1104,6 +1110,9 @@ class Layout:
                                        border_w=max(1, self.L(0.8)), radius=self.L(b.get("radius") or 0),
                                        dashed=b.get("dashed"), **extra))
                 self.place(b["blocks"], x + pad, yy + pad * 0.8, width - 2 * pad, out)
+            if b.get("until") is not None:  # \only<1-2>, \includegraphics<2>: gone after that step
+                for el in out[first_new:]:
+                    el.setdefault("until", b["until"])
             if not (b.get("replaces") and yy != y):
                 y = yy + h
         return y
@@ -1147,28 +1156,32 @@ class Layout:
 
     def math_elements(self, b, x, y, w, h, fs):
         rows, steps = b["rows"], b["row_steps"]
+        untils = b.get("row_untils") or [None] * len(rows)
         env = b["env"]
         base_step = b.get("step", 1)
 
-        def tex_for(visible_upto):
+        def tex_for(at):
             shown = []
-            for r, st in zip(rows, steps):
-                if st <= visible_upto:
+            for r, st, un in zip(rows, steps, untils):
+                if st <= at and (un is None or at <= un):
                     shown.append(r)
                 elif env:  # keeps its place, invisible
                     shown.append(" & ".join("\\phantom{" + c + "}" for c in re.split(r"(?<!\\)&", r)))
             body = " \\\\ ".join(shown)
             return f"$$\\begin{{{env}}}{body}\\end{{{env}}}$$" if env else f"$${body}$$"
 
-        distinct = sorted(set(steps))
-        cover = {"bg": "#ffffff"} if b.get("replaces") else {}
+        # The equation changes where a row appears or disappears: one version per
+        # change, each shown until the next one (no covering needed).
+        distinct = sorted(set(steps) | {u + 1 for u in untils if u is not None})
+        cover = {"bg": "#ffffff"} if b.get("replaces") and b.get("until") is None else {}
         if len(distinct) <= 1:
             step = max(distinct + [base_step])
             return [model.text(x, y, w, h, tex_for(10 ** 6), fs, align="center", **cover, **({"step": step} if step > 1 else {}))]
         out = []
         for n, st in enumerate(distinct):
+            until = {"until": distinct[n + 1] - 1} if n + 1 < len(distinct) else {}
             out.append(model.text(x, y, w, h, tex_for(st), fs, align="center",
-                                  **({"bg": "#ffffff"} if n or cover else {}), **({"step": st} if st > 1 else {})))
+                                  **({"step": st} if st > 1 else {}), **until))
         return out
 
     def list_elements(self, b, x, y, width, fs, out):
@@ -1365,8 +1378,6 @@ def build_slides(doc, layout):
             els.insert(0, model.text(doc.pt(margin * 0.5), 0, W - doc.pt(margin), doc.pt(title_h), title_md(title),
                                      doc.pt(fs * 1.44), colour=doc.ft_fg or "#000000",
                                      align="center" if doc.ft_center else "left", valign="center", family=font))
-        if ctx.bounded:
-            doc.warnings.append(f"Slide {len(slides) + 1}: content that disappears in Beamer (\\only<n>) is covered by the next step here; check its steps.")
         fallback = (plain_text(doc.meta["title"], doc) or "Title") if is_title_page else f"Slide {len(slides) + 1}"
         slide = {"title": re.sub(r"[*$\\]", "", title_md(title)) or fallback, "elements": els}
         if section:

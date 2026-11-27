@@ -189,8 +189,11 @@ class Converter:
     def convert_shapes(self, shapes, out, xf, slide_steps=None, in_layout=False):
         for sh in shapes:
             x, y, w, h = xf(sh)
-            step = (slide_steps or {}).get(sh.shape_id, 1)
+            timing = (slide_steps or {}).get(sh.shape_id, {})
+            step = timing.get("step", 1)
             extra = {"step": step} if step > 1 else {}
+            if timing.get("until") is not None and timing["until"] >= step:
+                extra["until"] = timing["until"]
             st = sh.shape_type
             if in_layout and sh.is_placeholder:
                 continue  # layout placeholders only shape the slides' own
@@ -343,19 +346,25 @@ class Converter:
         return None
 
     def click_steps(self, slide):
-        """shape id -> build step, from the slide's click animations (entrances)."""
+        """shape id -> {"step", "until"?}, from the slide's click animations:
+        an entrance makes it appear at that step, an exit makes the step
+        before it its last one."""
         steps = {}
         timing = slide._element.find("p:timing", NS)
         if timing is None:
             return steps
         step = 1
         for ctn in timing.iter("{%s}cTn" % NS["p"]):
-            if ctn.get("nodeType") == "clickEffect" and ctn.get("presetClass") == "entr":
+            kind = ctn.get("presetClass")
+            if ctn.get("nodeType") == "clickEffect" and kind in ("entr", "exit"):
                 step += 1
-            if ctn.get("presetClass") == "entr":
+            if kind in ("entr", "exit"):
                 for tgt in ctn.iter("{%s}spTgt" % NS["p"]):
-                    sid = int(tgt.get("spid"))
-                    steps.setdefault(sid, step)
+                    entry = steps.setdefault(int(tgt.get("spid")), {"step": 1})
+                    if kind == "entr" and "entered" not in entry:
+                        entry.update(step=step, entered=True)
+                    elif kind == "exit" and "until" not in entry:
+                        entry["until"] = step - 1
         return steps
 
     def sections(self):

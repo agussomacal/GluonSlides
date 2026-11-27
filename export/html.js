@@ -9,7 +9,7 @@
 import { state } from '../core/state.js';
 import { escapeHtml, exportElementMarkup } from '../core/render.js';
 import { exportFontCss } from '../core/fonts.js';
-import { elementStep, slideStepCount } from '../core/steps.js';
+import { elementStep, elementUntil, slideStepCount } from '../core/steps.js';
 import { expandSlides } from '../core/bibPages.js';
 import { masterFor } from '../core/masters.js';
 import { withSlideContext, invalidateNumbering } from '../core/fields.js';
@@ -64,7 +64,10 @@ function slideMarkup(slide, idx, source = idx) {
     (slide.elements || []).forEach(el => {
         const html = exportElementMarkup(el);
         const n = elementStep(el);
-        markup += n > 1 ? html.replace(/^<div /, `<div data-step="${n}" `) : html;
+        const until = elementUntil(el);
+        // data-step: appears at that step; data-until: gone after that step
+        const attrs = `${n > 1 ? `data-step="${n}" ` : ''}${until !== null ? `data-until="${until}" ` : ''}`;
+        markup += attrs ? html.replace(/^<div /, `<div ${attrs}`) : html;
     });
     return markup + `</div>`;
 }
@@ -113,7 +116,7 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
             .slide-wrapper { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; position: relative; }
             .slide { display: none; transform-origin: center center; }
             .slide.active { display: block; }
-            [data-step] { transition: opacity 0.25s ease; }
+            [data-step], [data-until] { transition: opacity 0.25s ease; }
             .step-hidden { opacity: 0; visibility: hidden; }
             .gluon-blank { position: fixed; inset: 0; z-index: 2000; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
             .gluon-blank.black { background: #000000; opacity: 1; }

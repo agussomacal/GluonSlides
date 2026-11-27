@@ -99,9 +99,9 @@ class Page:
         self.words = set().union(*(b["words"] for b in self.blocks)) if self.blocks else set()
 
 
-def frame_pages(doc):
-    """The page index showing each frame complete: the last page of each run
-    of equal page labels (Beamer overlays), or every page."""
+def frame_groups(doc):
+    """The pages of each frame, one per step: runs of equal page labels
+    (Beamer numbers pages by frame, overlays included), or one page each."""
     labels = []
     for i in range(doc.page_count):
         try:
@@ -109,13 +109,28 @@ def frame_pages(doc):
         except Exception:
             labels.append("")
     if not any(labels):
-        return list(range(doc.page_count))
-    out = []
+        return [[i] for i in range(doc.page_count)]
+    groups = []
     for i, lab in enumerate(labels):
-        if i + 1 < len(labels) and labels[i + 1] == lab and lab:
-            continue
-        out.append(i)
-    return out
+        if groups and lab and labels[i - 1] == lab:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    return groups
+
+
+def frame_pages(doc):
+    """The page index showing each frame complete: its last page."""
+    return [g[-1] for g in frame_groups(doc)]
+
+
+def page_for(el, group):
+    """The page of a frame to look for an element on: the last step it is
+    shown at (content that disappears is not on the frame's last page)."""
+    until = el.get("until")
+    if isinstance(until, (int, float)) and until >= 1:
+        return group[min(int(until), len(group)) - 1]
+    return group[-1]
 
 
 def pair_slides(slide_sets, page_sets):
@@ -322,11 +337,12 @@ def align_with_pdf(result, pdf_path, folder=None):
         scale = W / rect.width
         from . import progress
         name = pdf_path.replace("\\", "/").split("/")[-1]
-        order = frame_pages(doc)
-        pages = []
-        for n, i in enumerate(order):
-            progress.report(f"Reading {name}", n, len(order))
-            pages.append(Page(doc[i], scale))
+        groups = frame_groups(doc)
+        read = {}  # page index -> Page (every overlay page: content may disappear before the last)
+        for n, i in enumerate(i for g in groups for i in g):
+            progress.report(f"Reading {name}", n, doc.page_count)
+            read[i] = Page(doc[i], scale)
+    pages = [read[g[-1]] for g in groups]
     pairs = pair_slides([slide_words(s) for s in slides], [p.words for p in pages])
     worded = [s for s in slides if slide_words(s)]
     if not pairs or len(pairs) < 0.6 * len(worded):
@@ -342,10 +358,13 @@ def align_with_pdf(result, pdf_path, folder=None):
         progress.report(f"Placing things as in {name}", n, len(pairs))
         elements = slides[si].get("elements") or []
         before = {id(el): {k: el.get(k, 0) for k in ("x", "y", "width", "height")} for el in elements}
-        moved = place_text(elements, pages[pi], W, H)
+        # each element on the page of the last step it is shown at
+        moved = {}
+        for idx in sorted({page_for(el, groups[pi]) for el in elements}):
+            subset = [el for el in elements if page_for(el, groups[pi]) == idx]
+            moved.update(place_text(subset, read[idx], W, H))
+            figures += place_figures(subset, read[idx])
         texts += len(moved)
-        n = place_figures(elements, pages[pi])
-        figures += n
         for el in elements:  # placed figures are anchors too
             if el.get("type") == "figure" and (el["x"], el["y"]) != (before[id(el)]["x"], before[id(el)]["y"]):
                 moved[id(el)] = (el["x"] - before[id(el)]["x"], el["y"] - before[id(el)]["y"])

@@ -39,7 +39,7 @@ import { startDragOrResize, updateResizeCursor, gridSteps, snapToGridPoint } fro
 import { alignElements, distributeElements, reorderElements, canReorder, setLocked, isLocked } from '../core/arrange.js';
 import { saveAndExitTextEditing } from '../elements/text/text.js';
 import { beginCitationPass } from '../core/citations.js';
-import { slideStepCount } from '../core/steps.js';
+import { slideStepCount, elementStep, elementUntil, visibleAtStep } from '../core/steps.js';
 import { withSlideContext, contextForSlide, invalidateNumbering, sectionNames } from '../core/fields.js';
 import { initMarqueeSelection } from './marquee.js';
 import './formatBar.js'; // bold / colour / highlight over selected words while editing text
@@ -133,7 +133,7 @@ function updateProp(propName, value) {
 
     // Numeric if any selected element's type declares it numeric (its
     // .gl spec), or it is one of the common geometry/border props.
-    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth', 'step'];
+    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth', 'step', 'until'];
     const isNumeric = commonNumeric.includes(propName) || indices.some(idx => {
         const def = elements[idx] && ElementRegistry.get(elements[idx].type);
         return !!(def && def.gl && Array.isArray(def.gl.numericProps) && def.gl.numericProps.includes(propName));
@@ -168,7 +168,9 @@ function updateProp(propName, value) {
             if (!elements[idx]) return;
             // Step 1 (or empty) = visible from the start: not stored.
             if (propName === 'step' && !(parsedVal > 1)) delete elements[idx].step;
-            else elements[idx][propName] = propName === 'step' ? Math.round(parsedVal) : parsedVal;
+            // Disappears after: empty (or before it appears) = never.
+            else if (propName === 'until' && !(parsedVal >= elementStep(elements[idx]))) delete elements[idx].until;
+            else elements[idx][propName] = (propName === 'step' || propName === 'until') ? Math.round(parsedVal) : parsedVal;
         });
     }
 
@@ -292,6 +294,10 @@ function stepSection(el) {
         <div class="prop-group">
             <label title="While presenting, the element appears after this many clicks on its slide (1 = shown from the start)">Appears at step</label>
             <input type="number" class="prop-control" min="1" step="1" value="${Number(el.step) > 1 ? Math.round(el.step) : 1}" data-prop="step">
+        </div>
+        <div class="prop-group">
+            <label title="The last step it is shown at; after it the element disappears (empty: it stays to the end of the slide)">Disappears after step</label>
+            <input type="number" class="prop-control" min="${elementStep(el)}" step="1" value="${elementUntil(el) ?? ''}" placeholder="never" data-prop="until">
         </div>`;
 }
 
@@ -314,7 +320,7 @@ function slideSection(slide) {
                       placeholder="Only you see these, in the presenter view.">${escapeHtml(slide.notes || '')}</textarea>
         </div>
         <p class="prop-hint">${steps > 1
-            ? `This slide builds up in ${steps} steps (set an object's <strong>Appears at step</strong>).`
+            ? `This slide builds up in ${steps} steps (set an object's <strong>Appears at step</strong> and <strong>Disappears after step</strong>; <strong>Steps</strong> in the toolbar shows one of them).`
             : 'To reveal objects one click at a time, select one and set <strong>Appears at step</strong>.'}</p>`;
 }
 
@@ -704,6 +710,7 @@ function watchSizes() {
 
 function renderCanvas() {
     watchSizes();
+    updateStepPreview();
     const canvas = document.getElementById('slide-canvas');
     canvas.innerHTML = '';
 
@@ -874,7 +881,12 @@ function renderInteractiveElements(container, elements) {
         if (selectedSet.has(elIndex)) {
             domEl.classList.add('selected');
         }
-        if (Number(el.step) > 1 && !activeGroup()) domEl.dataset.step = String(Math.round(el.step));
+        if (!activeGroup()) {
+            const from = elementStep(el), until = elementUntil(el);
+            if (from > 1 || until !== null) domEl.dataset.stepLabel = until !== null ? (until > from ? `${from}–${until}` : `${from} only`) : String(from);
+            // Step preview (toolbar): what isn't shown at that step is hidden here too.
+            if (state.previewStep && !visibleAtStep(el, state.previewStep)) domEl.classList.add('step-preview-hidden');
+        }
         const locked = isLocked(el);
         if (locked) domEl.classList.add('locked');
 
@@ -1702,8 +1714,33 @@ export function addSlide() {
     renderEditor();
 }
 
+// ---------- Step preview (toolbar): the slide as it looks at one step ----------
+
+/** The toolbar's Steps selector: All, or one step of the current slide. */
+function updateStepPreview() {
+    const select = document.getElementById('step-preview');
+    if (!select) return;
+    const slide = state.editingMasterIndex === null ? currentSlide() : null;
+    const n = slide ? slideStepCount(slide) : 1;
+    if (state.previewStep && state.previewStep > n) state.previewStep = null;
+    select.hidden = n <= 1;
+    const wanted = ['all', ...Array.from({ length: n }, (_, i) => String(i + 1))];
+    if ([...select.options].map(o => o.value).join() !== wanted.join()) {
+        select.innerHTML = wanted.map(v => `<option value="${v}">${v === 'all' ? 'Steps: all' : `Step ${v} of ${n}`}</option>`).join('');
+    }
+    select.value = state.previewStep ? String(state.previewStep) : 'all';
+    select.classList.toggle('active', Boolean(state.previewStep));
+}
+
+document.getElementById('step-preview')?.addEventListener('change', (e) => {
+    state.previewStep = e.target.value === 'all' ? null : Number(e.target.value);
+    setSelectedElementIndices([], null); // what is selected may be hidden now
+    renderEditor();
+});
+
 export function selectSlide(index) {
     if (index < 0 || index >= state.slides.length) return;
+    if (index !== state.currentSlideIndex) state.previewStep = null; // each slide starts with all its steps
     setEditingGroup(null);
     state.editingMasterIndex = null;
     state.currentSlideIndex = index;

@@ -526,10 +526,11 @@ class Converter:
             groups.append({"title": title, "pages": [items], "csigs": [cs], "uses": uses_master[n]})
         slides = []
         for g in groups:
-            first = {}
+            first, lastseen = {}, {}
             for step, items in enumerate(g["pages"], 1):
                 for el, sg in items:
                     first.setdefault(self.csig(el, sg), step)
+                    lastseen[self.csig(el, sg)] = step
             last = g["pages"][-1]
             last_cs = {self.csig(el, sg) for el, sg in last}
             elements = []
@@ -552,18 +553,18 @@ class Converter:
                     if grown:  # grew (a list that got items, a longer equation line): the full one, from the first step
                         grew_from[grown] = min(grew_from.get(grown, 99), first[c])
                         continue
-                    elements.append((first[c], el))
+                    elements.append((first[c], el, lastseen[c]))  # gone after the last page it is on
             for el, sg in last:
                 c = self.csig(el, sg)
-                elements.append((min(first[c], grew_from.get(c, 99)), el))
+                elements.append((min(first[c], grew_from.get(c, 99)), el, None))
             elements.sort(key=lambda t: t[0])  # later steps drawn on top
             out = []
-            for step, el in elements:
+            for step, el, until in elements:
                 el = dict(el)
                 if step > 1:
                     el["step"] = step
-                    if el["type"] == "text" and len(g["pages"]) > 1:
-                        el["bg"] = "#ffffff"  # covers what it replaces
+                if until is not None and until >= step:
+                    el["until"] = until
                 out.append(el)
             slide = {"title": g["title"] or f"Slide {len(slides) + 1}", "elements": out}
             if not g["uses"] and any(uses_master):

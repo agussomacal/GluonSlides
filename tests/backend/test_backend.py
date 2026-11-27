@@ -574,11 +574,15 @@ class BeamerImportTest(TempDirTest):
         steps = {e["content"]: e.get("step", 1) for e in self.texts("First x^2 frame")}
         self.assertEqual((steps["- One"], steps["- Two"], steps["- Three"]), (1, 2, 3))
         self.assertEqual(steps["$$\\argmin_{x \\in \\R} \\cL(x)$$"], 2)  # after \pause
-        # a row shown from step 2: two versions, the later one covers the first
+        # a row shown from step 2: two versions, the first gone when the second comes
         rows = [e for e in self.texts("Columns") if "aligned" in e["content"]]
-        self.assertEqual([e.get("step", 1) for e in rows], [1, 2])
+        self.assertEqual([(e.get("step", 1), e.get("until")) for e in rows], [(1, 1), (2, None)])
         self.assertIn("\\phantom{c }", rows[0]["content"])
-        self.assertEqual(rows[1]["bg"], "#ffffff")
+        self.assertEqual(rows[1]["bg"], "transparent")  # no covering needed
+        figs = [e for e in self.slides["Columns"]["elements"] if e["type"] == "figure"]
+        # \includegraphics<1> then <2->: the first is gone at step 2, same place
+        self.assertEqual([(f.get("step", 1), f.get("until")) for f in figs], [(1, 1), (2, None)])
+        self.assertEqual((figs[0]["x"], figs[0]["y"]), (figs[1]["x"], figs[1]["y"]))
 
     def test_alternating_images_share_their_place(self):
         figs = [e for e in self.slides["Columns"]["elements"] if e["type"] == "figure"]
@@ -706,6 +710,7 @@ class PptxImportTest(TempDirTest):
         fig = self.els(self.content, "figure")[0]
         oval = next(s for s in self.els(self.content, "shape") if s["kind"] == "ellipse")
         self.assertEqual((fig.get("step"), oval.get("step")), (2, 3))
+        self.assertEqual(fig.get("until"), 3)  # it exits on the 3rd click: last shown at step 3
 
 
 class PdfImportTest(TempDirTest):
@@ -767,6 +772,27 @@ class PdfImportTest(TempDirTest):
         self.assertEqual([s["title"] for s in p["slides"]], ["Results", "Steps"])  # 3 pages, 2 slides
         steps = {e["content"]: e.get("step", 1) for e in p["slides"][1]["elements"] if e["type"] == "text"}
         self.assertEqual((steps["First point"], steps["Second point"]), (1, 2))
+
+    def test_content_that_disappears_between_overlay_pages(self):
+        import pymupdf as fz
+        doc = fz.open()
+        for opt in ("Option A", "Option B", "Option C"):  # one frame: three overlay pages
+            p = doc.new_page(width=720, height=405)
+            p.insert_text((40, 50), "Swapping", fontsize=24, fontname="hebo")
+            p.insert_text((40, 110), "A line that stays on every page", fontsize=14)
+            p.insert_text((40, 160), opt, fontsize=14)
+        for title in ("Other slide", "Third slide", "Fourth slide", "Fifth slide", "Last slide"):  # (the frame isn't "most pages": no master)
+            p = doc.new_page(width=720, height=405)
+            p.insert_text((40, 50), title, fontsize=24, fontname="hebo")
+            p.insert_text((40, 110), f"Something else on {title}", fontsize=14)
+        src = os.path.join(self.tmp, "swap.pdf")
+        doc.save(src)
+        res = self.import_talk(src, self.tmp, "Swap", {"pdfMode": "editable"})
+        self.assertTrue(res["success"], res)
+        slide = res["project"]["slides"][0]
+        spans = {e["content"]: (e.get("step", 1), e.get("until")) for e in slide["elements"] if e["type"] == "text"}
+        self.assertEqual([spans.get(f"Option {c}") for c in "ABC"], [(1, 1), (2, 2), (3, None)], (spans, [s["title"] for s in res["project"]["slides"]]))
+        self.assertEqual(spans["A line that stays on every page"], (1, None))
 
     def test_picture_with_editable_text(self):
         p = self.run_import("overlay")
@@ -916,6 +942,34 @@ class GroundTruthTest(TempDirTest):
         self.assertEqual(res["ground_truth"], "")
         self.assertEqual(self.text(res["project"], 0, "Alpha")["y"], self.text(plain, 0, "Alpha")["y"])
 
+    def test_content_that_disappears_is_placed_from_its_own_page(self):
+        import pymupdf as fz
+        tex = os.path.join(self.tmp, "src", "swap.tex")
+        with open(tex, "w") as f:
+            f.write(r"""\documentclass{beamer}
+\begin{document}
+\begin{frame}{Swapping frame}
+\only<1>{Earlier version of this sentence.}
+\only<2>{Later wording replaces the sentence.}
+\end{frame}
+\end{document}
+""")
+        doc = fz.open()
+        for y, text in ((80, "Earlier version of this sentence."), (190, "Later wording replaces the sentence.")):
+            p = doc.new_page(width=453.5, height=255.1)  # two overlay pages of one frame (labels 1, 1)
+            p.insert_text((160, 22), "Swapping frame", fontsize=14)
+            p.insert_text((40, y), text, fontsize=10)
+        doc.set_page_labels([{"startpage": 0, "prefix": "", "style": "D", "firstpagenum": 1},
+                             {"startpage": 1, "prefix": "", "style": "D", "firstpagenum": 1}])
+        pdf = os.path.join(self.tmp, "src", "swap.pdf")
+        doc.save(pdf)
+        p = self.run_import([tex, pdf], "Swap")["project"]
+        k = p["width"] / 453.5
+        early, late = self.text(p, 0, "Earlier"), self.text(p, 0, "Later")
+        self.assertEqual((early.get("until"), late.get("step")), (1, 2))
+        self.assertLess(abs(early["y"] - (80 - 9) * k), 30, early)   # from page 1, where it is
+        self.assertLess(abs(late["y"] - (190 - 9) * k), 30, late)    # from page 2
+
     def test_in_a_zip(self):
         import zipfile
         pdf = build_compiled_pdf(os.path.join(self.tmp, "talk.pdf"))
@@ -987,6 +1041,94 @@ Nonlinear manifold of functions.
         self.assertLess(abs(row["x"] - 140 * k), 40, row)
         self.assertLess(abs(row["y"] - 300 * k), 40, row)
         self.assertLess(abs(row["width"] - 700 * k), 60, row)
+
+
+class SlidevSwitchTest(TempDirTest):
+    """Content shown at some steps only: v-switch, v-click-hide, v-click="[a, b]" (until:M)."""
+
+    MD = """---
+theme: default
+---
+# Switching
+
+<v-switch>
+<template #1>First option</template>
+<template #2>Second option</template>
+<template #3>Third option</template>
+</v-switch>
+
+<div v-click-hide>Gone at the next click</div>
+
+<div v-click="[1, 3]">From click one to three</div>
+
+<div v-click="[5, 6]">Range one replaced</div>
+
+<div v-click="[6, 7]">Range two replacing</div>
+"""
+
+    def setUp(self):
+        super().setUp()
+        from backend.importers import import_talk
+        src = os.path.join(self.tmp, "talk")
+        os.makedirs(src)
+        with open(os.path.join(src, "slides.md"), "w") as f:
+            f.write(self.MD)
+        res = import_talk(src, self.tmp, "Switch", {})
+        self.assertTrue(res["success"], res)
+        self.els = {e["content"]: e for e in res["project"]["slides"][0]["elements"] if e["type"] == "text"}
+
+    def span(self, words):
+        e = next(v for k, v in self.els.items() if words in k)
+        return e.get("step", 1), e.get("until")
+
+    def test_switch_options_replace_each_other_in_one_place(self):
+        self.assertEqual([self.span(w) for w in ("First", "Second", "Third")], [(2, 2), (3, 3), (4, None)])
+        ys = {next(v for k, v in self.els.items() if w in k)["y"] for w in ("First", "Second", "Third")}
+        self.assertEqual(len(ys), 1)  # the same place, not one under the other
+
+    def test_ranges_that_follow_each_other_share_a_place(self):
+        one = next(v for k, v in self.els.items() if "Range one" in k)
+        two = next(v for k, v in self.els.items() if "Range two" in k)
+        self.assertEqual((one.get("step"), one.get("until"), two.get("step"), two.get("until")), (6, 6, 7, 7))
+        self.assertEqual(one["y"], two["y"])
+
+    def test_v_motion_moves_content_where_slidev_shows_it(self):
+        from backend.importers import import_talk
+        src = os.path.join(self.tmp, "motion")
+        os.makedirs(src)
+        with open(os.path.join(src, "slides.md"), "w") as f:
+            f.write("""---
+theme: default
+---
+# Moving
+
+<div v-click="[1, 2]">
+<div v-motion :initial="{ y: 0, x: 0 }">
+
+First block of text
+</div>
+</div>
+
+<div v-click="[2, 3]">
+<div v-motion :initial="{ y: -40, x: 10 }">
+
+Second block of text
+</div>
+</div>
+""")
+        res = import_talk(src, self.tmp, "Motion", {})
+        els = {e["content"]: e for e in res["project"]["slides"][0]["elements"] if e["type"] == "text"}
+        first, second = els["First block of text"], els["Second block of text"]
+        k = 1920 / 980
+        # ranges moved into place one over the other: the first one's place (offsets
+        # tuned to Slidev's rendered heights can't be reproduced), its own x offset kept
+        self.assertEqual(second["y"], first["y"], (first, second))
+        self.assertLess(abs(second["x"] - (first["x"] + 10 * k)), 2)
+        self.assertEqual((first.get("until"), second.get("step"), second.get("until")), (2, 3, 3))
+
+    def test_hide_and_ranges(self):
+        self.assertEqual(self.span("Gone"), (1, 4))       # shown, gone at the click after the switch
+        self.assertEqual(self.span("From click"), (2, 3))  # [1, 3]: clicks 1 and 2
 
 
 class ExtrasTest(TempDirTest):

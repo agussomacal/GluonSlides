@@ -58,6 +58,13 @@
     const slideW = parseFloat(first.style.width) || first.offsetWidth || 1920;
     const slideH = parseFloat(first.style.height) || first.offsetHeight || 1080;
 
+    /** Whether an element is shown at step `k`: from its data-step, through its data-until. */
+    function shownAt(el, k) {
+        const from = Number(el.dataset.step) || 1;
+        const until = el.dataset.until !== undefined ? Number(el.dataset.until) : Infinity;
+        return from <= k && k <= until;
+    }
+
     // ---------- Printing: one page per build step ----------
     // Printed (and the vector PDF) like it is presented: a slide with
     // three steps gives three pages, each with what was visible then.
@@ -71,8 +78,8 @@
                 page.removeAttribute('id');
                 page.classList.remove('active');
                 page.classList.add('print-page');
-                page.querySelectorAll('[data-step]').forEach(el => {
-                    if (Number(el.dataset.step) > k) el.remove();
+                page.querySelectorAll('[data-step], [data-until]').forEach(el => {
+                    if (!shownAt(el, k)) el.remove();
                 });
                 container.appendChild(page);
             }
@@ -96,10 +103,10 @@
         counterTimer = setTimeout(() => counter.classList.remove('visible'), 1500);
     }
 
-    /** Shows `slide` at `atStep` in `node`: data-step elements after it are hidden. */
+    /** Shows `slide` at `atStep` in `node`: elements not there yet, or gone already, are hidden. */
     function applySteps(node, atStep) {
-        node.querySelectorAll('[data-step]').forEach(el => {
-            el.classList.toggle('step-hidden', Number(el.dataset.step) > atStep);
+        node.querySelectorAll('[data-step], [data-until]').forEach(el => {
+            el.classList.toggle('step-hidden', !shownAt(el, atStep));
         });
     }
 

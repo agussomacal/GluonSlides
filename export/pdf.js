@@ -7,7 +7,7 @@ import {state, pyApi} from '../core/state.js';
 import {exportElementMarkup} from '../core/render.js';
 import {getExportHtmlString} from './html.js';
 import {exportFontCss} from '../core/fonts.js';
-import {elementStep, slideStepCount} from '../core/steps.js';
+import {visibleAtStep, slideStepCount} from '../core/steps.js';
 import {expandSlides} from '../core/bibPages.js';
 import {masterFor} from '../core/masters.js';
 import {withSlideContext, invalidateNumbering} from '../core/fields.js';
@@ -75,7 +75,7 @@ function slideMarkupForPdf(s, step = Infinity) {
     const master = masterFor(s);
     if (master) master.elements.forEach(el => { markup += exportElementMarkup(el); });
     s.elements.forEach(el => {
-        if (elementStep(el) <= step) markup += exportElementMarkup(el);
+        if (visibleAtStep(el, step)) markup += exportElementMarkup(el);
     });
     markup += `</div>`;
     return markup;

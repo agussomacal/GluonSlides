@@ -11,6 +11,8 @@ is kept as it is:
   <div class="absolute left-Npx ...">     placed exactly (Slidev's canvas is 980 x 552)
   <img src width>, background:            figures (copied into figures/)
   v-click, <v-click>, <v-clicks>          build steps
+  v-click-hide, v-click="[a, b]"          shown until a later step (until:M)
+  <v-switch><template #1>…               options replacing each other, in the same place
   <Arrow x1 y1 x2 y2>                     an arrow
   the last <!-- comment -->               speaker notes
   setup/katex.ts macros                   macros.tex
@@ -258,6 +260,64 @@ def table_rows(lines):
     return rows
 
 
+def switch_block(inner, ctx):
+    """<v-switch><template #1>A</template><template #2-3>B</template>…: each option
+    shown at its clicks (counted from the switch), in the same place."""
+    base = ctx.clicks  # the step before the switch's first click
+    options, last = [], 0
+    templates = re.findall(r"<template\s+(?:#|v-slot:)(\d+)(?:-(\d+))?\s*>(.*?)</template>", inner, flags=re.S)
+    for n, (a, b, body) in enumerate(templates):
+        a = int(a)
+        end = int(b) if b else None
+        saved = ctx.step
+        ctx.step = max(1, base + a) if a > 0 else saved
+        sub = convert(body, ctx)
+        ctx.step = saved
+        is_last = n == len(templates) - 1
+        if end is not None:
+            set_until(sub, base + end - 1)
+        elif not is_last:
+            set_until(sub, base + a)
+        last = max(last, end - 1 if end else a)
+        options.append(sub)
+    ctx.clicks = max(ctx.clicks, base + last)
+    return {"kind": "switch", "options": options, "step": 1, "fixed": True}
+
+
+def merge_ranges(blocks):
+    """Consecutive v-click="[a, b]" blocks shown at steps that don't overlap
+    replace each other: one place for all, like a v-switch. Authors often
+    move each into place with v-motion offsets matched to Slidev's rendered
+    heights, which can't be reproduced exactly: moved ones (and a moved block
+    that follows them, shown to the end) all take the first one's offset."""
+    INF = float("inf")
+    shifts = lambda opts: [sb for opt in opts for sb in opt if sb["kind"] == "shift"]
+    out = []
+    for b in blocks:
+        if b["kind"] == "switch" and not b.get("fixed"):
+            span, options = b["span"], b["options"]
+        elif b["kind"] == "shift" and b.get("step", 1) > 1:
+            span, options = (b["step"], INF), [[b]]
+        else:
+            out.append(b)
+            continue
+        prev = out[-1] if out else None
+        if prev is not None and prev.get("spans") is not None and all(e < span[0] or s > span[1] for s, e in prev["spans"]) \
+                and (b["kind"] == "switch" or prev.get("dy0") is not None):
+            if prev.get("dy0") is not None:
+                for sb in shifts(options):
+                    sb["dy"] = prev["dy0"]
+            prev["options"].extend(options)
+            prev["spans"].append(span)
+            continue
+        if b["kind"] == "shift":
+            out.append(b)  # a moved block on its own: as Slidev moves it
+            continue
+        moved = shifts(options)
+        out.append({**b, "spans": [span], "dy0": moved[0]["dy"] if moved else None})
+    return out
+
+
 def convert(text, ctx, step=None):
     """Slidev content -> blocks: text / table / image / columns / abs / arrow."""
     blocks, buf, i = [], [], 0
@@ -317,6 +377,33 @@ def convert(text, ctx, step=None):
                 ctx.step = saved
                 blocks.append({"kind": "abs", "left": tw_px(cls, "left"), "right": tw_px(cls, "right"),
                                "top": tw_px(cls, "top"), "bottom": tw_px(cls, "bottom"), "blocks": sub})
+            elif lname == "v-switch":
+                flush()
+                blocks.append(switch_block(inner, ctx))
+            elif lname == "div" and has_flag(attrs, "v-motion"):
+                # where the motion leaves it (:enter, else :initial): moved, still taking its place
+                flush()
+                spec = attr(attrs, ":enter") or attr(attrs, ":initial") or ""
+                num = lambda key: float((re.search(key + r"\s*:\s*(-?\d+(?:\.\d+)?)", spec) or [0, 0])[1])
+                blocks.append({"kind": "shift", "dx": num("x"), "dy": num("y"), "blocks": convert(inner, ctx), "step": ctx.step})
+            elif lname == "div" and has_flag(attrs, "v-click-hide") or (lname == "v-click" and has_flag(attrs, "hide")):
+                # shown now, gone at the next click
+                flush()
+                gone = ctx.next_step()
+                sub = convert(inner, ctx)
+                set_until(sub, gone - 1)
+                blocks.extend(sub)
+            elif (lname in ("v-click", "div")) and re.fullmatch(r"\[\s*\d+\s*,\s*\d+\s*\]", (attr(attrs, "at") or attr(attrs, "v-click") or "").strip()):
+                # v-click="[2, 4]": from click 2, gone at click 4
+                flush()
+                a, b = (int(v) for v in re.findall(r"\d+", attr(attrs, "at") or attr(attrs, "v-click")))
+                saved = ctx.step
+                ctx.step = a + 1
+                ctx.clicks = max(ctx.clicks, b + 1)
+                sub = convert(inner, ctx)
+                set_until(sub, b)
+                blocks.append({"kind": "switch", "options": [sub], "span": (a + 1, b), "step": 1})
+                ctx.step = saved
             elif lname in ("v-click", "v-after") or (lname == "div" and (has_flag(attrs, "v-click") or has_flag(attrs, "v-after"))):
                 flush()
                 at = attr(attrs, "at") or (attr(attrs, "v-click") if lname == "div" else None)
@@ -360,7 +447,7 @@ def convert(text, ctx, step=None):
         buf.append(text[i])
         i += 1
     flush()
-    return blocks
+    return merge_ranges(blocks)
 
 
 def grid_block(n, inner, cls, ctx):
@@ -396,7 +483,7 @@ def grid_block(n, inner, cls, ctx):
     columns = [[] for _ in range(n)]
     for k, it in enumerate(items):
         columns[k % n].append(it)
-    has_clicks = re.search(r"v-click|v-after", inner) is not None
+    has_clicks = re.search(r"v-click|v-after|v-switch", inner) is not None
     cols = []
     for parts in columns:
         sub_ctx_blocks = convert("\n\n".join(parts), ctx) if has_clicks else None
@@ -404,7 +491,7 @@ def grid_block(n, inner, cls, ctx):
         # its natural width (Slidev px): the widest <img width=...> in it
         natural = max([float(w) for w in re.findall(r'<img\b[^>]*\bwidth="(\d+(?:\.\d+)?)"', "\n".join(parts))] or [0])
         cols.append({"md": md, "blocks": sub_ctx_blocks, "natural": natural})
-    return {"kind": "columns", "cols": cols, "gap": 5 * 4 if "gap-5" in cls else (40 if "gap-10" in cls else 16), "step": 1}
+    return {"kind": "columns", "cols": cols, "gap": 5 * 4 if "gap-5" in cls else (40 if "gap-10" in cls else 16), "step": ctx.step}
 
 
 # ---------- assets ----------
@@ -488,6 +575,10 @@ class Layout:
             n = len(b["cols"])
             cw = (width - b["gap"] * K * (n - 1)) / n
             return max(self.col_height(c, cw) for c in b["cols"])
+        if k == "shift":  # moved, but taking its place in the flow (as in Slidev)
+            return sum(self.height(sb, width) for sb in b["blocks"])
+        if k == "switch":  # the options take the same place: the tallest one
+            return max([sum(self.height(sb, width) for sb in opt) for opt in b["options"]] or [0])
         return 0
 
     def natural_width(self, blocks):
@@ -518,6 +609,19 @@ class Layout:
             b["base"] = base
             k = b["kind"]
             extra = {"step": b["step"]} if b.get("step", 1) > 1 else {}
+            if b.get("until") is not None:
+                extra["until"] = b["until"]
+            if k == "shift":
+                h = self.height(b, width)
+                self.place(b["blocks"], x + b["dx"] * K, y + b["dy"] * K, width, out, base, center)
+                y += h
+                continue
+            if k == "switch":
+                h = self.height(b, width)
+                for opt in b["options"]:
+                    self.place(opt, x, y, width, out, base, center)
+                y += h
+                continue
             if k == "abs":
                 left, right, top, bottom = b["left"], b["right"], b["top"], b["bottom"]
                 # as wide as its content (a row of images), at least the usual box
@@ -563,6 +667,17 @@ class Layout:
 # ---------- slides ----------
 
 
+def set_until(blocks, until):
+    """`until` (the last step shown) on blocks that have none (nested ones too)."""
+    for b in blocks or []:
+        b.setdefault("until", until)
+        set_until(b.get("blocks"), until)
+        for c in b.get("cols") or []:
+            set_until(c.get("blocks"), until)
+        for opt in b.get("options") or []:
+            set_until(opt, until)
+
+
 def set_base(blocks, base):
     """The folder images are relative to, on every block (nested ones too)."""
     for b in blocks or []:
@@ -570,6 +685,8 @@ def set_base(blocks, base):
         set_base(b.get("blocks"), base)
         for c in b.get("cols") or []:
             set_base(c.get("blocks"), base)
+        for opt in b.get("options") or []:
+            set_base(opt, base)
 
 LAYOUT_CENTER = ("center", "cover", "intro", "section", "end", "fact", "statement", "quote")
 
