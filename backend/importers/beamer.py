@@ -912,16 +912,26 @@ def columns_block(body, ctx):
 
 
 def table_block(body, ctx):
-    body = re.sub(r"^\s*(\[[^\]]*\])?\s*\{[^{}]*(\{[^{}]*\}[^{}]*)*\}", "", body, count=1)  # column spec
-    body = re.sub(r"\\(hline|toprule|midrule|bottomrule|cline\{[^}]*\})", "", body)
-    rows = [r for r in math_rows(body) if r.strip()]
-    cells = [[latex_to_md(c, ctx).strip().replace("|", "\\|").replace("\n", " ") for c in re.split(r"(?<!\\)&", r)] for r in rows]
+    m = re.match(r"^\s*(\[[^\]]*\])?\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", body)
+    spec = m.group(2) if m else ""
+    body = body[m.end():] if m else body
+    raw_rows = [r for r in math_rows(body)]
+    # a rule after the first row: a header; vertical bars in the spec: all borders
+    rule = r"\\(hline|toprule|midrule|bottomrule|cline\{[^}]*\})"
+    header = len(raw_rows) > 1 and re.search(rule, raw_rows[1]) is not None
+    any_rule = re.search(rule, body) is not None
+    borders = "all" if "|" in spec else ("horizontal" if any_rule else "none")
+    rows = [re.sub(rule, "", r) for r in raw_rows]
+    rows = [r for r in rows if r.strip()]
+    cells = [[latex_to_md(c, ctx).strip().replace("\n", " ") for c in re.split(r"(?<!\\)&", r)] for r in rows]
     if not cells:
         return new_text("", ctx)
     n = max(len(r) for r in cells)
     cells = [r + [""] * (n - len(r)) for r in cells]
-    lines = ["| " + " | ".join(cells[0]) + " |", "|" + "---|" * n] + ["| " + " | ".join(r) + " |" for r in cells[1:]]
-    return {"kind": "table", "md": "\n".join(lines), "rows": len(cells), "step": ctx.step, "align": ctx.align}
+    esc = [[c.replace("|", "\\|") for c in r] for r in cells]
+    lines = ["| " + " | ".join(esc[0]) + " |", "|" + "---|" * n] + ["| " + " | ".join(r) + " |" for r in esc[1:]]
+    return {"kind": "table", "md": "\n".join(lines), "cells": cells, "rows": len(cells), "header": header,
+            "borders": borders, "step": ctx.step, "align": ctx.align}
 
 
 # ---------- layout: blocks -> elements ----------
@@ -1054,8 +1064,10 @@ class Layout:
             elif k == "list":
                 self.list_elements(b, x, yy, width, fs, out)
             elif k == "table":
-                out.append(model.text(self.X(x), self.Y(yy), self.L(width), self.L(h), b["md"], self.L(fs),
-                                      align=b.get("align", "left"), family=doc.font, **extra))
+                out.append({"type": "table", "x": round(self.X(x)), "y": round(self.Y(yy)), "width": round(self.L(width)),
+                            "height": round(self.L(h)), "rows": b["cells"], "header": "yes" if b.get("header") else "no",
+                            "borders": b.get("borders", "horizontal"), "fontSize": round(self.L(fs)),
+                            **({"fontFamily": doc.font} if doc.font else {}), **extra})
             elif k == "image":
                 w, ih = self.image_size(b, width)
                 ix = x + ((width - w) / 2 if b.get("align") == "center" else (width - w if b.get("align") == "right" else 0))
@@ -1068,11 +1080,21 @@ class Layout:
                 out.append(model.path([(self.X(x), ry), (self.X(x + width * b["frac"]), ry)],
                                       stroke=b.get("colour") or "#000000", width=max(1, self.L(0.6)), **extra))
             elif k == "columns":
-                cx = x
-                for c in b["cols"]:
-                    cw = width * c["frac"]
-                    self.place(c["blocks"], cx, yy, cw, out)
-                    cx += cw
+                mds = self.columns_markdown(b)
+                if mds is not None:  # plain content, no steps: one columns element
+                    total = sum(c["frac"] for c in b["cols"]) or 1
+                    out.append({"type": "columns", "x": round(self.X(x)), "y": round(self.Y(yy)), "width": round(self.L(width)),
+                                "height": round(self.L(h)), "gap": round(self.L(self.fs)), "fontSize": round(self.L(fs)),
+                                **({"fontFamily": doc.font} if doc.font else {}),
+                                "columns": [{"width": round(c["frac"] / total * 100, 1), "content": md,
+                                             **({"align": "center"} if c.get("center") else {})}
+                                            for c, md in zip(b["cols"], mds)], **extra})
+                else:
+                    cx = x
+                    for c in b["cols"]:
+                        cw = width * c["frac"]
+                        self.place(c["blocks"], cx, yy, cw, out)
+                        cx += cw
             elif k == "stack":
                 self.place(b["blocks"], x, yy, width, out)
             elif k == "box":
@@ -1085,6 +1107,43 @@ class Layout:
             if not (b.get("replaces") and yy != y):
                 y = yy + h
         return y
+
+    PLAIN = ("text", "math", "list", "image", "table", "space")
+
+    def columns_markdown(self, b):
+        """Each column's blocks as Markdown, or None (boxes, nested columns, steps)."""
+        out = []
+        for c in b["cols"]:
+            parts = []
+            for blk in c["blocks"]:
+                if blk["kind"] not in self.PLAIN or blk.get("step", 1) > b.get("step", 1) or blk.get("replaces") \
+                        or any(st > blk.get("step", 1) for st in blk.get("row_steps", [])) \
+                        or any(it["step"] > blk.get("step", 1) for it in blk.get("items", [])):
+                    return None
+                k = blk["kind"]
+                if k == "text":
+                    parts.append(blk["md"])
+                elif k == "math":
+                    body = " \\\\ ".join(blk["rows"])
+                    parts.append(f"$$\\begin{{{blk['env']}}}{body}\\end{{{blk['env']}}}$$" if blk["env"] else f"$${body}$$")
+                elif k == "list":
+                    n, lines = 1, []
+                    for it in blk["items"]:
+                        if it["level"] == 0:
+                            lines.append((f"{n}. " if blk["ordered"] else "- ") + it["md"])
+                            n += 1
+                        else:
+                            lines.append("    " * it["level"] + "- " + it["md"])
+                    parts.append("\n".join(lines))
+                elif k == "image":
+                    rel, _ = self.assets.copy(blk["src"])
+                    if rel:
+                        parts.append(f"![]({rel})")
+                elif k == "table":
+                    parts.append(blk["md"])
+            c["center"] = all(blk.get("align") == "center" for blk in c["blocks"] if blk["kind"] in ("text", "image")) and c["blocks"]
+            out.append("\n\n".join(p for p in parts if p))
+        return out
 
     def math_elements(self, b, x, y, w, h, fs):
         rows, steps = b["rows"], b["row_steps"]

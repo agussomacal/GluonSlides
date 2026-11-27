@@ -293,22 +293,26 @@ class Converter:
                           start=start, end=end, **extra)
 
     def table(self, sh, x, y, w, h, extra):
-        rows = []
-        size = None
+        """A table element: the cells (Markdown), PowerPoint's header row and banded rows."""
+        rows, size = [], None
         for r in sh.table.rows:
             cells = []
             for c in r.cells:
                 md, s, _, _ = self.text_of(c.text_frame, False)
                 size = size or s
-                cells.append(md.replace("\n", " ").replace("|", "\\|"))
+                cells.append(md)
             rows.append(cells)
-        n = max(len(r) for r in rows) if rows else 0
-        lines = []
-        for i, r in enumerate(rows):
-            lines.append("| " + " | ".join(r + [""] * (n - len(r))) + " |")
-            if i == 0:
-                lines.append("|" + "---|" * n)
-        return model.text(x, y, w, h, "\n".join(lines), (size or 18) * self.pt, **extra)  # PowerPoint's table default
+        n = max((len(r) for r in rows), default=1)
+        rows = [r + [""] * (n - len(r)) for r in rows] or [[""]]
+        widths = [c.width for c in sh.table.columns]
+        total = sum(widths) or 1
+        el = {"type": "table", "x": round(x), "y": round(y), "width": round(w), "height": round(h), "rows": rows,
+              "header": "yes" if sh.table.first_row else "no", "borders": "all",
+              "stripes": "yes" if sh.table.horz_banding else "no",
+              "fontSize": round((size or 18) * self.pt), **extra}  # 18 pt: PowerPoint's table default
+        if len(set(widths)) > 1:
+            el["widths"] = [round(cw / total * 100, 1) for cw in widths]
+        return el
 
     def save_image(self, image):
         self.images += 1

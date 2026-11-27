@@ -584,19 +584,21 @@ class BeamerImportTest(TempDirTest):
             self.assertTrue(os.path.isfile(os.path.join(self.tmp, "Test Talk", "figures", f)))
         self.assertTrue(figs[0]["originalPath"].endswith("plot.png") and figs[0]["sync"] == "yes")
 
-    def test_nested_columns_stay_inside_their_column(self):
-        els = {e["content"]: e for e in self.texts("Columns")}
-        left, right = els["Inner left"], els["Inner right"]
+    def test_nested_columns_become_a_columns_element_inside_their_column(self):
+        inner = next(e for e in self.slides["Columns"]["elements"] if e["type"] == "columns")
+        self.assertEqual([c["content"] for c in inner["columns"]], ["Inner left", "Inner right"])
+        self.assertEqual([c["width"] for c in inner["columns"]], [50, 50])
         fig = next(e for e in self.slides["Columns"]["elements"] if e["type"] == "figure")
-        self.assertLess(left["x"], right["x"])
-        self.assertLess(right["x"] + right["width"], fig["x"] + 2)  # inner columns within the 0.6 column
+        self.assertLess(inner["x"] + inner["width"], fig["x"] + 2)  # within the 0.6 column
 
     def test_boxes_tables_citations_bibliography(self):
         box = next(e for e in self.slides["Columns"]["elements"] if e["type"] == "shape")
         self.assertEqual((box["borderStyle"], box["borderCol"], box["bg"]), ("dashed", "#d8e2ec", "#ffffff"))  # colorV!20!white
         contents = [e["content"] for e in self.texts("Columns")]
         self.assertIn("Boxed note, see \\cite{smith2020}.", contents)
-        self.assertIn("| $x$ | one |\n|---|---|\n| $y$ | two |", contents)
+        table = next(e for e in self.slides["Columns"]["elements"] if e["type"] == "table")
+        self.assertEqual(table["rows"], [["$x$", "one"], ["$y$", "two"]])
+        self.assertEqual((table["header"], table["borders"]), ("no", "none"))  # no rules in the tabular
         self.assertIn("\\printbibliography", [e["content"] for e in self.texts("References")])
         self.assertIn("@article{smith2020", self.p["bib"])
 
@@ -687,8 +689,9 @@ class PptxImportTest(TempDirTest):
         self.assertIn(("rect", "#aa0000"), kinds)  # inside a group
         line = self.els(self.content, "path")[0]
         self.assertEqual((line.get("end"), line["stroke"]), ("arrow", "#333333"))
-        table = next(e["content"] for e in self.els(self.content, "text") if e["content"].startswith("|"))
-        self.assertEqual(table, "| h1 | h2 |\n|---|---|\n| a | b |")
+        table = self.els(self.content, "table")[0]
+        self.assertEqual(table["rows"], [["h1", "h2"], ["a", "b"]])
+        self.assertEqual((table["header"], table["stripes"]), ("yes", "yes"))  # python-pptx default table style
         fig = self.els(self.content, "figure")[0]
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, "Deck", fig["filePath"])))
         self.assertAlmostEqual(fig["width"] / fig["height"], 2.0, places=1)
