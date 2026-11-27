@@ -2148,3 +2148,14 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .tour-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .tour-actions .btn { width: auto; margin: 0; padding: 6px 12px; }
 .tour-actions [data-tour="stop"] { margin-right: auto; }
+
+/* ---------- Variables (Project settings), plots and sliders ---------- */
+.var-file-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-color); }
+.var-file-row > .prop-hint, .var-file-row > .prop-error { flex-basis: 100%; margin: 0; }
+.var-file-row .prop-check { margin: 0 0 0 auto; }
+.var-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
+.var-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.var-table th, .var-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border-color); }
+.var-table th { color: var(--text-muted); font-weight: 600; }
+.plot-code { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; white-space: pre; tab-size: 4; resize: vertical; margin-top: 6px; }
+.element-slider input[type=range] { pointer-events: auto; }

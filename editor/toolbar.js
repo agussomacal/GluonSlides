@@ -18,6 +18,7 @@ const CATEGORIES = [
     { id: 'shapes', label: 'Shapes', icon: '⬛' },
     { id: 'lines', label: 'Lines & curves', icon: '〰️' },
     { id: 'media', label: 'Media', icon: '🖼️' },
+    { id: 'interactive', label: 'Interactive', icon: '🎚️', menu: true }, // plots and sliders
     { id: 'macros', label: 'Macros', icon: '🧩', menu: true }, // always a dropdown
 ];
 

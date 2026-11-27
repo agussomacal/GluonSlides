@@ -14,6 +14,7 @@ import { elementStep, elementUntil, slideStepCount } from '../core/steps.js';
 import { expandSlides } from '../core/bibPages.js';
 import { masterFor } from '../core/masters.js';
 import { withSlideContext, invalidateNumbering } from '../core/fields.js';
+import { startingVariables } from '../core/variables.js';
 
 const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/';
 
@@ -49,6 +50,29 @@ async function embedKatexFonts(css) {
     }
     return css.replace(/url\((["']?)fonts\/(KaTeX_[A-Za-z0-9-]+\.woff2)\1\)/g,
         (m, q, name) => (katexFontCache[name] ? `url(${katexFontCache[name]})` : m));
+}
+
+/**
+ * Sliders, plots and values in text that follow them (core/liveEngine.js,
+ * inlined: the file works offline), with the variables' starting values.
+ * Nothing when the presentation has none.
+ */
+async function liveScript(needed) {
+    if (!needed) return '';
+    const engine = (await fetchText('core/liveEngine.js', 'the plot engine')).replace(/^export /gm, '');
+    const vars = JSON.stringify(startingVariables()).replace(/</g, '\\u003c');
+    const run = `(function () {
+${engine}
+const vars = ${vars};
+const root = document.body;
+// A slider moved here: redraw, and tell the other windows (presenter view, audience: viewer.js).
+const moved = () => { liveUpdate(root, vars); window.dispatchEvent(new CustomEvent('gluon-vars-out', { detail: Object.assign({}, vars) })); };
+bindSliders(root, vars, moved);
+window.addEventListener('gluon-vars-in', (e) => { Object.assign(vars, e.detail || {}); liveUpdate(root, vars); });
+// The presenter view redraws its copies of the slides: their sliders work too.
+window.addEventListener('gluon-rendered', () => { bindSliders(root, vars, moved); liveUpdate(root, vars); });
+})();`;
+    return `<script>${run.replace(/<\/script/gi, '<\\/script')}<\/script>`;
 }
 
 /** One slide: its elements, the ones that build up marked with data-step. */
@@ -104,6 +128,7 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
     // Fields (\slidenumber ...) count the slides as presented.
     const slidesMarkup = pages.map((p, idx) => withSlideContext({ source: p.source, number: idx + 1, total: pages.length },
         () => slideMarkup(p.slide, idx, p.source))).join('');
+    const liveJs = await liveScript(/data-glslider|data-gl-plot/.test(slidesMarkup));
     // Speaker notes for the presenter view; "<" escaped so the JSON can't end the script.
     const notesJson = JSON.stringify(pages.map(p => (notes && p.slide.notes) || '')).replace(/</g, '\\u003c');
     const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));
@@ -171,5 +196,5 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
         <div class="nav-hint">→ / Space: next · ←: back · S: presenter view · B: black screen · F: full screen · number + Enter: go to slide</div>
         <script type="application/json" id="gluon-notes">${notesJson}<\/script>
         <script>window.GLUON_START = { slide: ${start}, step: ${Math.max(1, Number(startStep) || 1)} };${mode === 'presenter' ? " window.GLUON_MODE = 'presenter';" : ''}<\/script>
-        <script>${viewerJs.replace(/<\/script/gi, '<\\/script')}<\/script></body></html>`;
+        <script>${viewerJs.replace(/<\/script/gi, '<\\/script')}<\/script>${liveJs}</body></html>`;
 }

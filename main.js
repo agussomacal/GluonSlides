@@ -29,6 +29,7 @@ import { initPanes, togglePane } from './ui/panes.js';
 import { loadPrefs } from './core/prefs.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
 import { initHelpMenu, runHelp } from './ui/help.js';
+import { startVarSync } from './core/variables.js';
 import { showImportModal, chooseImportSource, chooseImportSourceFolder, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
 import {
@@ -144,6 +145,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 // (pywebview adds its functions asynchronously): both wait for it.
 startFigureSync(); // linked figures follow their original files
 startTableSync(); // linked tables follow their CSV files
+startVarSync(); // variable files (\var{…}, plots) follow theirs
 initFileDrop((type, props) => insertElement(type, props)); // images and CSV files dropped on the window
 initRecents();
 loadPrefs(); // the interface's saved choices (core/prefs.js)

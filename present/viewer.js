@@ -27,6 +27,9 @@
 //                           (also 'next', 'prev', 'blank', 'query')
 //   audience -> others      { type: 'gluon-position', slide, step, steps, total, blank }
 //   either -> app frame     { type: 'gluon-exit' } / { type: 'gluon-presenter-request', ... }
+//   sliders (core/liveEngine.js): presenter -> audience { type: 'gluon-control', action: 'vars', vars },
+//                           audience -> presenter { type: 'gluon-vars', vars }; in this window
+//                           the events 'gluon-vars-out' (a slider moved here) and 'gluon-vars-in'
 // ============================================================
 
 (function () {
@@ -285,6 +288,7 @@
     function render(notify = true) {
         if (presenter) renderPresenter(); else renderAudience();
         try { history.replaceState(null, '', presenter ? `#presenter-${current + 1}.${step}` : `#${current + 1}.${step}`); } catch (e) { /* srcdoc frames */ }
+        window.dispatchEvent(new CustomEvent('gluon-rendered')); // e.g. sliders in the presenter's copies
         if (!notify) return;
         const position = { slide: current, source: sourceOf(current), step, steps: stepsOf(current), total, blank };
         const msg = presenter
@@ -394,9 +398,20 @@
         });
     }
 
+    // Sliders: values moved here go to the other windows, theirs come here.
+    window.addEventListener('gluon-vars-out', (e) => {
+        const vars = e.detail || {};
+        const msg = presenter ? { type: 'gluon-control', action: 'vars', vars } : { type: 'gluon-vars', vars };
+        partners().forEach(w => post(w, msg));
+    });
+
     window.addEventListener('message', (e) => {
         const m = e.data;
         if (!m || typeof m !== 'object') return;
+        if ((presenter && m.type === 'gluon-vars') || (!presenter && m.type === 'gluon-control' && m.action === 'vars')) {
+            window.dispatchEvent(new CustomEvent('gluon-vars-in', { detail: m.vars || {} }));
+            return;
+        }
         if (presenter && m.type === 'gluon-position') {
             // The audience moved (clicked there): follow without echoing.
             blank = m.blank || null;
