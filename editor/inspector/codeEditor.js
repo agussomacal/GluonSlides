@@ -16,15 +16,18 @@ const ACTIVE_LINE_CLASS = 'gl-active-line';
 function defineGluonMode(CodeMirror) {
     if (CodeMirror.modes.gluon) return;
 
-    CodeMirror.defineMode('gluon', (config) => ({
-        startState: () => ({ inElementBody: false, queue: [] }),
-        copyState: (s) => ({ inElementBody: s.inElementBody, queue: s.queue.slice() }),
+    CodeMirror.defineMode('gluon', (config, opts) => ({
+        startState: () => ({ inElementBody: false, queue: [], plot: false }),
+        copyState: (s) => ({ inElementBody: s.inElementBody, queue: s.queue.slice(), plot: s.plot }),
 
         token(stream, st) {
             if (stream.sol()) {
                 const scanned = scanGlLine(stream.string, st.inElementBody);
                 st.inElementBody = scanned.inElementBody;
-                st.queue = scanned.tokens.filter(t => t.value !== '');
+                // a plot's body: its formulas use variables by name
+                if (/^\S/.test(stream.string)) st.plot = /^\.element\.plot\b/.test(stream.string);
+                const vars = typeof opts.variables === 'function' ? opts.variables() : null;
+                st.queue = markVariables(scanned.tokens.filter(t => t.value !== ''), vars, st.plot && /^\s/.test(stream.string));
             }
             const tok = st.queue.shift();
             if (!tok) {
@@ -50,6 +53,32 @@ function defineGluonMode(CodeMirror) {
     }));
 }
 
+/**
+ * Variables shown as such: \var{name} in any body, and in a plot's body
+ * (its layer lines' values and its formulas) every name that is one.
+ */
+function markVariables(tokens, vars, inPlot) {
+    if (!vars) return tokens;
+    const out = [];
+    tokens.forEach(tok => {
+        const splittable = tok.type === 'body-text' || tok.type === 'body-math' || (inPlot && (tok.type === 'param-val' || tok.type === 'param-str'));
+        if (!splittable) { out.push(tok); return; }
+        const re = inPlot ? /\\var\{[A-Za-z_][\w.]*\}|(?<![\w.\\])[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/g : /\\var\{[A-Za-z_][\w.]*\}/g;
+        let last = 0;
+        for (const m of tok.value.matchAll(re)) {
+            const name = m[0].startsWith('\\var{') ? m[0].slice(5, -1) : m[0];
+            if (!vars.has(name)) continue;
+            if (m.index > last) out.push({ type: tok.type, value: tok.value.slice(last, m.index) });
+            if (m[0].startsWith('\\var{')) {
+                out.push({ type: tok.type, value: '\\var{' }, { type: 'var', value: name }, { type: tok.type, value: '}' });
+            } else out.push({ type: 'var', value: m[0] });
+            last = m.index + m[0].length;
+        }
+        if (last < tok.value.length) out.push({ type: tok.type, value: tok.value.slice(last) });
+    });
+    return out;
+}
+
 // ---------- Adapter ----------
 
 // Keys while the suggestion list is open: Enter or Tab accepts the
@@ -71,14 +100,14 @@ const HINT_KEYS = {
  * app-agnostic API. `onApplyShortcut` runs on Ctrl/Cmd+Enter; `hint`
  * is an optional show-hint provider for suggestions.
  */
-export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null, hint = null } = {}) {
+export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null, hint = null, variables = null, onCtrlClickWord = null } = {}) {
     const CodeMirror = window.CodeMirror;
     if (!CodeMirror) throw new Error('CodeMirror is not loaded (libs/codemirror/codemirror.min.js).');
     defineGluonMode(CodeMirror);
 
     const cm = CodeMirror(host, {
         value: '',
-        mode: 'gluon',
+        mode: { name: 'gluon', variables },
         lineNumbers: false,
         indentWithTabs: true,
         indentUnit: tabSize,
@@ -97,6 +126,17 @@ export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null, 
             'Ctrl-Space': (ed) => showHints(ed),
         },
     });
+
+    // Ctrl+click (Cmd on macOS) on a name: e.g. go to a variable's definition.
+    if (onCtrlClickWord) {
+        cm.on('mousedown', (ed, e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
+            const pos = ed.coordsChar({ left: e.clientX, top: e.clientY });
+            const range = ed.findWordAt(pos);
+            const word = ed.getRange(range.anchor, range.head);
+            if (/^[A-Za-z_]\w*$/.test(word) && onCtrlClickWord(word)) e.preventDefault();
+        });
+    }
 
     // ---------- Suggestions (CodeMirror show-hint add-on) ----------
     function showHints(ed) {
@@ -193,6 +233,20 @@ export function createGlCodeEditor(host, { tabSize = 2, onApplyShortcut = null, 
             cm.scrollTo(null, Math.max(0, top - cm.getScrollInfo().clientHeight * 0.35));
             if (focus) cm.focus();
         },
+
+        /** Selects characters [from, from + length) of a line and scrolls there. */
+        selectRange(lineIdx, from, length, { focus = true } = {}) {
+            const line = Math.max(0, Math.min(lineIdx, cm.lineCount() - 1));
+            withSilence(() => cm.setSelection({ line, ch: from }, { line, ch: from + length }));
+            lastCursorLine = line;
+            markActiveLine(line);
+            const top = cm.charCoords({ line, ch: 0 }, 'local').top;
+            cm.scrollTo(null, Math.max(0, top - cm.getScrollInfo().clientHeight * 0.35));
+            if (focus) cm.focus();
+        },
+
+        /** Colours again (the variables changed). */
+        recolour: () => cm.setOption('mode', { name: 'gluon', variables }),
 
         /** Highlights a line without moving the cursor or focusing. */
         setHighlightLine(lineIdx) {

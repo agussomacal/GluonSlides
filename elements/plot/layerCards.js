@@ -17,6 +17,17 @@ import { PALETTE, LANGUAGES, plotErrors, formulaNames, expandPlot } from '../../
 import { matplotlibNames } from '../../core/mplEngine.js';
 import { allVariables } from '../../core/variables.js';
 import { dataTable, linkDataFile } from '../../core/plotData.js';
+import { goToVariable } from '../../ui/goToVariable.js';
+
+/** Ctrl+click on a variable's name in a formula or script editor: its definition. */
+function ctrlClickToVariable(cm) {
+    cm.on('mousedown', (ed, e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
+        const range = ed.findWordAt(ed.coordsChar({ left: e.clientX, top: e.clientY }));
+        const word = ed.getRange(range.anchor, range.head);
+        if (word in allVariables() && goToVariable(word)) e.preventDefault();
+    });
+}
 
 const open = new Map();   // plot id -> Set of open layer indices (this session)
 let hooks = null;         // { templates, spec(el), redraw() } from plot.js
@@ -243,6 +254,7 @@ function mountScriptEditor(el, host) {
     cm.on('inputRead', (ed, change) => {
         if (change.origin === '+input' && /[A-Za-z_.]/.test(change.text[change.text.length - 1].slice(-1))) scriptHint(ed);
     });
+    ctrlClickToVariable(cm);
     showScriptErrors(el, cm);
 }
 
@@ -351,6 +363,7 @@ export function mountFormulaEditors(el) {
         cm.on('inputRead', (ed, change) => {
             if (change.origin === '+input' && /[A-Za-z_.\\]/.test(change.text[change.text.length - 1].slice(-1))) hint(ed, el, i);
         });
+        ctrlClickToVariable(cm);
         editors.push({ cm, index: i, el });
     });
     showErrors();

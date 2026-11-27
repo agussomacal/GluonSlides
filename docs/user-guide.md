@@ -9,6 +9,7 @@ What the editor can do and how. The [Gluon format reference](gluon-format.md) ha
   - [Project defaults](#project-defaults)
   - [Styles and theme colors](#styles-and-theme-colors)
   - [Integrated source editor](#integrated-source-editor)
+  - [Find](#find)
 - [Text](#text)
   - [Fonts](#fonts)
   - [Coloured and formatted text](#coloured-and-formatted-text)
@@ -103,6 +104,12 @@ Older projects store every value in each element; *Use project defaults for exis
 The editor includes a built-in **source view with syntax highlighting** for `.gl` files (**Ctrl+E**, *Help → The .gl file of this project*, or right-click a slide or an object → *Go to Gluon file*, which opens it at that line), so you can flip between the canvas and the code that generates it. Adjust coordinates by typing instead of dragging, batch-rename colors, or paste in a slide written by a colleague — the canvas re-renders from the text instantly. Tabs switch between the project file and imported macro libraries.
 
 **Autocomplete** suggests what can come next, from the live element types and macro library: directives after `.`, an element's parameters, enum values (and colors already used in the file) after `key:`, and a macro's element names after `::` inside a `.macro.<name>` block. **Enter** or **Tab** accepts a suggestion; Ctrl+Space shows them on demand.
+
+**Variables** are coloured in the source view: `\var{name}` in text, and in a plot's body every name that is a variable (in its formulas and in settings like `x:mu`). Typing in a plot's formula suggests them, with their values. **Ctrl+click** a variable's name (in the source view, in a plot's formula or script editor, or *a slider* in Project settings → Variables) goes to where it is defined: the slider, selected on its slide, or Project settings → Variables, at the file or the value it comes from.
+
+### Find
+
+**Ctrl+F** searches the whole project, as its `.gl` text: words in text boxes, cells and notes, formulas, file names, settings. Each match is shown where it is: the object selected on its slide (also on a master slide, or inside a group, which is opened), flashed. A match that isn't on a slide (project settings, macro definitions) opens the source view at it, and while the source view is open it follows every match. **Enter** / **Shift+Enter**: next / previous; **Aa**: match case; **{ }**: show it in the source view; **Esc**: close.
 
 The [Gluon format reference](gluon-format.md) describes everything the file can hold.
 
@@ -446,6 +453,7 @@ On macOS, Ctrl in the shortcuts below means Cmd.
 | Command | Default keys |
 |---|---|
 | Undo | Ctrl+Z |
+| Find in the project | Ctrl+F |
 | Redo | Ctrl+Shift+Z, Ctrl+Y |
 | Cut / Copy / Paste | Ctrl+X / Ctrl+C / Ctrl+V |
 | Delete | Delete, Backspace |

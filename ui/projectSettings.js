@@ -205,7 +205,7 @@ function variablesTab() {
         const n = values === null ? '<span class="prop-hint">not read yet</span>'
             : `<span class="prop-hint">${Object.keys(values).length} value${Object.keys(values).length === 1 ? '' : 's'}: ${Object.keys(values).slice(0, 6).map(k => `<code>${escapeHtml(k)}</code>`).join(' ')}${Object.keys(values).length > 6 ? ' …' : ''}</span>`;
         return `
-            <div class="var-file-row" data-var-file="${i}">
+            <div class="var-file-row" data-var-file="${i}" data-var-file-name="${escapeHtml(f.file)}">
                 <code title="${escapeHtml(f.original || '')}">${escapeHtml(f.file)}</code>
                 <label class="prop-check" title="Copy the original again when it changes"><input type="checkbox" data-var-sync ${f.sync === false ? '' : 'checked'}> follow the original</label>
                 <button type="button" class="prop-reset" data-settings-action="var-reload" title="Read it again">↻</button>
@@ -221,7 +221,7 @@ function variablesTab() {
         </div>`).join('');
     const all = allVariables();
     const origin = (name) => (name in sliders ? 'a slider' : name in fromFiles ? 'a file' : 'written here');
-    const table = Object.keys(all).sort().map(name => `<tr><td><code>${escapeHtml(name)}</code></td><td>${escapeHtml(formatValue(all[name]))}</td><td>${origin(name)}</td></tr>`).join('');
+    const table = Object.keys(all).sort().map(name => `<tr><td><code>${escapeHtml(name)}</code></td><td>${escapeHtml(formatValue(all[name]))}</td><td>${name in sliders ? `<button type="button" class="link-btn" data-settings-action="var-goto" data-var="${escapeHtml(name)}" title="Show the slider">a slider</button>` : origin(name)}</td></tr>`).join('');
     return `
         <p class="prop-hint">Values that text shows with <code>\\var{name}</code> (or <code>\\var{name}[%.2f]</code>) and that plots compute with. A slider sets one too; a file's values win over values written here, a slider's over both.</p>
         <div class="settings-section-title">From files</div>
@@ -511,6 +511,10 @@ function wire(m) {
             deleteStyle(ui.styleType, ui.style);
             ui.style = null;
             commit();
+            break;
+        case 'var-goto':
+            close();
+            import('./goToVariable.js').then(m => m.goToVariable(action.dataset.var));
             break;
         case 'var-add': {
             state.vars = state.vars || {};

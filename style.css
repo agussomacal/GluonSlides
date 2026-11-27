@@ -2202,3 +2202,16 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .cm-gl-fkw { color: #f472b6; font-weight: 600; }
 .cm-gl-fmod { color: #93c5fd; font-weight: 600; }
 .plot-script .CodeMirror { max-height: 420px; }
+
+/* Find (ui/find.js) */
+.find-bar { position: fixed; top: 96px; right: 340px; z-index: 900; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 8px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); max-width: 520px; }
+.find-bar input[type=text] { width: 220px; background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 5px; padding: 5px 8px; font-size: 13px; }
+.find-bar button { background: transparent; border: 1px solid transparent; color: var(--text-main); border-radius: 5px; padding: 3px 7px; cursor: pointer; font-size: 13px; }
+.find-bar button:hover { background: rgba(148, 163, 184, 0.2); }
+.find-count { min-width: 52px; text-align: center; font-size: 12px; color: var(--text-muted); }
+.find-count.none { color: #f87171; }
+.find-case { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.find-where { flex-basis: 100%; font-size: 11px; color: var(--text-muted); padding-left: 2px; }
+.find-where:empty { display: none; }
+.find-flash { animation: find-flash 1.4s ease-out; }
+@keyframes find-flash { 0%, 40% { box-shadow: 0 0 0 4px #f59e0b, 0 0 24px rgba(245, 158, 11, 0.6); } 100% { box-shadow: 0 0 0 0 transparent; } }

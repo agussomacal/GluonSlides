@@ -29,6 +29,7 @@ import { initPanes, togglePane } from './ui/panes.js';
 import { loadPrefs } from './core/prefs.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
 import { initHelpMenu, runHelp } from './ui/help.js';
+import './ui/find.js'; // Ctrl+F: find in the project
 import { startVarSync } from './core/variables.js';
 import { startPlotDataSync } from './core/plotData.js';
 import { showImportModal, chooseImportSource, chooseImportSourceFolder, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';

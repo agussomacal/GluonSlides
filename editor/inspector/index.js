@@ -45,6 +45,8 @@ import {
 } from './settings.js';
 import { initContextMenu } from './contextMenu.js';
 import { glHints } from './completions.js';
+import { allVariables } from '../../core/variables.js';
+import { goToVariable } from '../../ui/goToVariable.js';
 import { libraryFiles, libraryText, applyLibraryText, loadImportedLibraries } from '../../core/macros.js';
 
 const DRAWER_ID = 'gl-inspector-drawer';
@@ -164,6 +166,9 @@ function buildDrawer() {
         tabSize: getSettings().tabSize,
         onApplyShortcut: () => applyNow({ silentOnError: false }),
         hint: glHints,
+        // variables coloured as such; Ctrl+click on one: its definition
+        variables: () => variableNames,
+        onCtrlClickWord: (word) => variableNames.has(word) && goToVariable(word),
     });
     attachResizeHandle();
 
@@ -366,7 +371,17 @@ function switchFile(file) {
  * Re-serializes the project into the editor. Skipped while the user is
  * typing or has a draft, unless `force` is set.
  */
+// The project's variable names, for the colours (refreshed with the text).
+let variableNames = new Set();
+function refreshVariableNames() {
+    const next = new Set(Object.keys(allVariables()));
+    if (next.size === variableNames.size && [...next].every(n => variableNames.has(n))) return;
+    variableNames = next;
+    if (editor && editor.recolour) editor.recolour();
+}
+
 function refreshFromState({ force = false, jump = false } = {}) {
+    refreshVariableNames();
     if (!isOpen || isApplying || isNavigating) return;
     if (!force && (isFocused || hasUnappliedDraft)) return;
 
@@ -426,6 +441,18 @@ export function openMacroDefinition(name) {
         editor.jumpToLine(idx);
         setStatus(`Definition of ${name} — ${activeFile === 'project' ? 'project file' : activeFile}`);
     }
+}
+
+export function isGlInspectorOpen() {
+    return isOpen;
+}
+
+/** Shows line `lineIdx` of the project file with characters [ch, ch + length) selected (Find). */
+export function showGlLine(lineIdx, ch = 0, length = 0, { focus = false } = {}) {
+    if (!isOpen || activeFile !== 'project') openGlInspector({});
+    refreshFromState({ force: true });
+    if (editor.selectRange) editor.selectRange(lineIdx, ch, length, { focus });
+    else editor.jumpToLine(lineIdx, { focus });
 }
 
 /** Opens the inspector at the current slide / selection, or closes it (Ctrl+E, Help menu). */
