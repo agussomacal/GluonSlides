@@ -690,10 +690,12 @@ export function parseCurves(text, lang = 'python') {
 export function plotLayout(spec) {
     const fs = num(spec.fontSize, 24);
     const bar = (spec.layers || []).some(l => l.kind === 'heatmap' && l.colorbar !== 'no');
-    const left = fs * 3.4 + (spec.ylabel ? fs * 1.6 : 0);
-    const bottom = fs * 2 + (spec.xlabel ? fs * 1.6 : 0);
-    const top = fs * 0.8;
-    const right = fs * 1.2 + (bar ? fs * 4.4 : 0);
+    // axes:none — only the drawing; axes:zero — axes through the origin, numbers next to them
+    const bare = spec.axes === 'none' || spec.axes === 'zero';
+    const left = (bare ? fs * 0.5 : fs * 3.4) + (spec.ylabel ? fs * 1.6 : 0);
+    const bottom = (bare ? fs * 0.5 : fs * 2) + (spec.xlabel ? fs * 1.6 : 0);
+    const top = fs * (bare ? 0.5 : 0.8);
+    const right = fs * (bare ? 0.5 : 1.2) + (bar ? fs * 4.4 : 0);
     const w = Math.max(10, num(spec.width, 800) - left - right);
     const h = Math.max(10, num(spec.height, 500) - top - bottom);
     return { left, top, right, bottom, w, h, fs, bar };
@@ -1003,6 +1005,8 @@ function evaluatePlot(spec, vars, frozen = null) {
     const xlog = spec.xscale === 'log';
     const ylog = spec.yscale === 'log';
     let xr = axisRange(spec.xmin, spec.xmax, frozen && frozen.x, ext.x, xlog, xlog ? [0.1, 10] : [-5, 5]);
+    const xBelowZero = xlog && !(xr[0] > 0);
+    if (xBelowZero) xr = xr[1] > 0 ? [xr[1] / 1000, xr[1]] : [0.1, 10];
     layers.forEach((layer, i) => {
         if (results[i].error || results[i].hidden || GRID_KINDS.has(layer.kind)) return;
         try {
@@ -1010,6 +1014,12 @@ function evaluatePlot(spec, vars, frozen = null) {
         } catch (e) { fail(i, e); }
     });
     let yr = axisRange(spec.ymin, spec.ymax, frozen && frozen.y, ext.y, ylog, ylog ? [0.1, 10] : [-1, 1]);
+    // a log axis over 0 or negatives: from a thousandth of its end (or 0.1 to 10)
+    const positive = (r) => (r[0] > 0 ? r : r[1] > 0 ? [r[1] / 1000, r[1]] : [0.1, 10]);
+    const notes = [];
+    if (xBelowZero) notes.push('log x axis: values above 0 only');
+    if (ylog && !(yr[0] > 0)) notes.push('log y axis: values above 0 only');
+    if (ylog) yr = positive(yr);
     // bars and histograms stand on 0
     const fromZero = layers.some((l, i) => (l.kind === 'bar' || l.kind === 'hist') && !results[i].error);
     if (fromZero && !frozen && !isSet(spec.ymin) && !ylog && ext.y[0] >= 0) yr = [0, yr[1]];
@@ -1034,7 +1044,7 @@ function evaluatePlot(spec, vars, frozen = null) {
             }
         } catch (e) { fail(i, e); }
     });
-    return { xr, yr, results, categories, z, L };
+    return { xr, yr, results, categories, z, L, notes };
 }
 
 /** Each layer's error for these variables ('' when it draws): what the layer cards show. */
@@ -1244,7 +1254,7 @@ export function plotSvg(spec, vars) {
     parts.push(`<defs><clipPath id="${clip}"><rect x="${L.left}" y="${L.top}" width="${L.w}" height="${L.h}"/></clipPath></defs>`);
     const xt = categories ? categories.map((c, i) => ({ v: i, text: c })) : axisTicks(xr, Math.max(2, Math.round(L.w / (L.fs * 5))), xlog ? 'log' : spec.xticks === 'pi' ? 'pi' : '');
     const yt = axisTicks(yr, Math.max(2, Math.round(L.h / (L.fs * 3))), ylog ? 'log' : spec.yticks === 'pi' ? 'pi' : '');
-    if (spec.grid !== 'no') {
+    if (spec.grid !== 'no' && spec.axes !== 'none') {
         const g = [];
         xt.forEach(t => { if (t.v >= xr[0] && t.v <= xr[1]) g.push(`M${X(t.v).toFixed(1)} ${L.top}V${L.top + L.h}`); });
         yt.forEach(t => g.push(`M${L.left} ${Y(t.v).toFixed(1)}H${L.left + L.w}`));
@@ -1412,14 +1422,38 @@ export function plotSvg(spec, vars) {
     });
     parts.push(`<g clip-path="url(#${clip})">${body.join('')}</g>`);
     // axes (zero lines when inside), ticks
-    parts.push(`<path d="M${L.left} ${L.top}V${L.top + L.h}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.7" stroke-width="1.5" fill="none"/>`);
-    if (!ylog && yr[0] < 0 && yr[1] > 0) parts.push(`<path d="M${L.left} ${Y(0).toFixed(1)}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
-    if (!xlog && !categories && xr[0] < 0 && xr[1] > 0) parts.push(`<path d="M${X(0).toFixed(1)} ${L.top}V${L.top + L.h}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
     const labels = [];
-    xt.forEach(t => { if (t.v >= xr[0] - 1e-9 && t.v <= xr[1] + 1e-9) labels.push(`<text x="${X(t.v).toFixed(1)}" y="${(L.top + L.h + fs * 1.4).toFixed(1)}" text-anchor="middle">${esc(t.text)}</text>`); });
-    yt.forEach(t => labels.push(`<text x="${(L.left - fs * 0.5).toFixed(1)}" y="${(Y(t.v) + fs * 0.35).toFixed(1)}" text-anchor="end">${esc(t.text)}</text>`));
+    if (spec.axes === 'zero') {
+        // through the origin (or the nearest edge), with arrows; numbers next to them
+        const ax = categories || xlog ? yr[0] : Math.min(Math.max(0, yr[0]), yr[1]);
+        const ay = xlog ? xr[0] : Math.min(Math.max(0, xr[0]), xr[1]);
+        const Y0 = Y(ylog ? yr[0] : ax);
+        const X0 = X(xlog ? xr[0] : ay);
+        const a = L.fs * 0.35;
+        parts.push(`<path d="M${L.left} ${Y0.toFixed(1)}H${L.left + L.w}M${(L.left + L.w - a).toFixed(1)} ${(Y0 - a / 2).toFixed(1)}L${L.left + L.w} ${Y0.toFixed(1)}L${(L.left + L.w - a).toFixed(1)} ${(Y0 + a / 2).toFixed(1)}M${X0.toFixed(1)} ${L.top + L.h}V${L.top}M${(X0 - a / 2).toFixed(1)} ${(L.top + a).toFixed(1)}L${X0.toFixed(1)} ${L.top}L${(X0 + a / 2).toFixed(1)} ${(L.top + a).toFixed(1)}" stroke="${esc(colour)}" stroke-opacity="0.8" stroke-width="1.5" fill="none"/>`);
+        const tick = L.fs * 0.2;
+        xt.forEach(t => {
+            if (t.v <= xr[0] || t.v >= xr[1] || (!xlog && Math.abs(t.v - ay) < 1e-12)) return;
+            labels.push(`<text x="${X(t.v).toFixed(1)}" y="${(Y0 + fs * 1.3).toFixed(1)}" text-anchor="middle">${esc(t.text)}</text>`);
+            parts.push(`<path d="M${X(t.v).toFixed(1)} ${(Y0 - tick).toFixed(1)}V${(Y0 + tick).toFixed(1)}" stroke="${esc(colour)}" stroke-opacity="0.8"/>`);
+        });
+        yt.forEach(t => {
+            if (t.v <= yr[0] || t.v >= yr[1] || (!ylog && Math.abs(t.v - ax) < 1e-12)) return;
+            labels.push(`<text x="${(X0 - fs * 0.4).toFixed(1)}" y="${(Y(t.v) + fs * 0.35).toFixed(1)}" text-anchor="end">${esc(t.text)}</text>`);
+            parts.push(`<path d="M${(X0 - tick).toFixed(1)} ${Y(t.v).toFixed(1)}H${(X0 + tick).toFixed(1)}" stroke="${esc(colour)}" stroke-opacity="0.8"/>`);
+        });
+    } else if (spec.axes !== 'none') {
+        parts.push(`<path d="M${L.left} ${L.top}V${L.top + L.h}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.7" stroke-width="1.5" fill="none"/>`);
+        if (!ylog && yr[0] < 0 && yr[1] > 0) parts.push(`<path d="M${L.left} ${Y(0).toFixed(1)}H${L.left + L.w}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
+        if (!xlog && !categories && xr[0] < 0 && xr[1] > 0) parts.push(`<path d="M${X(0).toFixed(1)} ${L.top}V${L.top + L.h}" stroke="${esc(colour)}" stroke-opacity="0.35" stroke-width="1" fill="none"/>`);
+        xt.forEach(t => { if (t.v >= xr[0] - 1e-9 && t.v <= xr[1] + 1e-9) labels.push(`<text x="${X(t.v).toFixed(1)}" y="${(L.top + L.h + fs * 1.4).toFixed(1)}" text-anchor="middle">${esc(t.text)}</text>`); });
+        yt.forEach(t => labels.push(`<text x="${(L.left - fs * 0.5).toFixed(1)}" y="${(Y(t.v) + fs * 0.35).toFixed(1)}" text-anchor="end">${esc(t.text)}</text>`));
+    }
     parts.push(`<g fill="${esc(colour)}" font-size="${fs.toFixed(1)}" font-family="${font}">${labels.join('')}</g>`);
     parts.push(over.join(''));
+    if (ev.notes && ev.notes.length) {
+        parts.push(`<g class="gl-plot-notes" font-size="${(fs * 0.85).toFixed(1)}" font-family="${font}" fill="${esc(colour)}" fill-opacity="0.6">${ev.notes.map((n, k) => `<text x="${L.left + L.w - fs * 0.5}" y="${L.top + L.h - fs * (0.6 + k * 1.2)}" text-anchor="end">${esc(n)}</text>`).join('')}</g>`);
+    }
     if (errors.length) {
         parts.push(`<g font-size="${fs.toFixed(1)}" font-family="${font}" fill="#dc2626">${errors.slice(0, 4).map((e, k) => `<text x="${L.left + fs}" y="${L.top + fs * (1.5 + k * 1.3)}">${esc(e)}</text>`).join('')}</g>`);
     }

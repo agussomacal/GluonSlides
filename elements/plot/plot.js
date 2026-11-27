@@ -78,6 +78,7 @@ export function plotSpec(el) {
         width: el.width, height: el.height, xmin: el.xmin, xmax: el.xmax, ymin: el.ymin, ymax: el.ymax,
         xscale: el.xscale === 'log' ? 'log' : '', yscale: el.yscale === 'log' ? 'log' : '',
         xticks: el.xticks === 'pi' ? 'pi' : '', yticks: el.yticks === 'pi' ? 'pi' : '', aspect: el.aspect === 'equal' ? 'equal' : '',
+        axes: ['none', 'zero'].includes(el.axes) ? el.axes : '',
         grid: el.grid === 'no' ? 'no' : 'yes', samples: el.samples, lang, layers,
         fontSize: Number(el.fontSize) || 24, fontFamily: fontStack(el.fontFamily), color: resolveColor(el.fontColor) || el.fontColor || '#0f172a',
         xlabel: el.xlabel || '', ylabel: el.ylabel || '',
@@ -136,7 +137,7 @@ const PlotElement = {
     },
 
     gl: {
-        props: ['x', 'y', 'width', 'height', 'lang', 'xmin', 'xmax', 'ymin', 'ymax', 'xscale', 'yscale', 'xticks', 'yticks', 'aspect',
+        props: ['x', 'y', 'width', 'height', 'lang', 'xmin', 'xmax', 'ymin', 'ymax', 'xscale', 'yscale', 'xticks', 'yticks', 'aspect', 'axes',
             'xlabel', 'ylabel', 'grid', 'legend', 'samples',
             'fontSize', 'fontFamily', 'fontColor', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
         numericProps: ['x', 'y', 'width', 'height', 'samples', 'fontSize', 'borderWidth'], // the ranges stay text: empty = auto
@@ -212,6 +213,7 @@ const PlotElement = {
             <div class="settings-section-title">Layers</div>
             ${layerCardsHtml(el)}
             <div class="settings-section-title">Axes</div>
+            ${choice('axes', 'Axes', [['', 'box: axes, ticks and numbers'], ['zero', 'through the origin'], ['none', 'none: only the plot']])}
             <div class="prop-row">${num('xmin', 'x from', 'auto')}${num('xmax', 'x to', 'auto')}</div>
             <div class="prop-row">${num('ymin', 'y from', 'auto')}${num('ymax', 'y to', 'auto')}</div>
             <div class="prop-row">

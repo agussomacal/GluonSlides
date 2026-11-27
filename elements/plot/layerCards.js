@@ -44,7 +44,7 @@ function field(b, i, param, el) {
     const wrap = (control, wide = false) => `<div class="prop-group${wide ? ' layer-wide' : ''}"><label${title}>${escapeHtml(param.label)}</label>${control}</div>`;
     switch (param.type) {
         case 'color':
-            return wrap(colorField({ 'data-layer-field': param.key, 'data-layer': String(i) }, value || PALETTE[i % PALETTE.length], { allowNone: false }));
+            return wrap(colorField({ 'data-color-key': `layer-${i}-${param.key}`, 'data-layer-field': param.key, 'data-layer': String(i) }, value || PALETTE[i % PALETTE.length], { allowNone: false }));
         case 'bool': {
             const on = (value || param.def || 'no') === 'yes';
             return `<label class="prop-check layer-check"${title}><input type="checkbox" ${attrs} ${on ? 'checked' : ''}> ${escapeHtml(param.label)}</label>`;

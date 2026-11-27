@@ -204,6 +204,15 @@ check('log axes: decades', !r.errors.length && ['10⁻²', '1', '10', '100', '10
 r = await draw('.curve\ny = sin(x)', { xmin: 0, xmax: 6.2832, xticks: 'pi' });
 check('ticks at multiples of π', ['π/2', 'π', '3π/2', '2π'].every(t => r.texts.includes(t)), r.texts.join(' '));
 
+// log scale over a range with 0 or negatives: drawn from just above 0, with a note
+r = await draw('.curve\ny = x**2 + 1', { xmin: -5, xmax: 5, xscale: 'log', yscale: 'log' });
+check('log over −5…5: drawn, no error, a note', !r.errors.length && r.paths[0] && r.paths[0].length > 100 && r.texts.some(t => t.includes('values above 0 only')) && !r.html.includes('NaN'), r.texts.slice(-3));
+// axes: none (only the plot), zero (through the origin)
+r = await draw('.curve\ny = sin(x)', { axes: 'none' });
+check('axes none: no numbers, no grid, the curve', r.texts.length === 0 && !r.html.includes('stroke-opacity="0.12"') && r.paths.length === 1, r.texts);
+r = await draw('.curve\ny = sin(x)', { axes: 'zero', ymin: -1.5, ymax: 1.5 });
+check('axes through the origin: numbers next to them, no 0', r.texts.includes('2') && r.texts.includes('−1.0') && !r.texts.includes('0'), r.texts);
+
 // a data file: chosen in a layer's card, read, drawn, followed when it changes
 await app(async () => {
     const { state, setSelectedElementIndices } = await import('/core/state.js');

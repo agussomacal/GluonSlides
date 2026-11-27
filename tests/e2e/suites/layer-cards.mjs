@@ -80,16 +80,17 @@ check('…and drawn with 12 bars or fewer', (await drawnRects()) <= 12 && (await
 await page.click('[data-layer-card="0"] [data-layer-field="density"]');
 await page.waitForTimeout(200);
 check('density off: removed (no is the default)', !(await code()).split('\n')[0].includes('density'), (await code()).split('\n')[0]);
-// a colour
-await app(() => {
-    const f = document.querySelector('[data-layer-card="0"] [data-layer-field="color"]');
-    f.value = '#ff0000';
-    f.setAttribute('value', '#ff0000');
-    f.dispatchEvent(new Event('change', { bubbles: true }));
-});
-await page.waitForTimeout(200);
-check('colour', (await code()).split('\n')[0].includes('color:#ff0000'), (await code()).split('\n')[0]);
-
+// a colour, through the colour picker
+await page.click('[data-layer-card="0"] [data-layer-field="color"]');
+await page.waitForTimeout(150);
+await page.click('#color-popover [data-theme="accent"], .color-popover [data-theme="accent"]');
+await page.waitForTimeout(250);
+check('colour chosen in the picker', (await code()).split('\n')[0].includes('color:@accent'), (await code()).split('\n')[0]);
+await page.keyboard.press('Escape');
+await page.mouse.click(700, 980);
+await page.waitForTimeout(100);
+await app(async () => { const m = await import('/core/state.js'); m.setSelectedElementIndices([1], 1); (await import('/editor/editor.js')).renderEditor(); });
+await page.waitForTimeout(150);
 // hide: kept, not drawn, not in the legend
 await page.click('[data-layer-op="hide"][data-layer="0"]');
 await page.waitForTimeout(200);
