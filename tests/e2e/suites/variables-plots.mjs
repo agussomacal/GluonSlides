@@ -199,6 +199,18 @@ await exp.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
 await exp.waitForTimeout(200);
 const still = await exp.evaluate(() => document.querySelector('.slide.active').id);
 check('export: clicking the slider stays on the slide', still === 'slide-0', still);
+// the arrow keys move a clicked slider until Esc, then change slide again
+const keyed = await exp.evaluate(() => document.querySelector('.slide.active input[data-glslider="mu"]').value);
+await exp.keyboard.press('ArrowRight');
+await exp.keyboard.press('ArrowRight');
+await exp.keyboard.press('ArrowRight');
+await exp.waitForTimeout(100);
+const afterKeys = await exp.evaluate(() => ({ value: document.querySelector('.slide.active input[data-glslider="mu"]').value, slide: document.querySelector('.slide.active').id, focused: document.activeElement?.tagName }));
+check('export: arrows keep moving a clicked slider', Number(afterKeys.value) > Number(keyed) + 0.25 && afterKeys.slide === 'slide-0' && afterKeys.focused === 'INPUT', JSON.stringify([keyed, afterKeys]));
+await exp.keyboard.press('Escape');
+await exp.waitForTimeout(100);
+const released = await exp.evaluate(() => ({ focused: document.activeElement?.tagName, slides: document.querySelectorAll('.slide').length }));
+check('export: Esc lets go of the slider (the show goes on)', released.focused !== 'INPUT', JSON.stringify(released));
 // the presenter view's values reach the audience window
 const followed = await exp.evaluate(async () => {
     const path = () => document.querySelector('.slide.active svg.gl-plot-svg g[clip-path] path').getAttribute('d');

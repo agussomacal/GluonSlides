@@ -1473,6 +1473,14 @@ export function bindSliders(root, vars, onChange) {
         vars[name] = Number(input.value);
         onChange(name, vars[name]);
     });
-    // Let go: the arrow keys change slide again.
-    root.addEventListener('change', (e) => { const input = slider(e); if (input) input.blur(); });
+    // A clicked slider keeps the arrow keys until Esc or Enter (or a click
+    // elsewhere): they let go of it, without ending the slide show. (In
+    // full screen the browser keeps Esc for leaving full screen: Enter then.)
+    root.addEventListener('keydown', (e) => {
+        const input = slider(e);
+        if (input && (e.key === 'Escape' || e.key === 'Enter')) {
+            e.preventDefault();
+            input.blur();
+        }
+    });
 }
