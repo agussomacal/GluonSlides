@@ -74,6 +74,8 @@ def load_pymupdf():
 
 def install(name="pymupdf", fetch=None):
     """Downloads and unpacks the component; {"success"} or {"success": False, "error"}."""
+    if name == "equations":
+        return install_equations(fetch)
     if name != "pymupdf":
         return {"success": False, "error": f"Unknown component: {name}"}
     wheel = PYMUPDF_WHEELS.get(_system())
@@ -136,3 +138,131 @@ def _download(url, report=None):
             if report:
                 report(done, total)
         return b"".join(chunks)
+
+
+# ---------- Equation recognition (latex_ocr.py) ----------
+# onnxruntime (and numpy if the app has none) from PyPI, the wheel for this
+# system and Python checked against PyPI's SHA-256; the model files from the
+# RapidLaTeXOCR release, checked against latex_ocr.MODEL_FILES.
+
+ORT_VERSION = "1.32.0"
+EQUATIONS_MESSAGE = ("Recognising equations needs an extra component (ONNX Runtime and a LaTeX-OCR model, "
+                     "about 220 MB, from PyPI and GitHub). It is downloaded once. Download it now?")
+
+
+def _equations_dir():
+    return os.path.join(extras_dir(), "equations")
+
+
+def _equations_path():
+    site = os.path.join(_equations_dir(), "site")
+    if os.path.isdir(site) and site not in sys.path:
+        sys.path.insert(0, site)
+
+
+def load_equation_reader():
+    """An EquationReader (latex_ocr.py), or None when the component is missing."""
+    from . import latex_ocr
+    models = os.path.join(_equations_dir(), "models")
+    if not all(os.path.isfile(os.path.join(models, n)) and os.path.getsize(os.path.join(models, n)) == size
+               for n, (size, _sha) in latex_ocr.MODEL_FILES.items()):
+        return None
+    _equations_path()
+    try:
+        import numpy  # noqa: F401
+        import onnxruntime  # noqa: F401
+    except ImportError:
+        return None
+    try:
+        return latex_ocr.EquationReader(models)
+    except Exception:
+        return None
+
+
+def wheel_fits(filename, system=None, py=None):
+    """Whether a wheel (name-ver-py-abi-platform.whl) runs here: this Python
+    (cp3XY or abi3) and this system and machine."""
+    system, machine = system or _system()
+    py = py or f"cp{sys.version_info[0]}{sys.version_info[1]}"
+    parts = filename[:-4].split("-")
+    if len(parts) < 5:
+        return False
+    pytag, abi, plat = parts[-3], parts[-2], parts[-1]
+    free_threaded = bool(getattr(sys, "_is_gil_enabled", lambda: True)() is False)
+    if abi.endswith("t") and abi.startswith("cp") and not free_threaded:
+        return False  # the build for Python without the GIL
+    if not (py in pytag.split(".") or (abi == "abi3" and pytag.startswith("cp3") and int(pytag[3:].split(".")[0]) <= int(py[3:]))):
+        return False
+    plats = plat.split(".")
+    if system == "linux":
+        return any(p.startswith("manylinux") and p.endswith(machine) for p in plats)
+    if system == "darwin":
+        return any(p.startswith("macosx") and (p.endswith(machine) or p.endswith("universal2")) for p in plats)
+    if system == "win32":
+        return any(p == {"amd64": "win_amd64", "x86_64": "win_amd64", "arm64": "win_arm64"}.get(machine, "") for p in plats)
+    return False
+
+
+def _pypi_wheel(name, version=None, fetch=None):
+    """(url, sha256) of the wheel of `name` (`version`, else the latest) that runs here."""
+    import json
+    fetch = fetch or _download
+    url = f"https://pypi.org/pypi/{name}/{version}/json" if version else f"https://pypi.org/pypi/{name}/json"
+    info = json.loads(fetch(url).decode("utf-8"))
+    fits = [u for u in info.get("urls", []) if u["filename"].endswith(".whl") and wheel_fits(u["filename"])]
+    if not fits:
+        raise OSError(f"no {name} for this system ({' '.join(_system())}, Python {sys.version_info[0]}.{sys.version_info[1]})")
+    fits.sort(key=lambda u: ("abi3" in u["filename"], u["filename"]))  # this Python's own build first
+    return fits[0]["url"], fits[0]["digests"]["sha256"]
+
+
+def _unpack(data, dest):
+    os.makedirs(dest, exist_ok=True)
+    root = os.path.realpath(dest)
+    import io
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for info in zf.infolist():
+            target = os.path.realpath(os.path.join(dest, info.filename))
+            if target.startswith(root + os.sep):
+                zf.extract(info, dest)
+
+
+def install_equations(fetch=None):
+    from . import latex_ocr, progress
+    fetch = fetch or _download
+    site = os.path.join(_equations_dir(), "site")
+    models = os.path.join(_equations_dir(), "models")
+    mb = 1024 * 1024
+    try:
+        packages = [("onnxruntime", ORT_VERSION)]
+        try:
+            import numpy  # noqa: F401
+        except ImportError:
+            packages.append(("numpy", None))
+        for name, version in packages:
+            progress.report(f"Downloading {name}", 0, 0)
+            url, sha = _pypi_wheel(name, version, fetch)
+            data = fetch(url) if fetch is not _download else _download(url, lambda d, t: progress.report(f"Downloading {name} (MB)", d // mb, t // mb))
+            if hashlib.sha256(data).hexdigest() != sha:
+                return {"success": False, "error": f"The downloaded {name} is not the expected file; nothing was installed."}
+            _unpack(data, site)
+        os.makedirs(models, exist_ok=True)
+        for n, (size, sha) in latex_ocr.MODEL_FILES.items():
+            dest = os.path.join(models, n)
+            if os.path.isfile(dest) and os.path.getsize(dest) == size:
+                continue
+            url = latex_ocr.MODEL_URL + n
+            data = fetch(url) if fetch is not _download else _download(url, lambda d, t, n=n: progress.report(f"Downloading the model: {n} (MB)", d // mb, t // mb))
+            if hashlib.sha256(data).hexdigest() != sha:
+                return {"success": False, "error": f"The downloaded {n} is not the expected file; nothing was installed."}
+            with open(dest, "wb") as f:
+                f.write(data)
+    except Exception as e:
+        from ..desktop import debug
+        debug(f"[extras] equations: {e!r}")
+        return {"success": False, "error": f"Could not download the equation component: {e}"}
+    finally:
+        progress.reset()
+    if load_equation_reader() is None:
+        return {"success": False, "error": "The equation component was downloaded but could not be loaded."}
+    return {"success": True}

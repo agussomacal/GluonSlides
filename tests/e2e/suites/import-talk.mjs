@@ -47,7 +47,10 @@ async function start(behaviour) {
             select_folder: () => ok({ path: '/home/me/talks' }),
             import_progress: () => ok(window.__progress || { stage: '', done: 0, total: 0 }),
             import_talk: async (source, folder, name, options) => {
-                window.__calls.push(['import', source, folder, name, options.pdfMode, options.usePdf]);
+                window.__calls.push(['import', source, folder, name, options.pdfMode, options.usePdf, options.equations]);
+                if (behaviour.needsEquations && options.equations) {
+                    return { success: false, needs_extra: 'equations', extra_message: 'Recognising equations needs an extra component (about 220 MB).' };
+                }
                 if (behaviour.slow) {
                     window.__progress = { stage: 'Converting the frames', done: 2, total: 10 };
                     await new Promise(r => setTimeout(r, behaviour.slow));
@@ -92,7 +95,7 @@ check('…and with a folder, Import is enabled', !(await page.isDisabled('#impor
 await page.click('#import-go');
 await page.waitForTimeout(800);
 const calls = await page.evaluate(() => window.__calls);
-check('the backend is asked to import into <folder>/<name>', JSON.stringify(calls[0]) === JSON.stringify(['import', '/home/me/Downloads/Natural_Gradient.zip', '/home/me/talks', 'Natural Gradient', 'editable', true]));
+check('the backend is asked to import into <folder>/<name>', JSON.stringify(calls[0]) === JSON.stringify(['import', '/home/me/Downloads/Natural_Gradient.zip', '/home/me/talks', 'Natural Gradient', 'editable', true, false]));
 check('the project opens in the editor', await page.isVisible('#editor-view.active'));
 const st = await page.evaluate(async () => JSON.parse(JSON.stringify((await import('/core/state.js')).state, (k, v) => (k.startsWith('_') || k === 'undoStack' || k === 'redoStack' ? undefined : v))));
 check('size, author, date from the talk', st.slideWidth === 1920 && st.slideHeight === 1080 && st.author === 'Ana, Bo' && st.date === '2026');
@@ -203,6 +206,25 @@ await page.waitForTimeout(200);
 check('the folder is filled in with the last one used', (await page.textContent('#import-folder')).trim() === '/home/me/talks');
 await page.click('[data-action="import-choose-source"]');
 check('…so choosing the talk is enough to import', !(await page.isDisabled('#import-go')));
+await page.close();
+
+// ---------- Equations in pictures (PowerPoint, PDF): optional, asked before downloading ----------
+page = await start({ source: '/x/deck.pptx', needsEquations: true });
+await page.click('[data-action="import-choose-source"]');
+check('the equations option is offered for a PowerPoint', await page.isVisible('#import-equations-row'));
+await page.check('#import-equations');
+await page.click('[data-action="import-choose-folder"]');
+await page.click('#import-go');
+await page.waitForTimeout(400);
+check('asks before downloading the equation component', (await page.textContent('#import-extra')).includes('220 MB'));
+await page.click('[data-extra="no"]');
+await page.waitForTimeout(800);
+const eqCalls = await page.evaluate(() => window.__calls.filter(c => c[0] === 'import').map(c => c[6]));
+check('declined: imported without reading the equations', JSON.stringify(eqCalls) === '[true,false]' && await page.isVisible('#editor-view.active'), JSON.stringify(eqCalls));
+await page.close();
+page = await start({ source: '/x/talk.tex' });
+await page.click('[data-action="import-choose-source"]');
+check('…not offered for LaTeX (its equations are LaTeX already)', !(await page.isVisible('#import-equations-row')));
 await page.close();
 
 // ---------- Errors ----------

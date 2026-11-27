@@ -790,6 +790,81 @@ class PptxDrawingsTest(TempDirTest):
         self.assertEqual(res["ground_truth"], "deck.pdf")
 
 
+class EquationsTest(TempDirTest):
+    """Pictures of equations read back to LaTeX (backend/importers/equations.py), with a stand-in
+    for the model (the real one is an optional 220 MB download), and choosing its wheels."""
+
+    def deck(self, pictures):
+        from PIL import ImageDraw
+        from pptx import Presentation
+        from pptx.util import Inches
+        prs = Presentation()
+        prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+        s = prs.slides.add_slide(prs.slide_layouts[6])
+        for i, (kind, size) in enumerate(pictures):
+            if kind == "formula":  # dark thin strokes on white: looks like an equation
+                im = Image.new("RGB", size, "white")
+                d = ImageDraw.Draw(im)
+                d.text((10, size[1] // 3), "a + b = c", fill="black")
+                d.line((10, size[1] - 10, size[0] - 10, size[1] - 10), fill="black", width=2)
+            else:  # a photo: many colours
+                import random
+                random.seed(1)
+                im = Image.new("RGB", size)
+                im.putdata([(random.randrange(256), random.randrange(256), random.randrange(256)) for _ in range(size[0] * size[1])])
+            buf = io.BytesIO()
+            im.save(buf, format="PNG")
+            buf.seek(0)
+            s.shapes.add_picture(buf, Inches(1 + 4 * i), Inches(1), Inches(3), Inches(3 * size[1] / size[0]))
+        path = os.path.join(self.tmp, "eq.pptx")
+        prs.save(path)
+        return path
+
+    class Reader:
+        def __init__(self, answers):
+            self.answers, self.seen = list(answers), 0
+
+        def read(self, img):
+            self.seen += 1
+            return self.answers.pop(0)
+
+    def run_import(self, path, reader):
+        from backend.importers import import_talk
+        with mock.patch("backend.importers.extras.load_equation_reader", return_value=reader):
+            res = import_talk(path, self.tmp, f"Eq{len(os.listdir(self.tmp))}", {"equations": True})
+        self.assertTrue(res["success"], res)
+        return res["project"]["slides"][0]["elements"]
+
+    def test_a_sure_reading_replaces_the_picture(self):
+        reader = self.Reader([("a+b=c", -0.01)])
+        els = self.run_import(self.deck([("formula", (300, 80)), ("photo", (120, 120))]), reader)
+        self.assertEqual(reader.seen, 1)  # the photo is not tried
+        text = next(e for e in els if e["type"] == "text")
+        self.assertEqual((text["content"], text["name"], text["textAlign"]), ("$\\displaystyle a+b=c$", "Recognised equation", "center"))
+        self.assertEqual(sum(e["type"] == "figure" for e in els), 1)  # the photo stays
+
+    def test_unsure_readings_and_single_symbols_keep_the_picture(self):
+        for answer in (("a+b=c", -0.2), ("\\mathcal{N}", -0.001)):
+            els = self.run_import(self.deck([("formula", (300, 80))]), self.Reader([answer]))
+            self.assertEqual([e["type"] for e in els], ["figure"])
+
+    def test_without_the_component_it_asks_for_it(self):
+        from backend.importers import import_talk
+        with mock.patch("backend.importers.extras.load_equation_reader", return_value=None):
+            res = import_talk(self.deck([("formula", (300, 80))]), self.tmp, "Ask", {"equations": True})
+        self.assertEqual(res.get("needs_extra"), "equations")
+
+    def test_the_wheel_for_this_system(self):
+        from backend.importers.extras import wheel_fits
+        name = "onnxruntime-1.32.0-cp312-cp312-manylinux_2_28_x86_64.whl"
+        self.assertTrue(wheel_fits(name, ("linux", "x86_64"), "cp312"))
+        self.assertFalse(wheel_fits(name, ("linux", "x86_64"), "cp313"))
+        self.assertFalse(wheel_fits(name, ("linux", "aarch64"), "cp312"))
+        self.assertFalse(wheel_fits("onnxruntime-1.32.0-cp314-cp314t-manylinux_2_28_x86_64.whl", ("linux", "x86_64"), "cp314"))
+        self.assertTrue(wheel_fits("numpy-2.5.5-cp313-cp313-macosx_14_0_arm64.whl", ("darwin", "arm64"), "cp313"))
+        self.assertTrue(wheel_fits("onnxruntime-1.32.0-cp313-cp313-win_amd64.whl", ("win32", "amd64"), "cp313"))
+
+
 class PdfImportTest(TempDirTest):
     """PDF -> slides (backend/importers/pdf.py), on a PDF built by tests/backend/pdf_fixture.py."""
 

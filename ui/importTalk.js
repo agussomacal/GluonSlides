@@ -17,7 +17,7 @@ import { escapeHtml } from '../core/render.js';
 import { registerDropZone } from '../editor/fileDrop.js';
 import { progressBar } from './busy.js';
 import { prepareTabFor } from './tabs.js';
-import { loadPrefs, defaultProjectFolder, rememberProjectFolder } from '../core/prefs.js';
+import { loadPrefs, defaultProjectFolder, rememberProjectFolder, pref, setPref } from '../core/prefs.js';
 
 /** import_talk with a progress bar in the dialog (the backend reports how far it is). */
 function importWithProgress(api, source, folder, name, options) {
@@ -83,11 +83,13 @@ function refresh() {
     $('import-folder').textContent = chosen.folder || 'No folder selected';
     $('import-pdf-options').hidden = !onlyPdf;
     $('import-use-pdf-row').hidden = !source;
+    $('import-equations-row').hidden = !exts.some(e => e === 'pptx' || e === 'pdf');
     const name = $('import-name').value.trim();
     $('import-go').disabled = !(chosen.sources.length && chosen.folder && name);
 }
 
 export function showImportModal() {
+    loadPrefs().then(() => { $('import-equations').checked = Boolean(pref('importEquations', false)); });
     // Saved where projects were last created or imported (can be changed).
     chosen = { sources: [], folder: defaultProjectFolder() || '' };
     loadPrefs().then(() => {
@@ -186,22 +188,29 @@ export async function confirmImport() {
     const name = $('import-name').value.trim();
     const pdfMode = (document.querySelector('input[name="import-pdf-mode"]:checked') || {}).value || 'editable';
     const usePdf = $('import-use-pdf').checked;
+    const equations = !$('import-equations-row').hidden && $('import-equations').checked;
+    setPref('importEquations', $('import-equations').checked);
     const source = chosen.sources.length === 1 ? chosen.sources[0] : chosen.sources;
     $('import-error').textContent = '';
     $('import-status').textContent = 'Importing…';
     $('import-go').disabled = true;
     try {
-        let res = await importWithProgress(api, source, chosen.folder, name, { pdfMode, usePdf });
-        if (res && !res.success && res.needs_extra) {
-            // PDF import needs an extra component, downloaded once (asked first).
+        const options = { pdfMode, usePdf, equations };
+        let res = await importWithProgress(api, source, chosen.folder, name, options);
+        // Extra components (PDF reading, equations), downloaded once each: asked first.
+        for (let tries = 0; res && !res.success && res.needs_extra && tries < 3; tries++) {
             $('import-status').textContent = '';
             if (!await askDownloadExtra(api, res)) {
-                $('import-error').textContent = 'PDF import needs the extra component; nothing was imported.';
-                refresh();
-                return;
+                if (res.needs_extra === 'equations') {
+                    options.equations = false; // imported without reading the equations
+                } else {
+                    $('import-error').textContent = 'PDF import needs the extra component; nothing was imported.';
+                    refresh();
+                    return;
+                }
             }
             $('import-status').textContent = 'Importing…';
-            res = await importWithProgress(api, source, chosen.folder, name, { pdfMode, usePdf });
+            res = await importWithProgress(api, source, chosen.folder, name, options);
         }
         if (!res || !res.success) throw new Error((res && res.error) || 'Import failed');
         rememberProjectFolder(chosen.folder);
@@ -249,7 +258,8 @@ async function askDownloadExtra(api, res) {
     box.hidden = true;
     if (!answer) return false;
     // About 25 MB: the bar shows the megabytes as they come.
-    const got = await withProgress(api, 'Downloading the PDF component', () => api.install_extra(res.needs_extra));
+    const got = await withProgress(api, res.needs_extra === 'equations' ? 'Downloading the equation component' : 'Downloading the PDF component',
+        () => api.install_extra(res.needs_extra));
     $('import-status').textContent = '';
     if (!got || !got.success) {
         $('import-error').textContent = (got && got.error) || 'Download failed';

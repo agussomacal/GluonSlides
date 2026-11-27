@@ -144,6 +144,13 @@ def _import_talk(source, parent_folder, name, options=None):
     if found.get("error"):
         return {"success": False, "error": found["error"]}
     source, ext = found["path"], found["ext"]
+    # Pictures of equations read back to LaTeX (PowerPoint, PDF): an optional component
+    want_equations = bool(options.get("equations")) and ext in (".pptx", ".pdf")
+    if want_equations:
+        from . import extras as _extras
+        if _extras.load_equation_reader() is None:
+            return {"success": False, "needs_extra": "equations", "extra_message": _extras.EQUATIONS_MESSAGE,
+                    "error": "Recognising equations needs an extra component."}
     ground_truth = found.get("pdfs", []) if options.get("usePdf", True) else []
     target = os.path.join(parent_folder or "", "".join(c for c in name if c.isalnum() or c in (" ", "-", "_")).strip() or "Presentation")
     if os.path.isdir(target) and os.listdir(target):
@@ -197,6 +204,16 @@ def _import_talk(source, parent_folder, name, options=None):
         return {"success": False, "error": f"Could not import {os.path.basename(source)}: {type(e).__name__}: {e}"}
     if not result.get("slides"):
         return {"success": False, "error": "No slides were found in that file."}
+    if want_equations:
+        from . import extras as _extras
+        from .equations import recognise_equations
+        reader = _extras.load_equation_reader()
+        if reader is not None:
+            n = recognise_equations(result, folder, reader, lambda i, t: progress.report("Reading the equations", i, t))
+            if n:
+                result.setdefault("warnings", []).append(
+                    f"{n} picture{'s' if n > 1 else ''} of equations turned into LaTeX (named “Recognised equation”): check them; "
+                    "the pictures are still in figures/.")
     out = {"success": True, "path": paths["path"], "folder": folder, "project": result, "source": source}
     if ext in (".tex", ".md", ".zip", ".pptx"):
         out["ground_truth"] = ground_truth_used
