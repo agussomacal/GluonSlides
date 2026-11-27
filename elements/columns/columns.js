@@ -21,6 +21,7 @@ import { colorField } from '../../ui/colorPicker.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { renderMarkdownAndKatex, escapeHtml } from '../../core/render.js';
 import { fontOptions } from '../text/text.js';
+import { resolveColor } from '../../core/colors.js';
 
 const MIN_SHARE = 0.08;             // a column keeps at least 8% of the width
 const VALIGN = { top: 'flex-start', center: 'center', bottom: 'flex-end' };
@@ -54,7 +55,7 @@ function buildColumns(domEl, el, { editing = -1 } = {}) {
         col.style.justifyContent = VALIGN[c.valign || 'top'] || 'flex-start';
         col.style.textAlign = c.align || 'left';
         if (el.divider === 'line' && i > 0) {
-            col.style.borderLeft = `${Math.max(1, Math.round((Number(el.fontSize) || 32) / 16))}px solid ${el.dividerColor || el.fontColor || '#94a3b8'}`;
+            col.style.borderLeft = `${Math.max(1, Math.round((Number(el.fontSize) || 32) / 16))}px solid ${resolveColor(el.dividerColor || el.fontColor || '#94a3b8')}`;
             col.style.paddingLeft = `${Math.round((Number(el.gap) || 0) / 2)}px`;
             col.style.marginLeft = `-${Math.round((Number(el.gap) || 0) / 2)}px`;
         }

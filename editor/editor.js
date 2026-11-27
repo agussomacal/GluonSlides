@@ -663,21 +663,54 @@ export function renameCurrentSlide(value) {
 
 // ---------- Canvas ----------
 
+// ---------- Fitting the canvas and thumbnails to their space ----------
+
+const FIT_MARGIN = 28;
+
+/** Scales the canvas to fit the workspace (window size, panes shown or hidden). */
+export function fitCanvas() {
+    const ws = document.getElementById('workspace-area');
+    const canvas = document.getElementById('slide-canvas');
+    if (!ws || !canvas || !ws.clientWidth) return;
+    const s = Math.max(0.05, Math.min(1.5, Math.min((ws.clientWidth - 2 * FIT_MARGIN) / state.slideWidth,
+        (ws.clientHeight - 2 * FIT_MARGIN) / state.slideHeight)));
+    canvas.style.setProperty('--canvas-scale', String(s));
+    canvas.style.left = `${Math.round((ws.clientWidth - state.slideWidth * s) / 2)}px`;
+    canvas.style.top = `${Math.round((ws.clientHeight - state.slideHeight * s) / 2)}px`;
+}
+
+/** Each thumbnail's content scaled to the thumbnail's width (any slide size). */
+export function fitThumbnails() {
+    const thumb = document.querySelector('#slides-thumb-list .slide-thumb');
+    if (!thumb || !thumb.clientWidth) return;
+    document.getElementById('slides-thumb-list').style.setProperty('--thumb-scale', String(thumb.clientWidth / state.slideWidth));
+}
+
+let fitObserver = null;
+function watchSizes() {
+    if (fitObserver || typeof ResizeObserver === 'undefined') return;
+    fitObserver = new ResizeObserver(() => { fitCanvas(); fitThumbnails(); });
+    ['workspace-area', 'slides-thumb-list'].forEach(id => { const n = document.getElementById(id); if (n) fitObserver.observe(n); });
+}
+
 function renderCanvas() {
+    watchSizes();
     const canvas = document.getElementById('slide-canvas');
     canvas.innerHTML = '';
 
     gridSteps();
 
+    // The slide's size, always (a stale size stayed when the grid was off).
+    canvas.style.width = `${state.slideWidth}px`;
+    canvas.style.height = `${state.slideHeight}px`;
     if (state.gridSize > 0) {
         canvas.style.backgroundImage = getGridSvgDataUri(state.slideWidth, state.slideHeight, state.gridSize, state.isDarkMode);
         canvas.style.backgroundSize = '100% 100%';
         canvas.style.backgroundPosition = '0px 0px';
-        canvas.style.width = `${state.slideWidth}px`;
-        canvas.style.height = `${state.slideHeight}px`;
     } else {
         canvas.style.backgroundImage = 'none';
     }
+    fitCanvas();
 
     const slide = currentSlide(); // a slide, or the master being edited
     canvas.classList.toggle('editing-master', isEditingMaster());
@@ -774,8 +807,8 @@ function appendHandles(container, domEl, el, def, elIndex) {
         let moved = false;
         const onMove = (m) => {
             const r = container.getBoundingClientRect();
-            let px = (m.clientX - r.left) * ((container.offsetWidth || 1) / (r.width || 1));
-            let py = (m.clientY - r.top) * ((container.offsetHeight || 1) / (r.height || 1));
+            let px = Math.round((m.clientX - r.left) * ((container.offsetWidth || 1) / (r.width || 1)));
+            let py = Math.round((m.clientY - r.top) * ((container.offsetHeight || 1) / (r.height || 1)));
             if (!m.altKey && !m.shiftKey && state.gridSize > 0) {
                 px = snapToGridPoint(px, stepX);
                 py = snapToGridPoint(py, stepY);
@@ -1593,6 +1626,7 @@ export function renderEditor() {
         <span style="font-size: 16px; font-weight: bold;">+</span>
         <span>Add Slide</span>`;
     thumbList.appendChild(addThumb);
+    fitThumbnails();
 
     renderCanvas();
     renderPropertiesPanel();

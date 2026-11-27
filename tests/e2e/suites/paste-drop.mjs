@@ -134,7 +134,7 @@ let res = await drop(cx, cy, ['result.png'], ['/home/me/analysis/result.png']);
 await page.waitForTimeout(300);
 els = await elements();
 check('the browser never opens a dropped file (default prevented)', res.overPrevented && res.dropPrevented, JSON.stringify(res));
-check('a dropped image becomes a figure centred where it was dropped', els.length === 1 && Math.abs(els[0].x + els[0].width / 2 - 500) <= 1 && Math.abs(els[0].y + els[0].height / 2 - 400) <= 1, JSON.stringify(els[0]));
+check('a dropped image becomes a figure centred where it was dropped', els.length === 1 && Math.abs(els[0].x + els[0].width / 2 - 500) <= 3 && Math.abs(els[0].y + els[0].height / 2 - 400) <= 3, JSON.stringify(els[0]));
 check('…linked to the original file', els[0] && els[0].originalPath === '/home/me/analysis/result.png' && els[0].filePath === 'figures/result.png' && els[0].sync === 'yes');
 
 // Without a path (browser): the image data is saved

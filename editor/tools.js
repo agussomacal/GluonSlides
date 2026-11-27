@@ -101,7 +101,7 @@ function toLocal(e, { snap = true, from = null } = {}) {
         x = snapToGridPoint(x, stepX);
         y = snapToGridPoint(y, stepY);
     }
-    return [x, y];
+    return [Math.round(x), Math.round(y)]; // whole canvas pixels, whatever the zoom
 }
 
 const screenPx = () => 1 / draft.transform.sx; // one screen pixel in container units

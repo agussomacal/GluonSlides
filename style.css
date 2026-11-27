@@ -340,7 +340,7 @@ body {
 }
 
 .slide-thumb {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: var(--slide-ratio, 16 / 9);
     background: var(--slide-bg);
     border-radius: 6px;
     border: 2px solid transparent;
@@ -373,7 +373,7 @@ body {
     top: 0;
     left: 0;
     transform-origin: top left;
-    transform: scale(0.12);
+    transform: scale(var(--thumb-scale, 0.12));  /* thumb width / slide width (editor.js fitThumbnails) */
     pointer-events: none;
     background: var(--slide-bg);
 }
@@ -1112,6 +1112,7 @@ body {
 }
 
 .workspace {
+    overflow: hidden !important;
     flex: 1;
     display: flex;
     justify-content: center;
@@ -1125,16 +1126,18 @@ body {
 .slide-canvas {
     width: var(--slide-width);
     height: var(--slide-height);
-    aspect-ratio: 16 / 9;
+    /* scaled to fit the workspace and centred: editor.js fitCanvas sets left / top */
+    position: absolute;
+    left: 0;
+    top: 0;
     background-color: var(--slide-bg);
     border-radius: 4px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    position: relative;
     color: var(--slide-text);
     overflow: hidden;
     flex-shrink: 0;
-    transform: scale(0.5);
-    transform-origin: center center;
+    transform: scale(var(--canvas-scale, 0.5));
+    transform-origin: top left;
     transition: background-color 0.2s, color 0.2s;
 }
 
@@ -1847,3 +1850,9 @@ body.file-drag-over #slide-canvas {
 /* Tables on the canvas: the picked cell and the one being edited */
 .canvas-element.element-table.selected .gl-cell-active { outline: 2px solid rgba(59, 130, 246, 0.6); outline-offset: -2px; }
 .canvas-element.element-table .gl-cell-editing { outline: 2px solid var(--accent-color); outline-offset: -2px; background: rgba(59, 130, 246, 0.06); white-space: pre-wrap; cursor: text; }
+
+/* ---------- Hiding the side panes (ui/panes.js) ---------- */
+body.hide-slides-pane #editor-view .slides-sidebar { display: none; }
+body.hide-properties-pane #editor-view .properties-sidebar { display: none; }
+.toolbar-btn.pane-btn { font-size: 16px; padding: 6px 10px; opacity: 0.6; }
+.toolbar-btn.pane-btn.active { opacity: 1; }

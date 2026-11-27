@@ -24,6 +24,7 @@ import './elements/index.js';
 import { startFigureSync } from './elements/figure/figure.js';
 import { initFileDrop } from './editor/fileDrop.js';
 import { startTableSync } from './elements/table/table.js';
+import { initPanes, togglePane } from './ui/panes.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
 import { showImportModal, chooseImportSource, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
@@ -54,6 +55,7 @@ const clickActions = {
     'open-project': openProjectFromFile,
     'choose-project-folder': chooseNewProjectFolder,
     'import-talk': showImportModal,
+    'toggle-pane': togglePane,
     'import-choose-source': chooseImportSource,
     'import-choose-folder': chooseImportFolder,
     'import-go': () => { if (!document.getElementById('import-go').onclick) confirmImport(); },
@@ -139,6 +141,7 @@ startFigureSync(); // linked figures follow their original files
 startTableSync(); // linked tables follow their CSV files
 initFileDrop(props => insertElement('figure', props)); // images dropped on the window
 initRecents();
+initPanes(); // hidden side panes (remembered)
 initUpdateNotice(); // "a new version is available" (backend/updates.py)
 whenApiReady(60000).then(async api => {
     if (!api) return;

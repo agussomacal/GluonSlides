@@ -118,6 +118,14 @@ await app(() => {
 });
 await page.waitForTimeout(150);
 check('cell 2,2 red', await app(() => document.querySelector('#slide-canvas [data-r="2"][data-c="2"]').style.color) === 'rgb(204, 0, 0)');
+// through the real colour popover: a theme colour (@name) must colour the cell too
+await page.click('[data-table-style="bg"]');
+await page.waitForTimeout(150);
+await page.click('#color-popover .color-chip, .color-popover .color-chip');
+await page.waitForTimeout(200);
+const bgNow = await app(() => document.querySelector('#slide-canvas [data-r="2"][data-c="2"]').style.background);
+check('a theme colour from the popover colours the cell', /rgb/.test(bgNow), bgNow);
+await page.keyboard.press('Escape');
 await page.selectOption('[data-prop="borders"]', 'all');
 await page.check('[data-prop="stripes"]');
 check('borders: all; striped rows', await app(() => document.querySelector('#slide-canvas table').className) === 'gl-table borders-all stripes');

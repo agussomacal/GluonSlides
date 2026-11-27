@@ -29,6 +29,7 @@ import { colorField } from '../../ui/colorPicker.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { renderMarkdownAndKatex, escapeHtml } from '../../core/render.js';
 import { fontOptions } from '../text/text.js';
+import { resolveColor } from '../../core/colors.js';
 
 const STYLE_KEYS = ['bold', 'italic', 'color', 'bg', 'align', 'format'];
 const MIN_SHARE = 0.05;
@@ -133,8 +134,9 @@ function buildTable(domEl, el, { editing = null, context = 'canvas' } = {}) {
     const rows = rowsOf(el);
     const table = document.createElement('table');
     table.className = `gl-table borders-${el.borders || 'horizontal'}${el.stripes === 'yes' ? ' stripes' : ''}`;
-    table.style.setProperty('--rule', el.ruleColor || el.fontColor || '#0f172a');
-    table.style.setProperty('--header-bg', el.headerBg || 'transparent');
+    // Colours may be theme colours (@primary, @accent/40): resolved to CSS
+    table.style.setProperty('--rule', resolveColor(el.ruleColor || el.fontColor || '#0f172a'));
+    table.style.setProperty('--header-bg', resolveColor(el.headerBg || 'transparent'));
     const colgroup = document.createElement('colgroup');
     shares(el).forEach(f => {
         const col = document.createElement('col');
@@ -156,8 +158,8 @@ function buildTable(domEl, el, { editing = null, context = 'canvas' } = {}) {
             if (st.bold === 'yes') cell.style.fontWeight = '700';
             else if (st.bold === 'no') cell.style.fontWeight = '400';
             if (st.italic === 'yes') cell.style.fontStyle = 'italic';
-            if (st.color) cell.style.color = st.color;
-            if (st.bg) cell.style.background = st.bg;
+            if (st.color) cell.style.color = resolveColor(st.color);
+            if (st.bg) cell.style.background = resolveColor(st.bg);
             if (st.align) cell.style.textAlign = st.align;
             if (context === 'canvas' && active && active[0] === ri + 1 && active[1] === ci + 1) cell.classList.add('gl-cell-active');
             if (editing && editing[0] === ri + 1 && editing[1] === ci + 1) {

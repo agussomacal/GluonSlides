@@ -81,7 +81,7 @@ await page.evaluate(async () => {
     e.x = 700; e.y = 100; e.width = 800; e.height = 600; m.markDirty(); (await import('/editor/editor.js')).renderEditor();
 });
 const sizes = await page.$$eval('#slide-canvas .element-macro .shape-fill', ns => ns.map(n => Math.round(n.getBoundingClientRect().width)));
-check('resized instance scales contents', sizes.length === 2 && sizes[1] === sizes[0] * 2, JSON.stringify(sizes));
+check('resized instance scales contents', sizes.length === 2 && Math.abs(sizes[1] - sizes[0] * 2) <= 2, JSON.stringify(sizes));
 
 // 4. Overrides in the inspector (project tab)
 await page.click('#slide-canvas .element-macro >> nth=1', { button: 'right' });

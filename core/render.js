@@ -244,6 +244,7 @@ export function getGridSvgDataUri(width, height, gridSize, isDarkMode) {
 export function updateDimensionsCSS() {
     document.documentElement.style.setProperty('--slide-width', `${state.slideWidth}px`);
     document.documentElement.style.setProperty('--slide-height', `${state.slideHeight}px`);
+    document.documentElement.style.setProperty('--slide-ratio', `${state.slideWidth} / ${state.slideHeight}`);
 }
 
 export function syncSlideSizeSelect() {

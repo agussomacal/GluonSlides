@@ -167,7 +167,11 @@ const unfilled = await page.$eval('#slide-canvas .canvas-element.selected svg pa
 check('No fill via the color picker', st.els[4].fill === 'transparent' && unfilled === 'none', `${st.els[4].fill} -> ${unfilled}`);
 
 // 13. Format + round-trip + export
-check('.gl body points', /^\.element\.path id:\d+ x:200 y:200 width:500 height:50 strokeWidth:9 dash:dashed end:dot\n\t0 0\n\t1 1$/m.test(st.gl), st.gl.split('\n').find(l => l.startsWith('.element.path')));
+{
+    // the endpoint was dragged with the mouse: within a screen pixel of 500x50
+    const m = st.gl.match(/^\.element\.path id:\d+ x:200 y:200 width:(\d+) height:(\d+) strokeWidth:9 dash:dashed end:dot\n\t0 0\n\t1 1$/m);
+    check('.gl body points', m && near(+m[1], 500, 2) && near(+m[2], 50, 3), st.gl.split('\n').find(l => l.startsWith('.element.path')));
+}
 const rt = await page.evaluate(async (gl) => { const f = await import('/core/gl/glformat.js'); const p = f.parseGl(gl); return f.serializeGl({ ...p, projectName: p.name }) === gl; }, st.gl);
 check('round-trip stable', rt);
 const exp = await page.evaluate(async () => { const { exportElementMarkup } = await import('/core/render.js'); const m = await import('/core/state.js'); return m.state.slides[0].elements.map(exportElementMarkup).join(''); });
