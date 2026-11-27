@@ -721,6 +721,12 @@ function watchSizes() {
     ['workspace-area', 'slides-thumb-list'].forEach(id => { const n = document.getElementById(id); if (n) fitObserver.observe(n); });
 }
 
+/** Redraws the slide and its thumbnail only (the panel keeps its focus, e.g. while typing a formula). */
+export function redrawCanvas() {
+    renderCanvas();
+    updateThumbnailLive();
+}
+
 function renderCanvas() {
     updateAllConnectors(); // a moved / turned shape: its lines follow
     watchSizes();

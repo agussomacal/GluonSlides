@@ -18,15 +18,17 @@
 // kept while sliders move.
 // ============================================================
 
-import { state, markDirty, pyApi, activeElements, flashSaveIndicator } from '../../core/state.js';
+import { state } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml, renderMarkdownAndKatexToString } from '../../core/render.js';
 import { fontStack } from '../../core/fonts.js';
 import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
-import { parseLayers, plotSvg, plotLayout, autoRanges, legendStyle, LANGUAGES, PALETTE, COLORMAP_NAMES } from '../../core/liveEngine.js';
+import { parseLayers, plotSvg, plotLayout, autoRanges, legendStyle, LANGUAGES, PALETTE } from '../../core/liveEngine.js';
 import { allVariables, startingVariables } from '../../core/variables.js';
-import { dataTable, linkDataFile } from '../../core/plotData.js';
+import { dataTable } from '../../core/plotData.js';
+import { layerCardsHtml, mountFormulaEditors, initLayerCards } from './layerCards.js';
+import { redrawCanvas } from '../../editor/editor.js';
 
 const EXAMPLE = {
     python: '.curve color:@primary width:4 label:"$\\mathcal{N}(\\mu,\\sigma^2)$"\ny = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)',
@@ -98,7 +100,7 @@ function overlays(el, spec) {
     if (spec.ylabel) {
         html += `<div class="gl-plot-label" style="position:absolute; left:${fs * 0.2}px; top:${L.top + L.h / 2}px; width:${L.h}px; transform:translate(-50%, -50%) rotate(-90deg) translateY(${fs * 0.7}px); transform-origin:center; text-align:center; ${font}">${md(spec.ylabel)}</div>`;
     }
-    const labelled = spec.layers.filter(l => l.label && !['vline', 'hline', 'point', 'text'].includes(l.kind));
+    const labelled = spec.layers.filter(l => l.label && l.hidden !== 'yes' && !['vline', 'hline', 'point', 'text'].includes(l.kind));
     if (labelled.length && el.legend !== 'no') {
         const rows = labelled.map(l => {
             const w = Number(l.width) || 3;
@@ -118,18 +120,6 @@ function overlays(el, spec) {
 
 function markup(el, spec, vars) {
     return `${plotSvg(spec, vars)}${overlays(el, spec)}`;
-}
-
-/** Adds text at the end of a plot's formulas (＋ Layer, ＋ Data file). */
-function appendLayer(elIndex, text) {
-    const el = activeElements()[elIndex];
-    if (!el) return;
-    const lang = LANGUAGES.includes(el.lang) ? el.lang : 'python';
-    const block = lang !== 'python' && /\n[^.#]/.test(text) && !/^\.(points|line|bar|vline|hline|point|text)\b/.test(text)
-        ? text.replace(/^(\.[a-z]+)/, '$1 lang:python') : text;
-    el.code = `${String(el.code || '').replace(/\s+$/, '')}${el.code ? '\n' : ''}${block}`;
-    markDirty();
-    document.dispatchEvent(new CustomEvent('slide-content-changed'));
 }
 
 const PlotElement = {
@@ -198,32 +188,7 @@ const PlotElement = {
         return `<div class="gl-plot" data-gl-plot="${escapeHtml(JSON.stringify(spec))}" style="position:absolute; inset:0;">${markup(el, spec, startingVariables())}</div>`;
     },
 
-    // Buttons in properties() call these via data-element-action.
-    actions: {
-        addLayer(elIndex, kind) {
-            if (TEMPLATES[kind]) appendLayer(elIndex, TEMPLATES[kind][1]);
-        },
-        async linkData(elIndex) {
-            const api = pyApi();
-            if (!api || typeof api.select_table_file !== 'function') {
-                flashSaveIndicator('Data files need the app');
-                return;
-            }
-            const picked = await api.select_table_file();
-            if (!picked || !picked.success) return;
-            const res = await linkDataFile(picked.path);
-            if (!res || !res.success) {
-                flashSaveIndicator((res && res.error) || 'Could not read the file');
-                return;
-            }
-            const h = res.header || [];
-            const cols = h.length >= 2 ? `x:"${h[0]}" y:"${h[1]}"` : 'x:1 y:2';
-            appendLayer(elIndex, `.line data:{${res.relative_path}} original:"${String(res.original).replace(/(["\\])/g, '\\$1')}" ${cols} markers:yes`);
-            flashSaveIndicator(`${res.relative_path}: ${res.total} rows${h.length ? ` (${h.join(', ')})` : ''} ✓`);
-        },
-    },
-
-    properties(el, elIndex) {
+    properties(el) {
         const lang = LANGUAGES.includes(el.lang) ? el.lang : 'python';
         const num = (key, label, placeholder = '') => `
             <div class="prop-group">
@@ -234,14 +199,8 @@ const PlotElement = {
             <div class="prop-group"><label>${label}</label>
                 <select class="prop-control" data-prop="${key}">${options.map(([v, t]) => `<option value="${v}" ${String(el[key] || '') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
             </div>`;
-        const names = Object.keys(allVariables()).sort();
-        // the data files this plot uses, with their columns
-        const files = [...new Set([...String(el.code || '').matchAll(/\bdata:(?:"\{?([^"}]+)\}?"|\{([^}]+)\}|(\S+))/g)].map(m => m[1] || m[2] || m[3]))];
-        const fileInfo = files.map(f => {
-            const t = dataTable(f);
-            const what = !t ? 'reading…' : t.error ? escapeHtml(t.error) : `${t.total ?? t.rows.length} rows${t.header ? `: ${t.header.map(h => `<code>${escapeHtml(h)}</code>`).join(' ')}` : ''}`;
-            return `<div><code>${escapeHtml(f)}</code> ${what}</div>`;
-        }).join('');
+        // the formula editors go in once the panel is drawn
+        queueMicrotask(() => mountFormulaEditors(el));
         return `
             <div class="prop-divider"></div>
             <div class="prop-group">
@@ -249,17 +208,10 @@ const PlotElement = {
                 <select class="prop-control" data-prop="lang">
                     ${LANGUAGES.map(l => `<option value="${l}" ${l === lang ? 'selected' : ''}>${l === 'python' ? 'Python: x**2, exp(…), np.sin(…)' : 'LaTeX: x^2, e^{…}, \\frac{…}{…}'}</option>`).join('')}
                 </select>
-                <textarea class="prop-control plot-code" rows="10" spellcheck="false" data-prop="code">${escapeHtml(el.code || '')}</textarea>
-                <p class="prop-hint">A line per layer (<code>.curve</code>, <code>.hist</code>…) with its settings, then its formula (<code>y = …</code> in <em>x</em>) or rows. Variables: ${names.length ? names.map(n => `<code>${escapeHtml(n)}</code>`).join(' ') : 'none yet (a slider, or Project settings → Variables)'}.</p>
-                ${fileInfo ? `<div class="prop-hint plot-files">${fileInfo}</div>` : ''}
             </div>
-            <div class="prop-group">
-                <label>＋ Layer</label>
-                <div class="plot-layer-buttons">
-                    ${Object.entries(TEMPLATES).map(([k, [label]]) => `<button type="button" class="btn btn-secondary" data-element-action="addLayer" data-arg="${k}">${label}</button>`).join('')}
-                    <button type="button" class="btn btn-secondary" data-element-action="linkData" title="Copy a CSV into data/ (it follows the original) and draw it">＋ Data file…</button>
-                </div>
-            </div>
+            <div class="settings-section-title">Layers</div>
+            ${layerCardsHtml(el)}
+            <div class="settings-section-title">Axes</div>
             <div class="prop-row">${num('xmin', 'x from', 'auto')}${num('xmax', 'x to', 'auto')}</div>
             <div class="prop-row">${num('ymin', 'y from', 'auto')}${num('ymax', 'y to', 'auto')}</div>
             <div class="prop-row">
@@ -279,9 +231,15 @@ const PlotElement = {
                 <div class="prop-group"><label>Text and axes</label>${colorField({ 'data-prop': 'fontColor' }, el.fontColor, { allowNone: false })}</div>
             </div>
             <label class="prop-check"><input type="checkbox" data-prop="grid" ${el.grid === 'no' ? '' : 'checked'}> Grid</label>
-            <label class="prop-check"><input type="checkbox" data-prop="legend" ${el.legend === 'no' ? '' : 'checked'}> Legend (layers with a label)</label>
-            <p class="prop-hint">Colour maps for <code>.heatmap</code> / <code>.contour</code>: ${COLORMAP_NAMES.map(n => `<code>${n}</code>`).join(' ')}.</p>`;
+            <label class="prop-check"><input type="checkbox" data-prop="legend" ${el.legend === 'no' ? '' : 'checked'}> Legend (layers with a label)</label>`;
     },
 };
 
 ElementRegistry.register(PlotElement);
+
+// The layer cards listen on the properties panel (once).
+initLayerCards({
+    templates: Object.fromEntries(Object.entries(TEMPLATES).map(([k, [, text]]) => [k, text])),
+    spec: (el) => plotSpec(el),
+    redraw: () => redrawCanvas(),
+});

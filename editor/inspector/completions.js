@@ -18,6 +18,10 @@ import { palette } from '../../core/colors.js';
 import { citationCandidates, OPEN_CITE_RE } from '../../core/citations.js';
 import { variableCandidates, OPEN_VAR_RE } from '../../core/variables.js';
 import { commandCandidates, OPEN_COMMAND_RE } from '../../core/fields.js';
+import { LAYERS, paramOf } from '../../core/plotSchema.js';
+import { formulaNames } from '../../core/liveEngine.js';
+import { allVariables } from '../../core/variables.js';
+import { dataTable } from '../../core/plotData.js';
 
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid', 'author', 'date'];
 
@@ -135,6 +139,85 @@ function matches(candidate, typed) {
     return c.startsWith(t) && c !== t;
 }
 
+/** The type of the element whose body line `lineNo` is in (or null). */
+function enclosingElementType(cm, lineNo) {
+    for (let i = lineNo; i >= 0; i--) {
+        const t = cm.getLine(i);
+        if (/^\S/.test(t)) {
+            const m = t.match(/^\.element\.([\w-]+)/);
+            return m ? m[1] : null;
+        }
+    }
+    return null;
+}
+
+const LAYER_LINE_RE = /^[ \t]+\.([a-z]+)\b/;
+
+/** In a plot's body: layer lines, their settings and values, and formulas. */
+function plotHints(cm, cur, lineText, before, result) {
+    const indent = before.match(/^[ \t]*/)[0];
+    const text = before.slice(indent.length);
+    // a layer line being started
+    if (/^\.[a-z]*$/.test(text)) {
+        const list = Object.entries(LAYERS).filter(([k]) => `.${k}`.startsWith(text) && `.${k}` !== text)
+            .map(([k, d]) => ({ text: `.${k} `, displayText: `.${k}  —  ${d.label}${d.formula ? `: ${d.formula}` : ''}` }));
+        return result(list, indent.length);
+    }
+    const head = lineText.match(LAYER_LINE_RE);
+    if (head && LAYERS[head[1]]) {
+        const kind = head[1];
+        const word = before.match(/[^\s]*$/)[0];
+        if (/^[A-Za-z]+:/.test(word)) {
+            const key = word.slice(0, word.indexOf(':'));
+            const typed = word.slice(key.length + 1).replace(/^"/, '');
+            const param = paramOf(kind, key);
+            if (!param) return null;
+            let values = [];
+            if (param.type === 'select') values = param.options.map(([v]) => v).filter(Boolean);
+            else if (param.type === 'bool') values = ['yes', 'no'];
+            else if (param.type === 'color') values = palette().map(p => `@${p.name}`);
+            else if (param.type === 'formula') values = Object.keys(allVariables()).sort();
+            else if (param.type === 'column') {
+                const data = (lineText.match(/\bdata:(?:\{([^}]+)\}|"([^"]+)"|(\S+))/) || []).slice(1).find(Boolean);
+                const t = data ? dataTable(data) : null;
+                values = (t && t.header) || [];
+            }
+            const quote = (v) => (/[\s"]/.test(v) ? `"${v}"` : v);
+            const list = values.filter(v => String(v).toLowerCase().startsWith(typed.toLowerCase()) && v !== typed)
+                .map(v => ({ text: `${key}:${quote(String(v))} `, displayText: String(v) }));
+            return result(list, cur.ch - word.length);
+        }
+        if (/^[A-Za-z]*$/.test(word) && /\s$/.test(before.slice(0, before.length - word.length))) {
+            const present = new Set([...lineText.matchAll(/([A-Za-z]+):/g)].map(m => m[1]));
+            const list = LAYERS[kind].params.filter(p => !present.has(p.key) && p.key.startsWith(word))
+                .map(p => ({ text: `${p.key}:`, displayText: `${p.key}  —  ${p.label}${p.help ? `: ${p.help}` : ''}`, chainValues: ['select', 'bool', 'color', 'column', 'formula'].includes(p.type) }));
+            return result(list, cur.ch - word.length);
+        }
+        return null;
+    }
+    // a formula line: the layer above says which names it gets
+    let kind = 'curve';
+    for (let i = cur.line - 1; i >= 0; i--) {
+        const m = cm.getLine(i).match(LAYER_LINE_RE);
+        if (m) { kind = m[1]; break; }
+        if (/^\S/.test(cm.getLine(i))) break;
+    }
+    const word = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
+    if (!word) return null;
+    const typed = word[0];
+    const d = LAYERS[kind] || {};
+    const vars = allVariables();
+    const { functions, constants } = formulaNames();
+    const list = [
+        ...(d.coords || []).map(n => ({ text: n, displayText: `${n}  —  the layer's ${n}` })),
+        ...Object.keys(vars).sort().map(n => ({ text: n, displayText: `${n}  —  ${vars[n]}` })),
+        ...(d.outputs || []).map(n => ({ text: `${n} = `, displayText: `${n} = …  —  what the layer draws` })),
+        ...functions.map(n => ({ text: `${n}(`, displayText: `${n}(…)` })),
+        ...constants.map(n => ({ text: n, displayText: n })),
+    ].filter(c => c.text.toLowerCase().startsWith(typed.toLowerCase()) && c.text !== typed);
+    return result(list.slice(0, 40), cur.ch - typed.length);
+}
+
 /** show-hint provider: suggestions for the cursor position, or null. */
 export function glHints(cm) {
     const cur = cm.getCursor();
@@ -146,6 +229,11 @@ export function glHints(cm) {
         if (!list.length) return null;
         return { list, from: { line: cur.line, ch: fromCh }, to: cur };
     };
+
+    // Inside a plot: its layers, their settings, the formulas' names.
+    if (indent.length > 0 && enclosingElementType(cm, cur.line) === 'plot') {
+        return plotHints(cm, cur, lineText, before, result);
+    }
 
     // \cite{… in body text: bibliography keys.
     const cite = before.match(OPEN_CITE_RE);

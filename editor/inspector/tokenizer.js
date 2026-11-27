@@ -9,6 +9,8 @@
 const STRUCTURAL_DIRECTIVES = new Set(['project', 'section', 'master', 'slide', 'notes', 'function', 'var', 'vars', 'import', 'define', 'defaults', 'palette', 'style']);
 const DIRECTIVE_HEAD_RE = /^\.(project|section|master|slide|notes|element|macro|function|vars|var|import|define|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 const OVERRIDE_HEAD_RE = /^::[A-Za-z][\w-]*/;   // ::name inside a .macro.* instance
+// Lines of settings inside a body: a plot's layers, a table's and columns' parts.
+const SUB_HEAD_RE = /^\.(curve|fill|parametric|vline|hline|point|text|points|line|hist|bar|heatmap|contour|quiver|column|data|widths|row|col|cell)(?=\s|$)/;
 // Lines after these directives are an element body (text, points, children).
 const BODY_DIRECTIVE_RE = /^\.(element|macro|define)[.\s{]|^\.(define|notes)$/;
 
@@ -193,6 +195,18 @@ export function scanGlLine(line, inElementBody) {
         if (indent) tokens.push({ type: 'plain', value: indent });
         tokens.push({ type: 'directive-element', value: override[0] });
         const rest = trimmedStart.slice(override[0].length);
+        if (rest) tokens.push(...tokenizeParamsSegment(rest));
+        return { tokens, inElementBody: true };
+    }
+
+    // .hist bins:30 … — a plot layer (or a table / columns part) inside a body.
+    const sub = inElementBody && trimmedStart.match(SUB_HEAD_RE);
+    if (sub) {
+        const indent = line.slice(0, line.length - trimmedStart.length);
+        const tokens = [];
+        if (indent) tokens.push({ type: 'body-indent', value: indent });
+        tokens.push({ type: 'directive-struct', value: sub[0] });
+        const rest = trimmedStart.slice(sub[0].length);
         if (rest) tokens.push(...tokenizeParamsSegment(rest));
         return { tokens, inElementBody: true };
     }

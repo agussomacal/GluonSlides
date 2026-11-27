@@ -91,7 +91,7 @@ const templates = await app(async () => {
     const m = await import('/core/state.js');
     m.setSelectedElementIndices([1], 1);
     (await import('/editor/editor.js')).renderEditor();
-    return [...document.querySelectorAll('[data-element-action="addLayer"]')].map(b => b.dataset.arg);
+    return [...document.querySelectorAll('[data-layer-add]')].map(b => b.dataset.layerAdd);
 });
 check('＋ Layer: every kind offered', templates.join() === 'curve,fill,parametric,vline,hline,point,text,points,line,hist,bar,heatmap,contour,quiver', templates.join());
 const bad = [];
@@ -99,7 +99,7 @@ for (const kind of templates) {
     await app(async (kind) => {
         const { state } = await import('/core/state.js');
         state.slides[0].elements[1].code = '';
-        document.querySelector(`[data-element-action="addLayer"][data-arg="${kind}"]`).click();
+        document.querySelector(`[data-layer-add="${kind}"]`).click();
     }, kind);
     await page.waitForTimeout(80);
     const res = await app(() => [...document.querySelectorAll('#slide-canvas [data-element-id="3"] svg g[fill="#dc2626"] text')].map(t => t.textContent));
@@ -204,18 +204,22 @@ check('log axes: decades', !r.errors.length && ['10⁻²', '1', '10', '100', '10
 r = await draw('.curve\ny = sin(x)', { xmin: 0, xmax: 6.2832, xticks: 'pi' });
 check('ticks at multiples of π', ['π/2', 'π', '3π/2', '2π'].every(t => r.texts.includes(t)), r.texts.join(' '));
 
-// a data file: read, drawn, followed when it changes; ＋ Data file links one
+// a data file: chosen in a layer's card, read, drawn, followed when it changes
 await app(async () => {
-    const { state } = await import('/core/state.js');
-    state.slides[0].elements[1].code = '';
-    document.querySelector('[data-element-action="linkData"]').click();
+    const { state, setSelectedElementIndices } = await import('/core/state.js');
+    state.slides[0].elements[1].code = '.line color:@primary markers:yes\n1, 1\n2, 4';
+    setSelectedElementIndices([1], 1);
+    (await import('/editor/editor.js')).renderEditor();
 });
-await page.waitForTimeout(300);
+await page.waitForTimeout(150);
+await page.click('[data-layer-op="pickfile"][data-layer="0"]');
+await page.waitForTimeout(400);
 const linked = await app(async () => (await import('/core/state.js')).state.slides[0].elements[1].code);
-check('＋ Data file: a line of the file, its columns by name', linked.startsWith('.line data:{data/run.csv} original:"/home/me/exp/run.csv" x:"step" y:"loss"'), linked);
+check('a layer\'s data file: copied, its columns set by name, the rows kept below', linked === '.line color:@primary markers:yes data:{data/run.csv} original:/home/me/exp/run.csv x:step y:loss\n1, 1\n2, 4', JSON.stringify(linked));
+const columns = await app(() => [...document.querySelectorAll('[data-layer-field="y"] option')].map(o => o.value));
+check('…the column menus list the file\'s header', JSON.stringify(columns) === '["","step","loss","std"]', JSON.stringify(columns));
 r = await draw('.points data:{data/run.csv} x:step y:loss yerr:std', { xmin: '', xmax: '' });
 check('…drawn', !r.errors.length && r.circles.length === 4, `${r.circles.length} ${r.errors}`);
-check('the panel lists the file and its columns', await app(() => document.querySelector('.plot-files')?.textContent.includes('step')));
 await app(() => { window.__run = { mtime: 2, rows: [...window.__run.rows, ['5', '0.1', '0.01'], ['6', '0.05', '0.01']] }; window.dispatchEvent(new Event('focus')); });
 await page.waitForTimeout(400);
 const after = await app(() => document.querySelectorAll('#slide-canvas [data-element-id="3"] svg g[clip-path] circle').length);

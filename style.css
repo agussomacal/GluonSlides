@@ -2162,3 +2162,39 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .plot-layer-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .plot-layer-buttons .btn { width: auto; margin: 0; padding: 3px 8px; font-size: 11px; }
 .plot-files { margin-top: 4px; }
+
+/* Plot layer cards (elements/plot/layerCards.js) */
+.plot-layers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.plot-layer { border: 1px solid var(--border-color); border-radius: 8px; background: rgba(148, 163, 184, 0.06); }
+.plot-layer.open { border-color: var(--accent-color); }
+.plot-layer.is-hidden .plot-layer-name, .plot-layer.is-hidden .plot-layer-swatch, .plot-layer.is-hidden .plot-layer-icon { opacity: 0.4; }
+.plot-layer-head { display: flex; align-items: center; gap: 6px; padding: 5px 6px; cursor: pointer; min-width: 0; }
+.plot-layer-icon { width: 18px; text-align: center; flex-shrink: 0; }
+.plot-layer-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.2); }
+.plot-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.plot-layer-name p { display: inline; margin: 0; }
+.plot-layer-warn { color: #f59e0b; }
+.plot-layer-ops { display: flex; gap: 1px; flex-shrink: 0; }
+.plot-layer-ops button { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+.plot-layer-ops button:hover:not(:disabled) { background: rgba(148, 163, 184, 0.2); color: var(--text-main); }
+.plot-layer-ops button:disabled { opacity: 0.3; cursor: default; }
+.plot-layer-body { padding: 4px 8px 8px; border-top: 1px solid var(--border-color); }
+.plot-layer-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; align-items: end; }
+.plot-layer-fields .prop-group { margin-bottom: 6px; min-width: 0; }
+.plot-layer-fields .layer-wide, .plot-layer-body > .layer-wide { grid-column: 1 / -1; }
+.plot-layer-fields .layer-check { margin: 0 0 8px; }
+.layer-file { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.layer-file .btn { width: auto; margin: 0; padding: 3px 8px; font-size: 11px; }
+.plot-layer-closed-error { margin: 0 8px 6px; font-size: 11px; }
+.plot-formula .CodeMirror { height: auto; min-height: 44px; max-height: 260px; font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-color); color: var(--text-main); }
+.plot-formula .CodeMirror-gutters { background: transparent; border-right: 1px solid var(--border-color); }
+.plot-formula .CodeMirror-linenumber { color: var(--text-muted); }
+.plot-formula .CodeMirror-cursor { border-left-color: var(--text-main); }
+.plot-formula .plot-formula-error { background: rgba(220, 38, 38, 0.18); }
+.cm-gl-ffn { color: #60a5fa; }
+.cm-gl-fvar { color: #f59e0b; }
+.cm-gl-fcoord { color: #34d399; font-weight: 600; }
+.cm-gl-fnum { color: #c084fc; }
+.cm-gl-fop { color: var(--text-muted); }
+.cm-gl-fcomment { color: var(--text-muted); font-style: italic; }
+.cm-gl-funknown { color: #f87171; text-decoration: underline wavy rgba(248, 113, 113, 0.6); }

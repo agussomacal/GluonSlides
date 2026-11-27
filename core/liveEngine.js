@@ -129,6 +129,11 @@ Object.assign(FUNCTIONS, {
     randint: (a, b) => a + Math.floor(rng() * (b - a + 1)),
 });
 
+/** Names a formula can call, and the constants (suggestions in the formula editors). */
+export function formulaNames() {
+    return { functions: Object.keys(FUNCTIONS).sort(), constants: Object.keys(CONSTANTS).filter(k => !['True', 'False', 'infty'].includes(k)) };
+}
+
 const CONSTANTS = { pi: Math.PI, e: Math.E, tau: 2 * Math.PI, inf: Infinity, nan: NaN, True: 1, False: 0, infty: Infinity };
 
 // ---------- the expression tree and its evaluation ----------
@@ -666,7 +671,7 @@ export function parseLayers(text, lang = 'python') {
             return;
         }
         if (!current) {
-            if (!raw.trim()) return;
+            if (!raw.trim() || raw.trim().startsWith('#')) return; // comments before the first layer
             current = { kind: 'curve', code: '', lang, line: i + 1 };
             layers.push(current);
         }
@@ -980,6 +985,7 @@ function evaluatePlot(spec, vars, frozen = null) {
     const results = layers.map(() => ({}));
     const fail = (i, e) => { results[i] = { error: e instanceof LayerError || e instanceof FormulaError ? (e.line ? `line ${e.line}: ${e.message}` : e.message) : String(e.message || e) }; };
     layers.forEach((layer, i) => {
+        if (layer.hidden === 'yes') { results[i] = { hidden: true }; return; }
         try {
             results[i] = evalFirst(layer, vars, ext, spec) || {};
         } catch (e) { fail(i, e); }
@@ -998,7 +1004,7 @@ function evaluatePlot(spec, vars, frozen = null) {
     const ylog = spec.yscale === 'log';
     let xr = axisRange(spec.xmin, spec.xmax, frozen && frozen.x, ext.x, xlog, xlog ? [0.1, 10] : [-5, 5]);
     layers.forEach((layer, i) => {
-        if (results[i].error || GRID_KINDS.has(layer.kind)) return;
+        if (results[i].error || results[i].hidden || GRID_KINDS.has(layer.kind)) return;
         try {
             results[i] = evalSecond(layer, results[i], vars, ext, xr, spec, frozen) || results[i];
         } catch (e) { fail(i, e); }
@@ -1015,7 +1021,7 @@ function evaluatePlot(spec, vars, frozen = null) {
     }
     const z = {};
     layers.forEach((layer, i) => {
-        if (!GRID_KINDS.has(layer.kind)) return;
+        if (!GRID_KINDS.has(layer.kind) || results[i].hidden) return;
         try {
             const r = evalGrid(layer, vars, xr, yr, L);
             results[i] = r;
@@ -1029,6 +1035,11 @@ function evaluatePlot(spec, vars, frozen = null) {
         } catch (e) { fail(i, e); }
     });
     return { xr, yr, results, categories, z, L };
+}
+
+/** Each layer's error for these variables ('' when it draws): what the layer cards show. */
+export function plotErrors(spec, vars, frozen = null) {
+    return evaluatePlot(spec, vars || {}, frozen).results.map(r => (r && r.error) || '');
 }
 
 /** Ranges found at these values, to keep while sliders move: { x, y, z }. */
@@ -1264,6 +1275,7 @@ export function plotSvg(spec, vars) {
         const layer = layers[i];
         const r = results[i] || {};
         const c = colourOf(layer, i);
+        if (r.hidden) return;
         if (r.error) { errors.push(`${layers.length > 1 ? `${layer.kind} ${i + 1}: ` : ''}${r.error}`); return; }
         switch (layer.kind) {
             case 'curve':
