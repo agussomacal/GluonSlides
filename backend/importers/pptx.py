@@ -12,7 +12,9 @@
   backgrounds (solid)        a full-slide rectangle at the back
   notes, sections            notes, sections
   click animations           build steps
-Charts, SmartArt and freeform drawings are not converted (a placeholder
+Freeforms and curved / elbow connectors become exact SVG pictures
+(pptx_draw.py); cropped pictures are cropped. Charts and SmartArt are
+not converted (a placeholder
 box, and a warning).
 """
 
@@ -26,6 +28,7 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
 from . import model
+from . import pptx_draw
 
 NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main",
       "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
@@ -112,7 +115,7 @@ class Converter:
 
     # ---------- text ----------
 
-    def run_md(self, run):
+    def run_md(self, run, base=None):
         t = model.md_escape(run.text)
         if not t.strip():
             return t
@@ -130,6 +133,12 @@ class Converter:
             c = None
         if c and c not in ("#000000",):
             core = model.coloured(model.escape_braces(core), c)
+        # a size other than the box's: relative to it (the box can still be resized as a whole)
+        try:
+            if base and f.size and abs(f.size.pt - base) > 0.4:
+                core = f'<span style="font-size:{f.size.pt / base:.2f}em">{core}</span>'
+        except Exception:
+            pass
         try:
             if run.hyperlink and run.hyperlink.address:
                 core = f"[{core}]({run.hyperlink.address})"
@@ -141,8 +150,23 @@ class Converter:
         """(markdown, first size pt or None, alignment, colour)."""
         lines, size, align, numbers = [], None, "left", {}
         run_colours = []
+        # the box's size: the one most of its characters have
+        chars = {}
         for p in tf.paragraphs:
-            text = "".join(self.run_md(r) for r in p.runs).rstrip()
+            for r in p.runs:
+                if r.font.size and r.text.strip():
+                    chars[r.font.size.pt] = chars.get(r.font.size.pt, 0) + len(r.text)
+        base = max(chars, key=chars.get) if chars else None
+        size = base
+        for p in tf.paragraphs:
+            text = "".join(self.run_md(r, base) for r in p.runs).rstrip()
+            # fields: the slide number (shown as <number> / ‹#›) and the date
+            for fld in p._p.findall("a:fld", NS):
+                kind = fld.get("type") or ""
+                if kind == "slidenum":
+                    text = (text + " " if text else "") + "\\slidenumber"
+                elif kind.startswith("datetime"):
+                    text = (text + " " if text else "") + "\\date"
             ppr = p._p.find("a:pPr", NS)
             bullet = bulleted_default
             numbered = False
@@ -166,8 +190,6 @@ class Converter:
                     text = f"{indent}- {text}"
             lines.append(text)
             for r in p.runs:
-                if size is None and r.font.size:
-                    size = r.font.size.pt
                 if r.text.strip():
                     try:
                         has = r.font.color and r.font.color.type is not None
@@ -202,8 +224,12 @@ class Converter:
                 continue
             if st == MSO_SHAPE_TYPE.PICTURE or (sh.is_placeholder and hasattr(sh, "image")):
                 try:
-                    rel = self.save_image(sh.image)
-                    out.append(model.figure(x, y, w, h, rel, **extra))
+                    rel = self.save_image(sh.image, self.crop_of(sh))
+                    if rel.endswith((".emf", ".wmf")):  # browsers can't show these: the PDF's picture, if given
+                        n = self.fallback_id()
+                        out.append(model.figure(x, y, w, h, rel, missing=rel, _fallback=n, _keep=True, **extra))
+                    else:
+                        out.append(model.figure(x, y, w, h, rel, **extra))
                 except Exception as e:
                     self.warnings.append(f"A picture could not be read ({e}).")
                 continue
@@ -212,23 +238,32 @@ class Converter:
                 continue
             if getattr(sh, "has_chart", False) and sh.has_chart:
                 self.warnings.append("A chart was not converted (placeholder box).")
-                out.append(model.shape(x, y, w, h, border="#999999", border_w=2, dashed=True, **extra))
-                out.append(model.text(x, y, w, h, "*Chart (not imported)*", 18 * self.pt / 2, align="center", valign="center", **extra))
+                self.not_converted(out, "chart", "Chart", x, y, w, h, extra)
                 continue
             if st in (MSO_SHAPE_TYPE.LINE,) or sh.__class__.__name__ == "Connector":
                 out.append(self.connector(sh, xf, extra))
                 continue
-            if st == MSO_SHAPE_TYPE.FREEFORM:
-                self.warnings.append("A freeform drawing was not converted.")
+            if st == MSO_SHAPE_TYPE.FREEFORM or sh._element.find(".//a:custGeom", NS) is not None:
+                d = pptx_draw.custom_paths(sh._element, w, h)
+                if d:
+                    out.append(self.drawing(sh, d, (x, y, w, h), extra))
+                else:
+                    self.warnings.append("A freeform drawing was not converted.")
+                if sh.has_text_frame and sh.text_frame.text.strip():
+                    md, size, align, colour = self.text_of(sh.text_frame, False)
+                    out.append(model.text(x, y, w, h, md, (size or 18) * self.pt, colour=colour or "#000000", align=align, **extra))
                 continue
             if st not in (MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER, None):
                 if "graphicFrame" in sh._element.tag:
                     self.warnings.append("A SmartArt or embedded object was not converted.")
+                    self.not_converted(out, "object", "SmartArt / object", x, y, w, h, extra)
                 continue
-            # an auto shape: its outline / fill, then its text
-            if st == MSO_SHAPE_TYPE.AUTO_SHAPE:
+            # an auto shape, text box or placeholder: its outline / fill, then its text
+            if st in (MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER, None):
                 fill = self.fill(sh)
                 border, bw = self.line(sh)
+                dash = sh._element.find(".//a:ln/a:prstDash", NS)
+                dashed = dash is not None and dash.get("val") not in (None, "solid")
                 if fill != "transparent" or bw:
                     kind, radius = "rect", 0
                     try:
@@ -240,12 +275,17 @@ class Converter:
                             radius = adj * min(w, h)
                     except Exception:
                         pass
-                    out.append(model.shape(x, y, w, h, fill=fill, border=border, border_w=bw, kind=kind, radius=radius, **extra))
+                    out.append(model.shape(x, y, w, h, fill=fill, border=border, border_w=bw, kind=kind, radius=radius,
+                                           dashed=dashed, **extra))
             if sh.has_text_frame and sh.text_frame.text.strip():
                 ph = sh.placeholder_format.type if sh.is_placeholder else None
                 bulleted = ph in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT)
                 md, size, align, colour = self.text_of(sh.text_frame, bulleted)
                 size = size or DEFAULT_PT.get(ph, 18)
+                # text PowerPoint shrinks to fit its box (Autofit): as shown
+                fit = sh._element.find(".//a:bodyPr/a:normAutofit", NS)
+                if fit is not None and fit.get("fontScale"):
+                    size *= int(fit.get("fontScale")) / 100000
                 if ph in (PP_PLACEHOLDER.CENTER_TITLE, PP_PLACEHOLDER.SUBTITLE) and align == "left":
                     align = "center"  # PowerPoint's default for title-slide placeholders
                 anchor = sh.text_frame.vertical_anchor
@@ -274,6 +314,10 @@ class Converter:
 
     def connector(self, sh, xf, extra):
         x, y, w, h = xf(sh)
+        if not pptx_draw.is_plain_line(sh._element):
+            d = pptx_draw.connector_path(pptx_draw.preset_of(sh._element), w, h, sh._element)
+            extent = pptx_draw.connector_extent(pptx_draw.preset_of(sh._element), w, h, sh._element)
+            return self.drawing(sh, d, (x, y, w, h), extra, pptx_draw.arrows_of(sh._element), extent)
         try:
             bx, by, ex, ey = sh.begin_x, sh.begin_y, sh.end_x, sh.end_y
             x0, y0 = xf(sh)[:2]
@@ -284,6 +328,7 @@ class Converter:
             p1 = (x0 + (ex - left) * scale_x, y0 + (ey - top) * scale_y)
         except Exception:
             p0, p1 = (x, y), (x + w, y + h)
+        p0, p1 = pptx_draw.rotated_endpoints(sh._element, p0, p1)
         colour, width = self.line(sh)
         ln = sh._element.find(".//a:ln", NS)
         start = end = "none"
@@ -317,17 +362,68 @@ class Converter:
             el["widths"] = [round(cw / total * 100, 1) for cw in widths]
         return el
 
-    def save_image(self, image):
+    def fallback_id(self):
+        self.fallbacks = getattr(self, "fallbacks", 0) + 1
+        return self.fallbacks
+
+    def not_converted(self, out, name, label, x, y, w, h, extra):
+        """Something not converted: the PDF's picture of it if a PDF is given
+        (a `missing` figure), else a dashed box saying what it was."""
+        n = self.fallback_id()
+        out.append(model.figure(x, y, w, h, f"figures/{name}-{n}.png", missing=name, _fallback=n, **extra))
+        out.append(model.shape(x, y, w, h, border="#999999", border_w=2, dashed=True, _fallback=n, **extra))
+        out.append(model.text(x, y, w, h, f"*{label} (not imported)*", 18 * self.pt / 2, align="center",
+                              valign="center", _fallback=n, **extra))
+
+    def crop_of(self, sh):
+        """The picture's crop (srcRect): fractions cut from (left, top, right, bottom), or None."""
+        rect = sh._element.find(".//a:srcRect", NS)
+        if rect is None:
+            return None
+        crop = tuple(max(0.0, float(rect.get(k) or 0) / 100000) for k in ("l", "t", "r", "b"))
+        return crop if any(crop) and crop[0] + crop[2] < 1 and crop[1] + crop[3] < 1 else None
+
+    def save_image(self, image, crop=None):
         self.images += 1
         ext = (image.ext or "png").lower()
         if ext in ("wmf", "emf"):
             self.warnings.append("A Windows metafile picture (.emf/.wmf) may not show; replace it with a PNG.")
+        data = image.blob
+        if crop and ext not in ("svg", "wmf", "emf"):
+            # PowerPoint shows part of the picture: keep that part only
+            try:
+                import io
+                from PIL import Image
+                with Image.open(io.BytesIO(data)) as im:
+                    W, H = im.size
+                    box = (round(crop[0] * W), round(crop[1] * H), round(W - crop[2] * W), round(H - crop[3] * H))
+                    buf = io.BytesIO()
+                    im.crop(box).save(buf, format="PNG")
+                    data, ext = buf.getvalue(), "png"
+            except Exception:
+                pass
         rel = f"figures/image-{self.images}.{ext}"
         dest = os.path.join(self.folder, rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
-            f.write(image.blob)
+            f.write(data)
         return rel
+
+    def save_svg(self, svg):
+        self.images += 1
+        rel = f"figures/drawing-{self.images}.svg"
+        dest = os.path.join(self.folder, rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(svg)
+        return rel
+
+    def drawing(self, sh, d, box, extra, arrows=(False, False), extent=None):
+        """A shape drawn as an SVG picture (pptx_draw.py) -> a figure element."""
+        fill = self.fill(sh)
+        stroke, sw = self.line(sh)
+        svg, (fx, fy, fw, fh) = pptx_draw.svg_picture(d, box, sh._element, fill, stroke, sw, arrows, extent)
+        return model.figure(fx, fy, fw, fh, self.save_svg(svg), **extra)
 
     # ---------- slides ----------
 
@@ -411,6 +507,8 @@ class Converter:
             except Exception:
                 pass
             s = {"title": title or f"Slide {n + 1}", "elements": els, "master": used[key]}
+            if slide._element.get("show") == "0":
+                s["hidden"] = True  # hidden in PowerPoint: kept, but not in its PDF
             if slide.has_notes_slide:
                 notes = slide.notes_slide.notes_text_frame.text.strip() if slide.notes_slide.notes_text_frame else ""
                 if notes:

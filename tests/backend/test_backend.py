@@ -728,6 +728,62 @@ class PptxImportTest(TempDirTest):
         self.assertEqual(fig.get("until"), 3)  # it exits on the 3rd click: last shown at step 3
 
 
+class PptxDrawingsTest(TempDirTest):
+    """PowerPoint shapes without an element of their own (backend/importers/pptx_draw.py),
+    cropped pictures, mixed sizes, fields, and a chart taken from the deck's PDF."""
+
+    def setUp(self):
+        super().setUp()
+        import sys as _sys
+        _sys.path.insert(0, str(REPO / "tests" / "backend"))
+        import pptx_fixture
+        from backend.importers import import_talk
+        self.import_talk = import_talk
+        os.makedirs(os.path.join(self.tmp, "src"))
+        self.src = pptx_fixture.build_drawings(os.path.join(self.tmp, "src", "deck.pptx"))
+
+    def run_import(self, source, name):
+        res = self.import_talk(source, self.tmp, name, {})
+        self.assertTrue(res["success"], res)
+        return res, res["project"]["slides"][0]["elements"]
+
+    def test_cropped_pictures_freeforms_connectors_text(self):
+        res, els = self.run_import(self.src, "Plain")
+        figs = [e for e in els if e["type"] == "figure"]
+        with Image.open(os.path.join(res["folder"], figs[0]["filePath"])) as im:
+            self.assertEqual(im.size, (200, 100))  # the middle half, as shown
+            self.assertEqual(im.getpixel((100, 50)), (0, 128, 0))
+        svgs = [f for f in figs if f["filePath"].endswith(".svg")]
+        self.assertEqual(len(svgs), 2)  # the freeform and the curved connector
+        tri = Path(res["folder"], svgs[0]["filePath"]).read_text()
+        self.assertIn('fill="#ccddee"', tri.lower())
+        self.assertRegex(tri, r'd="M[^"]*L[^"]*Z')
+        self.assertIn(" C", Path(res["folder"], svgs[1]["filePath"]).read_text())
+        texts = [e["content"] for e in els if e["type"] == "text"]
+        self.assertIn("Bibliography &#91;4&#93; costs 5\\$ <span style=\"font-size:0.50em\">small print</span>", texts)
+        self.assertIn("\\slidenumber", texts)
+        # no PDF: the chart is a dashed box saying so
+        self.assertTrue(any("Chart (not imported)" in t for t in texts))
+        self.assertFalse(any(f.get("missing") for f in figs))
+
+    def test_the_decks_pdf_gives_the_chart(self):
+        try:
+            import pymupdf as fz
+        except ImportError:
+            self.skipTest("PyMuPDF not installed")
+        doc = fz.open()
+        p = doc.new_page(width=960, height=540)
+        p.insert_text((72, 300), "Bibliography [4] costs 5$ small print", fontsize=14)
+        p.draw_rect(fz.Rect(576, 288, 864, 504), color=(0, 0, 1), fill=(0.6, 0.7, 0.9))  # the chart as drawn
+        doc.save(os.path.join(self.tmp, "src", "deck.pdf"))  # next to the .pptx: used
+        res, els = self.run_import(self.src, "WithPdf")
+        texts = [e.get("content") for e in els if e["type"] == "text"]
+        self.assertFalse(any("Chart (not imported)" in (t or "") for t in texts))
+        chart = next(e for e in els if e["type"] == "figure" and "chart" in e["filePath"])
+        self.assertTrue(os.path.isfile(os.path.join(res["folder"], chart["filePath"])))
+        self.assertEqual(res["ground_truth"], "deck.pdf")
+
+
 class PdfImportTest(TempDirTest):
     """PDF -> slides (backend/importers/pdf.py), on a PDF built by tests/backend/pdf_fixture.py."""
 

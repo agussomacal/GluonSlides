@@ -213,5 +213,29 @@ def path(points, stroke="#000000", width=2, closed=False, fill="none", start="no
 
 
 def md_escape(s):
-    """Plain text safe in Markdown (math is handled separately)."""
-    return re.sub(r"([\\`*_\[\]#|<>])", r"\\\1", s)
+    """Plain text safe in Markdown and math: Markdown's own characters escaped,
+    brackets as entities (\\[ would start a display equation), $ as \\$."""
+    s = re.sub(r"([\\`*_#|<>])", r"\\\1", s)
+    s = s.replace("[", "&#91;").replace("]", "&#93;")
+    return s.replace("$", "\\$")
+
+
+def finish_fallbacks(result):
+    """After the PDF step: a `missing` figure the PDF filled replaces the
+    placeholder that came with it (same `_fallback`); one it didn't fill
+    goes, except a picture kept as it is (`_keep`: an .emf / .wmf file)."""
+    for s in (result.get("slides") or []) + (result.get("masters") or []):
+        els = s.get("elements") or []
+        filled = {e["_fallback"] for e in els if e.get("_fallback") and e.get("type") == "figure" and not e.get("missing")}
+        out = []
+        for e in els:
+            n, keep = e.pop("_fallback", None), e.pop("_keep", None)
+            if n and e.get("type") == "figure" and e.get("missing"):
+                if keep:
+                    e.pop("missing", None)
+                    out.append(e)  # the picture as it is (may not show)
+                continue
+            if n and e.get("type") != "figure" and n in filled:
+                continue  # its picture from the PDF replaces the placeholder box
+            out.append(e)
+        s["elements"] = out

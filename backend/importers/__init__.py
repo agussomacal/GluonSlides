@@ -12,6 +12,7 @@ them and writes the .gl.
 """
 
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -99,7 +100,7 @@ def resolve_sources(source):
             return {"error": "Choose a Beamer .tex, a Slidev .md (or a .zip of either), a .pptx or a .pdf."}
         if ext == ".tex":
             return with_pdf(files[0], ext) if _is_main_tex(files[0]) else {"path": files[0], "ext": ext, "pdfs": []}
-        if ext == ".md":
+        if ext in (".md", ".pptx"):  # a PowerPoint's PDF: pictures of what can't be converted
             return with_pdf(files[0], ext)
         return {"path": files[0], "ext": ext, "pdfs": []}
 
@@ -121,7 +122,7 @@ def resolve_sources(source):
     for ext in (".zip", ".pptx", ".pdf"):
         found = by_ext(ext)
         if found:
-            return {"path": found[0], "ext": ext, "pdfs": []}
+            return with_pdf(found[0], ext) if ext == ".pptx" else {"path": found[0], "ext": ext, "pdfs": []}
     if by_ext(".tex"):
         return {"error": "None of these .tex files is the main one (with \\documentclass and \\begin{document}): add it too."}
     return {"error": "No talk found there: a Beamer .tex, a Slidev slides.md, a .zip, a .pptx or a .pdf."}
@@ -177,6 +178,9 @@ def _import_talk(source, parent_folder, name, options=None):
         elif ext == ".pptx":
             from .pptx import import_pptx
             result = import_pptx(source, folder)
+            ground_truth_used = _pptx_pictures_from_pdf(result, ground_truth, folder)
+            from .model import finish_fallbacks
+            finish_fallbacks(result)
         else:
             from . import extras
             fitz = extras.load_pymupdf()
@@ -194,7 +198,7 @@ def _import_talk(source, parent_folder, name, options=None):
     if not result.get("slides"):
         return {"success": False, "error": "No slides were found in that file."}
     out = {"success": True, "path": paths["path"], "folder": folder, "project": result, "source": source}
-    if ext in (".tex", ".md", ".zip"):
+    if ext in (".tex", ".md", ".zip", ".pptx"):
         out["ground_truth"] = ground_truth_used
     return out
 
@@ -217,4 +221,51 @@ def _apply_ground_truth(result, pdfs, folder):
         except Exception as e:  # never lose the import for this
             result.setdefault("warnings", []).append(f"Could not compare with {os.path.basename(pdf)}: {type(e).__name__}: {e}")
             return "failed"
+    return ""
+
+
+def _pptx_pictures_from_pdf(result, pdfs, folder):
+    """A PowerPoint exported as PDF: what the import could not convert (charts,
+    SmartArt, .emf pictures) is cut from the PDF page of its slide, at the same
+    place. Slides and pages go one to one (hidden slides are not exported)."""
+    if not pdfs or not any(e.get("missing") for s in result.get("slides") or [] for e in s.get("elements") or []):
+        return ""
+    from . import extras
+    if extras.load_pymupdf() is None:
+        result.setdefault("warnings", []).append(
+            f"{os.path.basename(pdfs[0])} was not used for the charts / objects not converted: that needs the PDF component.")
+        return "needs-pymupdf"
+    from .groundtruth import save_region, slide_words, words
+    fitz = extras.load_pymupdf()
+    slides = [s for s in result["slides"] if not s.get("hidden")]
+    for pdf in pdfs:
+        try:
+            doc = fitz.open(pdf)
+        except Exception:
+            continue
+        try:
+            if doc.page_count != len(slides) or doc[0].rect.width <= doc[0].rect.height:
+                continue
+            same = [len(slide_words(s) & set(words(doc[i].get_text()))) / len(slide_words(s))
+                    for i, s in enumerate(slides) if slide_words(s)]
+            if same and sum(same) / len(same) < 0.4:
+                continue  # another talk
+            scale = (result.get("width") or 1920) / doc[0].rect.width
+            got = []
+            for i, s in enumerate(slides):
+                for e in s.get("elements") or []:
+                    if e.get("type") == "figure" and e.get("missing"):
+                        rel = re.sub(r"\.(emf|wmf)$", ".png", e["filePath"], flags=re.I)
+                        save_region(doc[i], (e["x"], e["y"], e["x"] + e["width"], e["y"] + e["height"]), scale, folder, rel)
+                        e["filePath"] = rel
+                        got.append(e.pop("missing"))
+            if got:
+                result.setdefault("warnings", []).append(
+                    f"{len(got)} chart{'s' if len(got) > 1 else ''} / object{'s' if len(got) > 1 else ''} not converted shown as "
+                    f"pictures from {os.path.basename(pdf)}.")
+                result["groundTruth"] = {"pdf": os.path.basename(pdf), "slides": len(slides), "texts": 0,
+                                         "figures": len(got), "recovered": len(got)}
+            return os.path.basename(pdf)
+        finally:
+            doc.close()
     return ""

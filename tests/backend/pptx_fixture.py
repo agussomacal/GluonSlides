@@ -121,3 +121,54 @@ def build(path):
     prs.core_properties.author = "Ana"
     prs.save(path)
     return path
+
+
+def build_drawings(path):
+    """One slide with what PowerPoint draws but GluonSlides has no element for
+    (a freeform, a curved connector), a cropped picture, mixed text sizes with
+    brackets and a dollar, a slide number field and a chart."""
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    s = prs.slides.add_slide(prs.slide_layouts[6])  # blank
+
+    # a picture shown cropped: the middle half of a red | green | blue strip
+    buf = io.BytesIO()
+    im = Image.new("RGB", (400, 100), "red")
+    im.paste(Image.new("RGB", (200, 100), "green"), (100, 0))
+    im.paste(Image.new("RGB", (100, 100), "blue"), (300, 0))
+    im.save(buf, format="PNG")
+    buf.seek(0)
+    pic = s.shapes.add_picture(buf, Inches(1), Inches(1), Inches(2), Inches(2))
+    pic.crop_left, pic.crop_right = 0.25, 0.25
+
+    # a freeform (a triangle) and a curved connector
+    ff = s.shapes.build_freeform(Inches(4), Inches(1))
+    ff.add_line_segments([(Inches(6), Inches(3)), (Inches(4), Inches(3))], close=True)
+    tri = ff.convert_to_shape()
+    tri.fill.solid()
+    tri.fill.fore_color.rgb = RGBColor(0xCC, 0xDD, 0xEE)
+    s.shapes.add_connector(MSO_CONNECTOR.CURVE, Inches(7), Inches(1), Inches(9), Inches(3))
+
+    # text: two sizes, brackets and a dollar
+    tb = s.shapes.add_textbox(Inches(1), Inches(4), Inches(6), Inches(1))
+    p = tb.text_frame.paragraphs[0]
+    r1 = p.add_run()
+    r1.text = "Bibliography [4] costs 5$ "
+    r1.font.size = Pt(20)
+    r2 = p.add_run()
+    r2.text = "small print"
+    r2.font.size = Pt(10)
+    # a slide number field
+    num = s.shapes.add_textbox(Inches(12), Inches(7), Inches(1), Inches(0.4))
+    fld = etree.fromstring('<a:fld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" id="{B6F15528-21DE-4FAA-801E-634DDDAF4B2B}" type="slidenum"><a:t>&lt;#&gt;</a:t></a:fld>')
+    num.text_frame.paragraphs[0]._p.append(fld)
+
+    # a chart: not converted (the PDF's picture of it, if given)
+    data = CategoryChartData()
+    data.categories = ["A", "B"]
+    data.add_series("S", (1, 2))
+    s.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(8), Inches(4), Inches(4), Inches(3), data)
+    prs.save(path)
+    return path
