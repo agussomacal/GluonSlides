@@ -225,6 +225,21 @@ class FontsTest(TempDirTest):
 class UserSettingsTest(TempDirTest):
     """Recent projects and inspector settings, in a temporary config folder."""
 
+    def test_default_project_folder(self):
+        with mock.patch.dict(os.environ, {"GLUONSLIDES_CONFIG_DIR": self.tmp}):
+            talks = os.path.join(self.tmp, "talks")
+            os.makedirs(os.path.join(talks, "One"))
+            Path(talks, "One", "One.gl").write_text(".project {One} version:2\n")
+            self.assertIsNone(user_settings.default_project_parent())
+            user_settings.add_recent_project("One", os.path.join(talks, "One", "One.gl"))
+            self.assertEqual(user_settings.default_project_parent(), talks)  # where the last project is
+            other = os.path.join(self.tmp, "elsewhere")
+            os.makedirs(other)
+            user_settings.remember_project_parent(other)
+            self.assertEqual(user_settings.default_project_parent(), other)  # the folder last used wins
+            user_settings.set_ui_pref("hiddenPanes", ["slides"])
+            self.assertEqual(user_settings.get_ui_prefs()["hiddenPanes"], ["slides"])
+
     def setUp(self):
         super().setUp()
         env = mock.patch.dict(os.environ, {"GLUONSLIDES_CONFIG_DIR": os.path.join(self.tmp, "config")})

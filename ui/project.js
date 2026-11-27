@@ -189,7 +189,7 @@ setTabHooks({
  * creates `<folder>/<name>/<name>.gl` plus macros.tex and an empty
  * bibliography. Returns { success, error? }.
  */
-export async function createProject(name) {
+export async function createProject(name, parent = null) {
     await prepareTabFor();
     clearFigureCache();
     const api = await whenApiReady(RECENTS_QUICK_WAIT_MS);
@@ -199,7 +199,7 @@ export async function createProject(name) {
         return { success: true };
     }
 
-    const res = await api.create_project(name);
+    const res = await api.create_project(name, parent);
     if (!res || !res.success) return { success: false, error: res ? res.error : 'Creation failed' };
 
     // Reset *before* the first save so the new file never contains the

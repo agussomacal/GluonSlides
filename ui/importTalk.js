@@ -17,6 +17,7 @@ import { escapeHtml } from '../core/render.js';
 import { registerDropZone } from '../editor/fileDrop.js';
 import { progressBar } from './busy.js';
 import { prepareTabFor } from './tabs.js';
+import { loadPrefs, defaultProjectFolder, rememberProjectFolder } from '../core/prefs.js';
 
 /** import_talk with a progress bar in the dialog (the backend reports how far it is). */
 function importWithProgress(api, source, folder, name, options) {
@@ -87,7 +88,14 @@ function refresh() {
 }
 
 export function showImportModal() {
-    chosen = { sources: [], folder: '' };
+    // Saved where projects were last created or imported (can be changed).
+    chosen = { sources: [], folder: defaultProjectFolder() || '' };
+    loadPrefs().then(() => {
+        if (!chosen.folder && defaultProjectFolder()) {
+            chosen.folder = defaultProjectFolder();
+            refresh();
+        }
+    });
     $('import-name').value = '';
     $('import-error').textContent = '';
     $('import-warnings').innerHTML = '';
@@ -132,7 +140,7 @@ document.addEventListener('click', (e) => {
 export async function chooseImportFolder() {
     const api = await whenApiReady(3000);
     if (!api) return;
-    const res = await api.select_folder();
+    const res = await api.select_folder(chosen.folder || null); // opens where it is now
     if (res && res.success) {
         chosen.folder = res.path;
         refresh();
@@ -196,6 +204,7 @@ export async function confirmImport() {
             res = await importWithProgress(api, source, chosen.folder, name, { pdfMode, usePdf });
         }
         if (!res || !res.success) throw new Error((res && res.error) || 'Import failed');
+        rememberProjectFolder(chosen.folder);
         await prepareTabFor(); // the import becomes a project of its own tab
         const path = await buildImportedProject(api, res, name);
         const warnings = res.project.warnings || [];

@@ -9,15 +9,7 @@ const PANES = {
     slides: { cls: 'hide-slides-pane', key: '1', label: 'slides pane' },
     properties: { cls: 'hide-properties-pane', key: '2', label: 'properties pane' },
 };
-const STORE = 'gluonslides.hiddenPanes';
-
-function saved() {
-    try {
-        return JSON.parse(localStorage.getItem(STORE) || '[]');
-    } catch (e) {
-        return [];
-    }
-}
+import { loadPrefs, pref, setPref } from '../core/prefs.js';
 
 function sync() {
     Object.entries(PANES).forEach(([name, p]) => {
@@ -35,14 +27,15 @@ export function togglePane(name) {
     if (!p) return;
     document.body.classList.toggle(p.cls);
     const hidden = Object.entries(PANES).filter(([, q]) => document.body.classList.contains(q.cls)).map(([n]) => n);
-    try {
-        localStorage.setItem(STORE, JSON.stringify(hidden));
-    } catch (e) { /* private window: not remembered */ }
+    setPref('hiddenPanes', hidden);
     sync();
 }
 
 export function initPanes() {
-    saved().forEach(name => PANES[name] && document.body.classList.add(PANES[name].cls));
+    loadPrefs().then(() => {
+        (pref('hiddenPanes', []) || []).forEach(name => PANES[name] && document.body.classList.add(PANES[name].cls));
+        sync();
+    });
     sync();
     window.addEventListener('keydown', (e) => {
         if (!(e.ctrlKey || e.metaKey) || !e.altKey) return;

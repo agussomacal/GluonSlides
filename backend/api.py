@@ -52,16 +52,29 @@ class Api:
 
     # --- projects ----------------------------------------------------------
 
-    def select_folder(self):
-        """Native folder picker. Returns {success, path}."""
-        path = dialogs.ask_folder()
+    def select_folder(self, start=None):
+        """Native folder picker (opening in `start`, else the usual projects folder)."""
+        path = dialogs.ask_folder(start or user_settings.default_project_parent())
         return {"success": True, "path": path} if path else _cancelled()
 
-    def create_project(self, name):
-        """Ask for a parent folder, create a subfolder named after the
-        project, and return the path of the project file to create."""
-        parent = dialogs.ask_folder()
-        return project_io.project_paths(parent, name) if parent else _cancelled()
+    def create_project(self, name, parent=None):
+        """A subfolder named after the project in `parent` (asked for when not
+        given): the path of the project file to create."""
+        parent = parent or dialogs.ask_folder(user_settings.default_project_parent())
+        if not parent:
+            return _cancelled()
+        res = project_io.project_paths(parent, name)
+        if res.get("success"):
+            user_settings.remember_project_parent(parent)
+        return res
+
+    def get_ui_prefs(self):
+        """The interface's saved choices, and where new projects go by default."""
+        return {"success": True, "prefs": user_settings.get_ui_prefs(),
+                "defaultParent": user_settings.default_project_parent()}
+
+    def set_ui_pref(self, key, value):
+        return user_settings.set_ui_pref(key, value)
 
     def save_project_data(self, path, content):
         """Silently write project data (.gl text) — used by autosave."""
@@ -218,7 +231,10 @@ class Api:
         """Convert `source` (a path or a list of files / folders) into a new project
         folder <parent>/<name>/; returns its slides."""
         from . import importers
-        return importers.import_talk(source, parent_folder, name, options or {})
+        res = importers.import_talk(source, parent_folder, name, options or {})
+        if res.get("success"):
+            user_settings.remember_project_parent(parent_folder)
+        return res
 
     def import_progress(self):
         """How far the running import is: {"stage", "done", "total"}."""

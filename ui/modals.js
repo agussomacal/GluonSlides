@@ -7,6 +7,7 @@ import { state, pyApi, whenApiReady } from '../core/state.js';
 import { createProject, setMacros, setBibliography } from './project.js';
 import { missingCitationKeys } from '../core/citations.js';
 import { escapeHtml } from '../core/render.js';
+import { loadPrefs, defaultProjectFolder, rememberProjectFolder } from '../core/prefs.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,14 +21,27 @@ export function closeModal(id) {
 
 // ---------- New project ----------
 
+let newProjectFolder = '';
 let newProjectFolderChosen = false;
+
+function setNewProjectFolder(folder) {
+    newProjectFolder = folder || '';
+    newProjectFolderChosen = Boolean(folder);
+    $('new-project-folder').textContent = folder || 'No folder selected';
+}
 
 export function showNewProjectModal() {
     $('new-project-name').value = '';
-    $('new-project-folder').textContent = 'No folder selected';
     $('new-project-error').textContent = '';
     $('new-project-create-btn').disabled = true;
-    newProjectFolderChosen = false;
+    // Where projects were last created or imported (can be changed).
+    setNewProjectFolder(defaultProjectFolder());
+    loadPrefs().then(() => {
+        if (!newProjectFolderChosen && defaultProjectFolder()) {
+            setNewProjectFolder(defaultProjectFolder());
+            validateNewProjectForm();
+        }
+    });
     showModal('new-project-modal');
     $('new-project-name').focus();
 }
@@ -48,17 +62,17 @@ export async function chooseNewProjectFolder() {
         validateNewProjectForm();
         return;
     }
-    const res = await api.select_folder();
+    const res = await api.select_folder(newProjectFolder || null);
     if (res && res.success) {
-        newProjectFolderChosen = true;
-        $('new-project-folder').textContent = res.path;
+        setNewProjectFolder(res.path);
         validateNewProjectForm();
     }
 }
 
 export async function confirmCreateProject() {
-    const res = await createProject($('new-project-name').value.trim());
+    const res = await createProject($('new-project-name').value.trim(), newProjectFolder || null);
     if (res.success) {
+        rememberProjectFolder(newProjectFolder);
         closeModal('new-project-modal');
     } else {
         $('new-project-error').textContent = res.error;

@@ -25,6 +25,7 @@ import { startFigureSync } from './elements/figure/figure.js';
 import { initFileDrop } from './editor/fileDrop.js';
 import { startTableSync } from './elements/table/table.js';
 import { initPanes, togglePane } from './ui/panes.js';
+import { loadPrefs } from './core/prefs.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
 import { showImportModal, chooseImportSource, chooseImportSourceFolder, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
@@ -142,6 +143,7 @@ startFigureSync(); // linked figures follow their original files
 startTableSync(); // linked tables follow their CSV files
 initFileDrop((type, props) => insertElement(type, props)); // images and CSV files dropped on the window
 initRecents();
+loadPrefs(); // the interface's saved choices (core/prefs.js)
 initPanes(); // hidden side panes (remembered)
 initUpdateNotice(); // "a new version is available" (backend/updates.py)
 whenApiReady(60000).then(async api => {

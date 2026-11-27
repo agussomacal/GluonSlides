@@ -41,6 +41,8 @@ async function start(behaviour) {
         const ok = (o = {}) => Promise.resolve({ success: true, ...o });
         window.pywebview = { api: {
             select_import_file: () => ok({ path: behaviour.source }),
+            get_ui_prefs: () => ok({ prefs: {}, defaultParent: behaviour.defaultParent || null }),
+            set_ui_pref: () => ok(),
             ...(behaviour.sources ? { select_import_files: () => ok({ paths: behaviour.sources }) } : {}),
             select_folder: () => ok({ path: '/home/me/talks' }),
             import_progress: () => ok(window.__progress || { stage: '', done: 0, total: 0 }),
@@ -193,6 +195,14 @@ const prog = await page.evaluate(() => ({ label: document.querySelector('#import
 check('a progress bar while importing: stage and count', prog.label.includes('Converting the frames') && prog.label.includes('3 / 10') && prog.width === '20%', JSON.stringify(prog));
 await page.waitForTimeout(1200);
 check('…and the project opens when done', await page.isVisible('#editor-view.active'));
+await page.close();
+
+// ---------- The folder: where projects went last time ----------
+page = await start({ source: '/x/talk.tex', defaultParent: '/home/me/talks' });
+await page.waitForTimeout(200);
+check('the folder is filled in with the last one used', (await page.textContent('#import-folder')).trim() === '/home/me/talks');
+await page.click('[data-action="import-choose-source"]');
+check('…so choosing the talk is enough to import', !(await page.isDisabled('#import-go')));
 await page.close();
 
 // ---------- Errors ----------

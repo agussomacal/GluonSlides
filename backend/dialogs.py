@@ -20,7 +20,10 @@ def ask_path(dialog_type, **kwargs):
     return result or None
 
 
-def ask_folder():
+def ask_folder(start=None):
+    """A folder, the dialog opening in `start` (if it exists)."""
+    if start and os.path.isdir(start):
+        return ask_path(webview.FOLDER_DIALOG, directory=start)
     return ask_path(webview.FOLDER_DIALOG)
 
 

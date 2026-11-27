@@ -15,6 +15,7 @@ from . import APP_DIR
 
 RECENTS_FILE = "recents.json"
 INSPECTOR_FILE = "gl_inspector_settings.json"
+PREFS_FILE = "ui_prefs.json"  # small choices of the interface (hidden panes, last folder...)
 MAX_RECENTS = 10
 
 
@@ -106,3 +107,48 @@ def add_recent_project(name, project_path):
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+# ---------- Interface preferences ----------
+# The page's own storage is not kept between runs (pywebview's private
+# mode), so small choices live here.
+
+def get_ui_prefs():
+    try:
+        path = settings_path(PREFS_FILE)
+        data = _read_json(path) if path.exists() else {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def set_ui_pref(key, value):
+    prefs = get_ui_prefs()
+    if value is None:
+        prefs.pop(key, None)
+    else:
+        prefs[key] = value
+    try:
+        _write_json(settings_path(PREFS_FILE), prefs)
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def default_project_parent():
+    """Where new projects go by default: the folder last used to create or
+    import one, else the folder holding the most recent project's folder."""
+    last = get_ui_prefs().get("lastParent")
+    if last and os.path.isdir(last):
+        return last
+    recents = get_recent_projects().get("projects") or []
+    for p in recents:
+        parent = os.path.dirname(os.path.dirname(p["path"]))
+        if parent and os.path.isdir(parent):
+            return parent
+    return None
+
+
+def remember_project_parent(folder):
+    if folder and os.path.isdir(folder):
+        set_ui_pref("lastParent", os.path.abspath(folder))
