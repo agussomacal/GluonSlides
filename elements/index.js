@@ -7,6 +7,7 @@
 
 import './text/text.js';
 import './columns/columns.js';
+import './table/table.js';
 import './shape/shape.js';
 import './figure/figure.js';
 import './group/group.js';

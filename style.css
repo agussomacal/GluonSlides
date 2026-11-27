@@ -1843,3 +1843,7 @@ body.file-drag-over #slide-canvas {
 .column-row .column-label { width: 14px; font-size: 12px; color: var(--text-muted); }
 .column-row .arrange-btn { flex: 1 1 0; }
 .arrange-btn.active { border-color: var(--accent-color); color: var(--accent-color); }
+
+/* Tables on the canvas: the picked cell and the one being edited */
+.canvas-element.element-table.selected .gl-cell-active { outline: 2px solid rgba(59, 130, 246, 0.6); outline-offset: -2px; }
+.canvas-element.element-table .gl-cell-editing { outline: 2px solid var(--accent-color); outline-offset: -2px; background: rgba(59, 130, 246, 0.06); white-space: pre-wrap; cursor: text; }

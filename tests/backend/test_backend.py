@@ -22,7 +22,7 @@ from unittest import mock
 
 from PIL import Image
 
-from backend import desktop, figures, updates, fonts, pdf_export, presentation, project_io, snap_env, user_settings
+from backend import desktop, figures, tables, updates, fonts, pdf_export, presentation, project_io, snap_env, user_settings
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -798,6 +798,37 @@ class ExtrasTest(TempDirTest):
         lock = (REPO / "uv.lock").read_text()
         for url, sha in extras.PYMUPDF_WHEELS.values():
             self.assertIn(f'{{ url = "{url}", hash = "sha256:{sha}"', lock)
+
+
+class TablesTest(TempDirTest):
+    """CSV files for tables (backend/tables.py)."""
+
+    def test_delimiters_and_quoting(self):
+        self.assertEqual(tables.parse_csv("a,b\n1,2\n"), [["a", "b"], ["1", "2"]])
+        self.assertEqual(tables.parse_csv("a;b\n1;2"), [["a", "b"], ["1", "2"]])
+        self.assertEqual(tables.parse_csv("a\tb\n1\t2"), [["a", "b"], ["1", "2"]])
+        self.assertEqual(tables.parse_csv('"x, y",z\n1,2'), [["x, y", "z"], ["1", "2"]])
+        self.assertEqual(tables.parse_csv("a,b,c\n1\n"), [["a", "b", "c"], ["1", "", ""]])  # padded
+
+    def test_link_copies_into_data_and_refresh_follows_the_original(self):
+        project = os.path.join(self.tmp, "talk")
+        os.makedirs(project)
+        original = os.path.join(self.tmp, "results.csv")
+        Path(original).write_text("m,e\nNGD,0.1\n")
+        res = tables.link_table_file(project, original)
+        self.assertTrue(res["success"], res)
+        self.assertEqual((res["relative_path"], res["rows"][1]), ("data/results.csv", ["NGD", "0.1"]))
+        item = {"src": res["relative_path"], "original": original, "mtime": res["mtime"]}
+        self.assertEqual(tables.refresh_tables(project, [item])["updated"], [])  # nothing changed
+        Path(original).write_text("m,e\nNGD,0.05\nNHB,0.01\n")
+        os.utime(original, (os.path.getmtime(original) + 5,) * 2)
+        up = tables.refresh_tables(project, [item])["updated"]
+        self.assertEqual(up[0]["rows"][2], ["NHB", "0.01"])
+        self.assertIn("NHB", Path(project, "data", "results.csv").read_text())
+
+    def test_errors(self):
+        self.assertFalse(tables.read_table_file(self.tmp, "missing.csv")["success"])
+        self.assertFalse(tables.link_table_file("", "x.csv")["success"])
 
 
 class PackagingTest(unittest.TestCase):

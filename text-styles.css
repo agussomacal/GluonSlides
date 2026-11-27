@@ -130,3 +130,14 @@ img.md-image { max-width: 100%; height: auto; }
 .gl-column-text .katex-display { text-align: inherit; margin: 0.4em 0; }
 .gl-column[style*="text-align: center"] .gl-column-text ul,
 .gl-column[style*="text-align: center"] .gl-column-text ol { width: fit-content; margin-left: auto; margin-right: auto; }
+
+/* Tables (elements/table/table.js): also in exports */
+.gl-table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font: inherit; color: inherit; }
+.gl-table td, .gl-table th { padding: 0.25em 0.55em; vertical-align: middle; text-align: left; font-weight: 400; overflow-wrap: anywhere; }
+.gl-table th { font-weight: 700; background: var(--header-bg, transparent); }
+.gl-table td > p, .gl-table th > p { margin: 0; }
+.gl-table td img.md-image, .gl-table th img.md-image { max-height: 3em; }
+.gl-table.borders-horizontal { border-top: 2px solid var(--rule); border-bottom: 2px solid var(--rule); }
+.gl-table.borders-horizontal .gl-table-header th { border-bottom: 1px solid var(--rule); }
+.gl-table.borders-all td, .gl-table.borders-all th { border: 1px solid var(--rule); }
+.gl-table.stripes tbody tr:nth-child(even):not(.gl-table-header) td { background: color-mix(in srgb, var(--rule) 7%, transparent); }

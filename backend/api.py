@@ -9,7 +9,7 @@ import webbrowser
 
 import webview
 
-from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, updates, user_settings
+from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, tables, updates, user_settings
 from .presentation import Presentation
 
 
@@ -20,6 +20,7 @@ def _cancelled():
 PROJECT_FILE_TYPES = ("Slide Project Files (*.gl)", "Legacy Projects (*.ssproj;*.json)", "All Files (*.*)")
 FIGURE_FILE_TYPES = ("Figure Files (*.png;*.jpg;*.jpeg;*.svg;*.pdf;*.eps)", "All Files (*.*)")
 PDF_FILE_TYPES = ("PDF Files (*.pdf)", "All Files (*.*)")
+TABLE_FILE_TYPES = ("Tables (*.csv;*.tsv;*.txt)", "All Files (*.*)")
 IMPORT_FILE_TYPES = ("Talks (*.tex;*.zip;*.pptx;*.pdf)", "All Files (*.*)")
 FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
@@ -168,6 +169,24 @@ class Api:
     def take_dropped_paths(self):
         """Full paths of the files just dropped on the window (once)."""
         return {"success": True, "paths": self._dropped.take()}
+
+    # --- tables: CSV files (backend/tables.py) --------------------------------
+
+    def select_table_file(self):
+        """Pick a CSV / TSV file for a table."""
+        path = dialogs.ask_open(TABLE_FILE_TYPES)
+        return {"success": True, "path": path} if path else _cancelled()
+
+    def read_table_file(self, project_folder, path):
+        return tables.read_table_file(project_folder, path)
+
+    def link_table_file(self, project_folder, source):
+        """Copy a CSV into <project>/data/ and return its cells (a linked table)."""
+        return tables.link_table_file(project_folder, source)
+
+    def refresh_tables(self, project_folder, items):
+        """Re-copy linked CSVs whose original changed; return the cells that changed."""
+        return tables.refresh_tables(project_folder, items)
 
     # --- importing talks (backend/importers/) -------------------------------
 

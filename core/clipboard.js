@@ -38,6 +38,7 @@ import {
 import { syncProjectChrome } from './render.js';
 import { withDefaults } from './defaults.js';
 import { addImageFile, addImageData, addImagePath } from '../elements/figure/figure.js';
+import { rowsFromClipboardText } from '../elements/table/table.js';
 
 const PASTE_OFFSET_PX = 40;
 
@@ -321,6 +322,29 @@ function outsideText(text) {
  * Pasted text: a new text box holding it, centred on the slide, wide
  * enough for its lines (up to 70% of the slide) and tall enough for them.
  */
+/** Cells copied from a spreadsheet: a table sized for them, centred. */
+function addTableFromRows(rows) {
+    const scale = state.slideWidth / 1920;
+    const fontSize = Math.round(28 * scale);
+    const width = Math.round(Math.min(state.slideWidth * 0.85, rows[0].length * 260 * scale));
+    const height = Math.round(Math.min(state.slideHeight * 0.85, rows.length * fontSize * 1.9));
+    insertElement('table', {
+        rows, x: Math.round((state.slideWidth - width) / 2), y: Math.round((state.slideHeight - height) / 2), width, height,
+    });
+}
+
+/** Pasted text: a table for spreadsheet cells, else a text box. */
+function pasteOutsideText(text) {
+    const rows = rowsFromClipboardText(text);
+    if (rows) {
+        addTableFromRows(rows);
+        flashSaveIndicator(`Table pasted (${rows.length} × ${rows[0].length}) ✓`);
+    } else {
+        addTextBox(text);
+        flashSaveIndicator('Text pasted ✓');
+    }
+}
+
 export function addTextBox(text) {
     const slideW = state.slideWidth;
     const fontSize = withDefaults({ type: 'text' }).fontSize || Math.round(32 * slideW / 1920);
@@ -366,8 +390,7 @@ async function pasteFromSystem(api, onMaster, slide) {
             return;
         }
         if (res && outsideText(res.text) && slide) {
-            addTextBox(outsideText(res.text));
-            flashSaveIndicator('Text pasted ✓');
+            pasteOutsideText(res.text.replace(/\r\n?/g, '\n').replace(/\n+$/, ''));
             return;
         }
     } catch (err) {
@@ -416,8 +439,7 @@ function initImagePaste() {
             e.preventDefault();
             clearTimeout(pendingPaste);
             pendingPaste = null;
-            addTextBox(text);
-            flashSaveIndicator('Text pasted ✓');
+            pasteOutsideText((e.clipboardData.getData('text/plain') || '').replace(/\r\n?/g, '\n').replace(/\n+$/, ''));
             return;
         }
         e.preventDefault();

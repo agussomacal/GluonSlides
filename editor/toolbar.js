@@ -13,6 +13,7 @@ import { escapeHtml } from '../core/render.js';
 const CATEGORIES = [
     { id: 'text', label: 'Text', icon: '📝' },
     { id: 'columns', label: 'Columns', icon: '▥', menu: true },
+    { id: 'table', label: 'Table', icon: '▦' },
     { id: 'fields', label: 'Fields', icon: '#', menu: true }, // slide number, footer, date...
     { id: 'shapes', label: 'Shapes', icon: '⬛' },
     { id: 'lines', label: 'Lines & curves', icon: '〰️' },

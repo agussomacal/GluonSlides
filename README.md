@@ -123,6 +123,25 @@ A figure imported from a file elsewhere (**📁 Browse**, dropping or pasting a 
 
 Widths are relative (here 60% / 40% of the space left by the gap). Markdown images work in ordinary text boxes too; they are loaded from the project folder like figures and embedded in exports.
 
+### Tables
+
+**Table** in the toolbar adds a table; cells hold Markdown and math. Double-click a cell to edit it (**Tab** / **Shift+Tab**: next / previous cell, and Tab in the last cell adds a row; **Enter**: the cell below; **Esc** or a click outside: done). A click picks the cell the panel works on: add or delete rows and columns there, and style the cell, its row or its column (bold, italics, colour, background, alignment, and a number format for a column such as `%.2f`, `%.3e`, `%.1%`). The table has a header row, borders (horizontal rules as in papers, all, or none), striped rows, a header background and line colour; drag the handles on its top edge to change column widths. **Pasting cells** copied from a spreadsheet makes a table.
+
+**Import CSV...** copies a file's cells into the table. **Link CSV...** makes the table follow the file: it is copied into the project's `data/` folder and, like a linked figure, the copy is updated when the original changes (a results file your script rewrites), with ↻ Reload and **Unlink** (keep the cells, stop following). A linked table's cells are edited in the file; its styling is kept when the data changes.
+
+```
+.element.table id:30 x:100 y:300 width:1200 height:400 header:yes borders:horizontal stripes:yes
+	.data {data/results.csv} sync:yes original:"/home/me/run/results.csv"
+	.widths 40,30,30
+	.row 1 bold:yes bg:#eeeeee
+	.col 3 align:right format:%.2e
+	.cell 2,3 color:#cc0000
+	| Method | Iterations | Error |
+	| NGD | 120 | 0.00123 |
+```
+
+Rows and columns count from 1. The cells are always written, also for a linked table, so the project is complete on its own (a `|` in a cell is `\|`, a line break `<br>`).
+
 ### Shapes
 
 The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.
@@ -440,6 +459,8 @@ app.py            launcher (snap env fix, lib download, window)
 backend/
   api.py          Api class exposed to JS as pywebview.api
   dialogs.py project_io.py figures.py pdf_export.py
+  tables.py         CSV files for tables (import, link, refresh)
+  importers/        Import Talk: beamer.py pptx.py pdf.py (+ extras.py)
   desktop.py        system clipboard (Ctrl+V) and dropped file paths
   user_settings.py  recents + inspector settings (~/.config/gluonslides)
   vendor_libs.py    downloads JS/CSS libs listed in dependencies.yaml

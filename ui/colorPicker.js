@@ -106,7 +106,7 @@ function place(pop, field) {
 function open(field) {
     close();
     const container = field.closest('#properties-body, .project-settings') || document.body;
-    const attr = ['data-prop', 'data-default', 'data-style-field'].find(a => field.hasAttribute(a));
+    const attr = ['data-prop', 'data-default', 'data-style-field', 'data-table-style'].find(a => field.hasAttribute(a));
     current = { container, attr, key: field.getAttribute(attr), allowNone: field.dataset.allowNone !== 'no' };
     const pop = document.createElement('div');
     pop.id = POPOVER_ID;

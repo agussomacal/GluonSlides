@@ -23,6 +23,7 @@ import { initColorPicker } from './ui/colorPicker.js';
 import './elements/index.js';
 import { startFigureSync } from './elements/figure/figure.js';
 import { initFileDrop } from './editor/fileDrop.js';
+import { startTableSync } from './elements/table/table.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
 import { showImportModal, chooseImportSource, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
@@ -135,6 +136,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 // The Python bridge may become ready only after this module runs
 // (pywebview adds its functions asynchronously): both wait for it.
 startFigureSync(); // linked figures follow their original files
+startTableSync(); // linked tables follow their CSV files
 initFileDrop(props => insertElement('figure', props)); // images dropped on the window
 initRecents();
 initUpdateNotice(); // "a new version is available" (backend/updates.py)
