@@ -176,6 +176,18 @@ They are all `.element.path`. The points are the body, one per line, as fraction
 
 Optional parameters: `curve:smooth` (a spline through every point; default straight), `closed:yes` with `fill:#hex`, `dash:dashed|dotted`, `start`/`end:arrow|dot`. A selected path shows its points: drag them to reshape, double-click the line to add a point, double-click a point to remove it; corner handles scale the whole path (Shift keeps proportions). Freehand strokes are simplified to a few points and drawn as smooth curves, so they can be edited the same way.
 
+### Connectors and rotation
+
+**Lines attached to shapes.** Drag an end of a line or arrow over a shape: dots show its sides and centre, and dropped on one the end is attached; the line then follows the shape when it moves, resizes or turns. A line drawn from one shape to another attaches to both; dragged off, an end comes loose. The panel shows what each end is attached to, the **route** (straight, curved, elbow) and *detach*. In the file:
+
+```
+.element.path id:30 from:12@right to:{Model}@left route:elbow end:arrow ...
+```
+
+An end names the shape by id or, when it has a unique name, by `{name}`; sides are `top`, `right`, `bottom`, `left`, `center` or `auto` (the side facing the other end). Pasting shapes together with their connector keeps them connected; a connector pasted alone stays on its shapes on the same slide. PowerPoint connectors come in attached.
+
+**Rotation.** The round handle above a selected object turns it (**Shift**: 15° steps; square angles stick), or type the angle in the panel (`rotate:30` in the file). Turned objects resize along their own sides; aligning and the guides use the box they cover; connectors attach to their turned sides. Lines turn their points. PowerPoint rotations are kept.
+
 ### Groups
 
 Select several elements (drag a box on empty canvas space, or Ctrl+click) and press **Ctrl+G**. A group keeps its children in its own coordinate frame, so resizing the group scales everything inside it (positions, sizes, fonts, borders) while only the group's line changes in the file:

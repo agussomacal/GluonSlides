@@ -165,6 +165,13 @@ def build_drawings(path):
     fld = etree.fromstring('<a:fld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" id="{B6F15528-21DE-4FAA-801E-634DDDAF4B2B}" type="slidenum"><a:t>&lt;#&gt;</a:t></a:fld>')
     num.text_frame.paragraphs[0]._p.append(fld)
 
+    # two boxes joined by a connector (attached at both ends)
+    b1 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1), Inches(5.5), Inches(1.5), Inches(1))
+    b2 = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(4), Inches(6), Inches(1.5), Inches(1))
+    link = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(2.5), Inches(6), Inches(4), Inches(6.5))
+    link.begin_connect(b1, 3)
+    link.end_connect(b2, 1)
+
     # a chart: not converted (the PDF's picture of it, if given)
     data = CategoryChartData()
     data.categories = ["A", "B"]

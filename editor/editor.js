@@ -5,6 +5,7 @@
 // cut/copy/paste, and deletion.
 // ============================================================
 
+import { visualBox } from '../core/arrange.js';
 import { updateAllConnectors, updateConnectors, isConnector, parseEnd, findTarget, anchor, formatEnd, SIDES } from '../core/connectors.js';
 import {
     state,
@@ -134,7 +135,7 @@ function updateProp(propName, value) {
 
     // Numeric if any selected element's type declares it numeric (its
     // .gl spec), or it is one of the common geometry/border props.
-    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth', 'step', 'until'];
+    const commonNumeric = ['x', 'y', 'width', 'height', 'fontSize', 'borderWidth', 'step', 'until', 'rotate'];
     const isNumeric = commonNumeric.includes(propName) || indices.some(idx => {
         const def = elements[idx] && ElementRegistry.get(elements[idx].type);
         return !!(def && def.gl && Array.isArray(def.gl.numericProps) && def.gl.numericProps.includes(propName));
@@ -169,6 +170,11 @@ function updateProp(propName, value) {
             if (!elements[idx]) return;
             // Step 1 (or empty) = visible from the start: not stored.
             if (propName === 'step' && !(parsedVal > 1)) delete elements[idx].step;
+            // Rotation: kept between -180 and 180; none is not stored.
+            else if (propName === 'rotate') {
+                const a = ((Number(parsedVal) % 360) + 540) % 360 - 180;
+                if (!a) delete elements[idx].rotate; else elements[idx].rotate = Math.round(a * 10) / 10;
+            }
             // Disappears after: empty (or before it appears) = never.
             else if (propName === 'until' && !(parsedVal >= elementStep(elements[idx]))) delete elements[idx].until;
             else elements[idx][propName] = (propName === 'step' || propName === 'until') ? Math.round(parsedVal) : parsedVal;
@@ -710,6 +716,7 @@ function watchSizes() {
 }
 
 function renderCanvas() {
+    updateAllConnectors(); // a moved / turned shape: its lines follow
     watchSizes();
     updateStepPreview();
     const canvas = document.getElementById('slide-canvas');
@@ -878,9 +885,67 @@ function guideTargets(container, elements, movingIndices) {
         if (m) targets.push(...(m.elements || []));
     }
     return {
-        targets: targets.map(el => ({ x: el.x, y: el.y, width: el.width, height: el.height })),
+        targets: targets.map(el => visualBox(el)), // turned elements: the box they cover
         frame: { width: container.offsetWidth || state.slideWidth, height: container.offsetHeight || state.slideHeight },
     };
+}
+
+// ---------- Rotating ----------
+
+/** Dragging the round handle: the element turns about its centre (paths: their points). */
+function startRotate(e, el, domEl, container) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = domEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const isPath = el.type === 'path';
+    const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+    const startRot = Number(el.rotate) || 0;
+    const startPts = isPath ? (el.points || []).map(([fx, fy]) => [el.x + fx * el.width, el.y + fy * el.height]) : null;
+    let moved = false;
+    const onMove = (m) => {
+        const now = Math.atan2(m.clientY - cy, m.clientX - cx) * 180 / Math.PI;
+        let a = startRot + (now - startAngle);
+        if (m.shiftKey) a = Math.round(a / 15) * 15;
+        else {
+            const right = Math.round(a / 90) * 90;
+            if (Math.abs(a - right) < 3) a = right; // square angles stick
+        }
+        a = ((a % 360) + 540) % 360 - 180;
+        moved = true;
+        if (isPath) {
+            // a line turns its points about the box's centre
+            const ox = el.x + el.width / 2;
+            const oy = el.y + el.height / 2;
+            const t = (a - startRot) * Math.PI / 180;
+            const pts = startPts.map(([x, y]) => [ox + (x - ox) * Math.cos(t) - (y - oy) * Math.sin(t), oy + (x - ox) * Math.sin(t) + (y - oy) * Math.cos(t)]);
+            const def = ElementRegistry.get('path');
+            const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+            const x0 = Math.min(...xs), y0 = Math.min(...ys);
+            const w = Math.max(1, Math.max(...xs) - x0), h = Math.max(1, Math.max(...ys) - y0);
+            Object.assign(el, { x: x0, y: y0, width: w, height: h, points: pts.map(([x, y]) => [(x - x0) / w, (y - y0) / h]) });
+            applyCommonBoxStyles(domEl, forDrawing(el));
+            def.renderDom(domEl, forDrawing(el), { context: 'canvas', elIndex: -1 });
+        } else {
+            el.rotate = Math.round(a * 10) / 10;
+            domEl.style.transform = el.rotate ? `rotate(${el.rotate}deg)` : '';
+            refreshConnectorsLive(container, activeElements());
+        }
+        const field = document.querySelector('[data-prop="rotate"]');
+        if (field) field.value = isPath ? '' : el.rotate;
+    };
+    const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        if (!moved) return;
+        if (!isPath && !el.rotate) delete el.rotate;
+        markDirty();
+        renderEditor();
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
 }
 
 // ---------- Attaching lines to shapes (core/connectors.js) ----------
@@ -1004,6 +1069,15 @@ function renderInteractiveElements(container, elements) {
         const boxResize = !def || def.boxResize !== false;
         if (!locked && def && typeof def.handles === 'function' && selectedSet.size === 1 && selectedSet.has(elIndex)) {
             appendHandles(container, domEl, el, def, elIndex);
+        }
+
+        // A round handle above a single selected element turns it (paths: their points).
+        if (!locked && selectedSet.size === 1 && selectedSet.has(elIndex) && !domEl.classList.contains('editing-mode')) {
+            const knob = document.createElement('div');
+            knob.className = 'rotate-handle';
+            knob.title = 'Drag to rotate (Shift: 15° steps)';
+            knob.addEventListener('mousedown', (e) => startRotate(e, el, domEl, container));
+            domEl.appendChild(knob);
         }
 
         renderedItems.push({ el, domEl, elIndex });
@@ -1376,6 +1450,13 @@ function renderPropertiesPanel() {
                 <input type="number" class="prop-control" value="${Math.round(el.height)}" data-prop="height">
             </div>
         </div>
+        ${el.type === 'path' ? '' : `
+        <div class="prop-row">
+            <div class="prop-group">
+                <label title="Turn it about its centre (drag the round handle above it; Shift: 15° steps)">Rotation (°)</label>
+                <input type="number" class="prop-control" step="1" value="${Math.round((Number(el.rotate) || 0) * 10) / 10}" data-prop="rotate">
+            </div>
+        </div>`}
     `;
 
     html += arrangeSection([activeIdx]);

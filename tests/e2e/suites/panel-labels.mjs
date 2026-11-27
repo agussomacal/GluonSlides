@@ -13,7 +13,8 @@ await page.evaluate(async () => {
 await page.waitForTimeout(150);
 const layout = () => page.evaluate(() => ({
     labelHeights: [...document.querySelectorAll('#properties-body .prop-group label')].map(l => Math.round(l.getBoundingClientRect().height)),
-    controlTops: [...document.querySelectorAll('#properties-body [data-prop]')].map(c => Math.round(c.getBoundingClientRect().top)),
+    // relative to the first field: a scroll of the panel is not a layout change
+    controlTops: (() => { const tops = [...document.querySelectorAll('#properties-body [data-prop]')].map(c => Math.round(c.getBoundingClientRect().top)); return tops.map(t => t - tops[0]); })(),
 }));
 const before = await layout();
 check('all labels one line, same height', new Set(before.labelHeights).size === 1, JSON.stringify([...new Set(before.labelHeights)]));
@@ -21,7 +22,7 @@ await page.screenshot({ path: `${OUT}/labels-default.png`, clip: { x: 1120, y: 3
 await page.fill('[data-prop="fontSize"]', '48');
 await page.waitForTimeout(100);
 const typing = await layout();
-check('typing an override: fields do not move', JSON.stringify(typing.controlTops) === JSON.stringify(before.controlTops));
+check('typing an override: fields do not move', JSON.stringify(typing.controlTops) === JSON.stringify(before.controlTops), JSON.stringify([before.controlTops, typing.controlTops]));
 check('↺ appears while typing', await page.$('[data-reset-prop="fontSize"]') !== null);
 await page.evaluate(async () => (await import('/editor/editor.js')).renderEditor());
 const after = await layout();

@@ -766,6 +766,12 @@ class PptxDrawingsTest(TempDirTest):
         self.assertTrue(any("Chart (not imported)" in t for t in texts))
         self.assertFalse(any(f.get("missing") for f in figs))
 
+    def test_connectors_attached_in_powerpoint_come_attached(self):
+        _res, els = self.run_import(self.src, "Links")
+        boxes = [e for e in els if e["type"] == "shape" and e.get("kind", "rect") == "rect" and e["width"] < 400 and e["y"] > 700]
+        link = next(e for e in els if e["type"] == "path" and e.get("from"))
+        self.assertEqual((link["from"], link["to"], link["route"]), (f"{boxes[0]['id']}@right", f"{boxes[1]['id']}@left", "straight"))
+
     def test_the_decks_pdf_gives_the_chart(self):
         try:
             import pymupdf as fz

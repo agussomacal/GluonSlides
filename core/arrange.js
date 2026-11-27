@@ -15,11 +15,23 @@
 
 export const isLocked = (el) => Boolean(el) && el.locked === 'yes';
 
+/** The box an element covers on screen: a turned one's outer bounding box. */
+export function visualBox(el) {
+    const a = (Number(el.rotate) || 0) * Math.PI / 180;
+    if (!a) return { x: el.x, y: el.y, width: el.width, height: el.height };
+    const c = Math.abs(Math.cos(a));
+    const s = Math.abs(Math.sin(a));
+    const w = el.width * c + el.height * s;
+    const h = el.width * s + el.height * c;
+    return { x: el.x + el.width / 2 - w / 2, y: el.y + el.height / 2 - h / 2, width: w, height: h };
+}
+
 function bounds(els) {
-    const left = Math.min(...els.map(e => e.x));
-    const top = Math.min(...els.map(e => e.y));
-    const right = Math.max(...els.map(e => e.x + e.width));
-    const bottom = Math.max(...els.map(e => e.y + e.height));
+    const boxes = els.map(visualBox);
+    const left = Math.min(...boxes.map(e => e.x));
+    const top = Math.min(...boxes.map(e => e.y));
+    const right = Math.max(...boxes.map(e => e.x + e.width));
+    const bottom = Math.max(...boxes.map(e => e.y + e.height));
     return { left, top, right, bottom };
 }
 
@@ -37,12 +49,16 @@ export function alignElements(elements, indices, mode, frame) {
     let moved = 0;
     movable.forEach(el => {
         const before = [el.x, el.y];
-        if (mode === 'left') el.x = b.left;
-        else if (mode === 'center') el.x = (b.left + b.right) / 2 - el.width / 2;
-        else if (mode === 'right') el.x = b.right - el.width;
-        else if (mode === 'top') el.y = b.top;
-        else if (mode === 'middle') el.y = (b.top + b.bottom) / 2 - el.height / 2;
-        else if (mode === 'bottom') el.y = b.bottom - el.height;
+        // what is placed is the box it covers (turned elements: their bounding box)
+        const v = visualBox(el);
+        const ox = v.x - el.x;
+        const oy = v.y - el.y;
+        if (mode === 'left') el.x = b.left - ox;
+        else if (mode === 'center') el.x = (b.left + b.right) / 2 - v.width / 2 - ox;
+        else if (mode === 'right') el.x = b.right - v.width - ox;
+        else if (mode === 'top') el.y = b.top - oy;
+        else if (mode === 'middle') el.y = (b.top + b.bottom) / 2 - v.height / 2 - oy;
+        else if (mode === 'bottom') el.y = b.bottom - v.height - oy;
         el.x = Math.round(el.x * 100) / 100;
         el.y = Math.round(el.y * 100) / 100;
         if (el.x !== before[0] || el.y !== before[1]) moved++;
@@ -60,21 +76,25 @@ export function distributeElements(elements, indices, axis) {
     if (sel.length < 3) return 0;
     const pos = axis === 'x' ? 'x' : 'y';
     const size = axis === 'x' ? 'width' : 'height';
-    const sorted = [...sel].sort((a, b) => (a[pos] + a[size] / 2) - (b[pos] + b[size] / 2));
-    const first = sorted[0];
-    const last = sorted[sorted.length - 1];
+    // spaced by the boxes they cover (turned elements: their bounding box)
+    const items = sel.map(el => ({ el, v: visualBox(el) }));
+    const sorted = items.sort((a, b) => (a.v[pos] + a.v[size] / 2) - (b.v[pos] + b.v[size] / 2));
+    const first = sorted[0].v;
+    const last = sorted[sorted.length - 1].v;
     const span = last[pos] + last[size] - first[pos];
-    const total = sorted.reduce((sum, e) => sum + e[size], 0);
+    const total = sorted.reduce((sum, e) => sum + e.v[size], 0);
     const gap = (span - total) / (sorted.length - 1);
     let cursor = first[pos] + first[size] + gap;
     let moved = 0;
-    sorted.slice(1, -1).forEach(el => {
+    sorted.slice(1, -1).forEach(({ el, v }) => {
+        let at = v[pos];
         if (!isLocked(el)) {
-            const next = Math.round(cursor * 100) / 100;
+            const next = Math.round((cursor - (v[pos] - el[pos])) * 100) / 100;
             if (next !== el[pos]) moved++;
+            at += next - el[pos];
             el[pos] = next;
         }
-        cursor = el[pos] + el[size] + gap;
+        cursor = at + v[size] + gap;
     });
     return moved;
 }

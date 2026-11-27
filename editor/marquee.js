@@ -7,6 +7,7 @@
 // start on them, and the rectangle doesn't select them.
 // ============================================================
 
+import { visualBox } from '../core/arrange.js';
 import { activeElements, getSelectedElementIndices } from '../core/state.js';
 
 const DRAG_START_PX = 4;
@@ -35,8 +36,9 @@ function elementsTouching(rect) {
     const hits = [];
     activeElements().forEach((el, idx) => {
         if (el.locked === 'yes') return;
-        const touches = el.x <= rect.right && el.x + el.width >= rect.left
-            && el.y <= rect.bottom && el.y + el.height >= rect.top;
+        const v = visualBox(el); // a turned element: the box it covers
+        const touches = v.x <= rect.right && v.x + v.width >= rect.left
+            && v.y <= rect.bottom && v.y + v.height >= rect.top;
         if (touches) hits.push(idx);
     });
     return hits;

@@ -56,6 +56,9 @@ class Converter:
         else:
             self.W, self.H = 1920, round(1920 / ratio)
         self.k = self.W / sw                     # px per EMU
+        self.next_id = 10000                     # ids given here, for connectors to name their shapes
+        self.shape_ids = {}                      # this slide: PowerPoint shape id -> element id
+        self.links = []                          # this slide: (connector element, start (id, site), end (id, site))
         self.pt = self.W / (sw / 12700)          # px per point
         self.theme = self._theme_colours()
         self.images = 0
@@ -93,6 +96,21 @@ class Converter:
             pass
         return default
 
+    def style_colour(self, shape, ref):
+        """The colour of the shape's theme style (<p:style><a:fillRef idx="1"><a:schemeClr val="accent1"/>):
+        what a shape left at PowerPoint's default look is drawn with; None if none."""
+        r = shape._element.find(f"p:style/a:{ref}", NS)
+        if r is None or r.get("idx") in (None, "0"):
+            return None
+        scheme = r.find("a:schemeClr", NS)
+        rgb = r.find("a:srgbClr", NS)
+        if rgb is not None:
+            return "#" + rgb.get("val").lower()
+        if scheme is not None:
+            v = scheme.get("val")
+            return self.theme.get({"tx1": "dk1", "bg1": "lt1", "tx2": "dk2", "bg2": "lt2"}.get(v, v))
+        return None
+
     def fill(self, shape):
         try:
             f = shape.fill
@@ -100,6 +118,8 @@ class Converter:
                 return self.colour(f.fore_color, "#cccccc")
             if f.type == MSO_FILL.BACKGROUND:
                 return "transparent"
+            if f.type is None and shape._element.find("p:spPr/a:noFill", NS) is None:
+                return self.style_colour(shape, "fillRef") or "transparent"  # the theme's default look
         except Exception:
             pass
         return "transparent"
@@ -109,6 +129,10 @@ class Converter:
             ln = shape.line
             if ln.fill.type == MSO_FILL.SOLID:
                 return self.colour(ln.color, "#000000"), max(1.0, (ln.width or 12700) * self.k)
+            if ln.fill.type is None and shape._element.find("p:spPr/a:ln/a:noFill", NS) is None:
+                c = self.style_colour(shape, "lnRef")  # the theme's default outline
+                if c:
+                    return c, max(1.0, (ln.width or 12700) * self.k)
         except Exception:
             pass
         return "transparent", 0
@@ -210,93 +234,125 @@ class Converter:
 
     def convert_shapes(self, shapes, out, xf, slide_steps=None, in_layout=False):
         for sh in shapes:
-            x, y, w, h = xf(sh)
-            timing = (slide_steps or {}).get(sh.shape_id, {})
-            step = timing.get("step", 1)
-            extra = {"step": step} if step > 1 else {}
-            if timing.get("until") is not None and timing["until"] >= step:
-                extra["until"] = timing["until"]
-            st = sh.shape_type
-            if in_layout and sh.is_placeholder:
-                continue  # layout placeholders only shape the slides' own
-            if st == MSO_SHAPE_TYPE.GROUP:
-                self.convert_shapes(sh.shapes, out, self.group_transform(sh, xf), slide_steps, in_layout)
-                continue
-            if st == MSO_SHAPE_TYPE.PICTURE or (sh.is_placeholder and hasattr(sh, "image")):
-                try:
-                    rel = self.save_image(sh.image, self.crop_of(sh))
-                    if rel.endswith((".emf", ".wmf")):  # browsers can't show these: the PDF's picture, if given
-                        n = self.fallback_id()
-                        out.append(model.figure(x, y, w, h, rel, missing=rel, _fallback=n, _keep=True, **extra))
-                    else:
-                        out.append(model.figure(x, y, w, h, rel, **extra))
-                except Exception as e:
-                    self.warnings.append(f"A picture could not be read ({e}).")
-                continue
-            if getattr(sh, "has_table", False) and sh.has_table:
-                out.append(self.table(sh, x, y, w, h, extra))
-                continue
-            if getattr(sh, "has_chart", False) and sh.has_chart:
-                self.warnings.append("A chart was not converted (placeholder box).")
-                self.not_converted(out, "chart", "Chart", x, y, w, h, extra)
-                continue
-            if st in (MSO_SHAPE_TYPE.LINE,) or sh.__class__.__name__ == "Connector":
-                out.append(self.connector(sh, xf, extra))
-                continue
-            if st == MSO_SHAPE_TYPE.FREEFORM or sh._element.find(".//a:custGeom", NS) is not None:
-                d = pptx_draw.custom_paths(sh._element, w, h)
-                if d:
-                    out.append(self.drawing(sh, d, (x, y, w, h), extra))
+            first = len(out)
+            self.convert_shape(sh, out, xf, slide_steps, in_layout)
+            if len(out) > first and not in_layout:
+                main = out[first]
+                main.setdefault("id", self.new_id())
+                self.shape_ids[sh.shape_id] = (main["id"], pptx_draw.preset_of(sh._element))
+
+    # PowerPoint's connection sites: boxes 0 top, 1 left, 2 bottom, 3 right; ellipses
+    # eight, from the top-left going round anticlockwise (diagonals: the nearer side)
+    SITES = {0: "top", 1: "left", 2: "bottom", 3: "right"}
+    ELLIPSE_SITES = {0: "top", 1: "left", 2: "left", 3: "bottom", 4: "bottom", 5: "right", 6: "right", 7: "top"}
+
+    def attach_links(self):
+        """Connectors of this slide: their ends name the elements of the shapes they join."""
+        for el, start, end in self.links:
+            for key, cxn in (("from", start), ("to", end)):
+                if cxn and cxn[0] in self.shape_ids:
+                    target, prst = self.shape_ids[cxn[0]]
+                    sites = self.ELLIPSE_SITES if prst == "ellipse" else self.SITES
+                    el[key] = f"{target}@{sites.get(cxn[1], 'auto')}"
+            if not el.get("from") and not el.get("to"):
+                el.pop("route", None)
+
+    def new_id(self):
+        self.next_id += 1
+        return self.next_id
+
+    def convert_shape(self, sh, out, xf, slide_steps, in_layout):
+        x, y, w, h = xf(sh)
+        timing = (slide_steps or {}).get(sh.shape_id, {})
+        step = timing.get("step", 1)
+        extra = {"step": step} if step > 1 else {}
+        if timing.get("until") is not None and timing["until"] >= step:
+            extra["until"] = timing["until"]
+        # turned in PowerPoint: turned here too (pictures drawn as SVG and lines turn their own way)
+        rot = pptx_draw.transform_of(sh._element)[0]
+        if rot and sh.shape_type != MSO_SHAPE_TYPE.GROUP:
+            extra["rotate"] = round(((rot + 180) % 360) - 180, 1)
+        st = sh.shape_type
+        if in_layout and sh.is_placeholder:
+            return  # layout placeholders only shape the slides' own
+        if st == MSO_SHAPE_TYPE.GROUP:
+            self.convert_shapes(sh.shapes, out, self.group_transform(sh, xf), slide_steps, in_layout)
+            return
+        if st == MSO_SHAPE_TYPE.PICTURE or (sh.is_placeholder and hasattr(sh, "image")):
+            try:
+                rel = self.save_image(sh.image, self.crop_of(sh))
+                if rel.endswith((".emf", ".wmf")):  # browsers can't show these: the PDF's picture, if given
+                    n = self.fallback_id()
+                    out.append(model.figure(x, y, w, h, rel, missing=rel, _fallback=n, _keep=True, **extra))
                 else:
-                    self.warnings.append("A freeform drawing was not converted.")
-                if sh.has_text_frame and sh.text_frame.text.strip():
-                    md, size, align, colour = self.text_of(sh.text_frame, False)
-                    out.append(model.text(x, y, w, h, md, (size or 18) * self.pt, colour=colour or "#000000", align=align, **extra))
-                continue
-            if st not in (MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER, None):
-                if "graphicFrame" in sh._element.tag:
-                    self.warnings.append("A SmartArt or embedded object was not converted.")
-                    self.not_converted(out, "object", "SmartArt / object", x, y, w, h, extra)
-                continue
-            # an auto shape, text box or placeholder: its outline / fill, then its text
-            if st in (MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER, None):
-                fill = self.fill(sh)
-                border, bw = self.line(sh)
-                dash = sh._element.find(".//a:ln/a:prstDash", NS)
-                dashed = dash is not None and dash.get("val") not in (None, "solid")
-                if fill != "transparent" or bw:
-                    kind, radius = "rect", 0
-                    try:
-                        ast = sh.auto_shape_type
-                        if ast == MSO_AUTO_SHAPE_TYPE.OVAL:
-                            kind = "ellipse"
-                        elif ast == MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE:
-                            adj = sh.adjustments[0] if len(sh.adjustments) else 0.1667
-                            radius = adj * min(w, h)
-                    except Exception:
-                        pass
-                    out.append(model.shape(x, y, w, h, fill=fill, border=border, border_w=bw, kind=kind, radius=radius,
-                                           dashed=dashed, **extra))
+                    out.append(model.figure(x, y, w, h, rel, **extra))
+            except Exception as e:
+                self.warnings.append(f"A picture could not be read ({e}).")
+            return
+        if getattr(sh, "has_table", False) and sh.has_table:
+            out.append(self.table(sh, x, y, w, h, extra))
+            return
+        if getattr(sh, "has_chart", False) and sh.has_chart:
+            self.warnings.append("A chart was not converted (placeholder box).")
+            self.not_converted(out, "chart", "Chart", x, y, w, h, extra)
+            return
+        if st in (MSO_SHAPE_TYPE.LINE,) or sh.__class__.__name__ == "Connector":
+            out.append(self.connector(sh, xf, extra))
+            return
+        if st == MSO_SHAPE_TYPE.FREEFORM or sh._element.find(".//a:custGeom", NS) is not None:
+            d = pptx_draw.custom_paths(sh._element, w, h)
+            if d:
+                out.append(self.drawing(sh, d, (x, y, w, h), extra))
+            else:
+                self.warnings.append("A freeform drawing was not converted.")
             if sh.has_text_frame and sh.text_frame.text.strip():
-                ph = sh.placeholder_format.type if sh.is_placeholder else None
-                bulleted = ph in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT)
-                md, size, align, colour = self.text_of(sh.text_frame, bulleted)
-                size = size or DEFAULT_PT.get(ph, 18)
-                # text PowerPoint shrinks to fit its box (Autofit): as shown
-                fit = sh._element.find(".//a:bodyPr/a:normAutofit", NS)
-                if fit is not None and fit.get("fontScale"):
-                    size *= int(fit.get("fontScale")) / 100000
-                if ph in (PP_PLACEHOLDER.CENTER_TITLE, PP_PLACEHOLDER.SUBTITLE) and align == "left":
-                    align = "center"  # PowerPoint's default for title-slide placeholders
-                anchor = sh.text_frame.vertical_anchor
-                valign = "center" if anchor == MSO_ANCHOR.MIDDLE or (anchor is None and ph in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE)) \
-                    else "bottom" if anchor == MSO_ANCHOR.BOTTOM else "top"
-                family = None
-                for p in sh.text_frame.paragraphs:
-                    for r in p.runs:
-                        family = family or r.font.name
-                out.append(model.text(x, y, w, h, md, size * self.pt, colour=colour or "#000000", align=align,
-                                      valign=valign, family=family, **extra))
+                md, size, align, colour = self.text_of(sh.text_frame, False)
+                out.append(model.text(x, y, w, h, md, (size or 18) * self.pt, colour=colour or "#000000", align=align, **extra))
+            return
+        if st not in (MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER, None):
+            if "graphicFrame" in sh._element.tag:
+                self.warnings.append("A SmartArt or embedded object was not converted.")
+                self.not_converted(out, "object", "SmartArt / object", x, y, w, h, extra)
+            return
+        # an auto shape, text box or placeholder: its outline / fill, then its text
+        if st in (MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER, None):
+            fill = self.fill(sh)
+            border, bw = self.line(sh)
+            dash = sh._element.find(".//a:ln/a:prstDash", NS)
+            dashed = dash is not None and dash.get("val") not in (None, "solid")
+            if fill != "transparent" or bw:
+                kind, radius = "rect", 0
+                try:
+                    ast = sh.auto_shape_type
+                    if ast == MSO_AUTO_SHAPE_TYPE.OVAL:
+                        kind = "ellipse"
+                    elif ast == MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE:
+                        adj = sh.adjustments[0] if len(sh.adjustments) else 0.1667
+                        radius = adj * min(w, h)
+                except Exception:
+                    pass
+                out.append(model.shape(x, y, w, h, fill=fill, border=border, border_w=bw, kind=kind, radius=radius,
+                                       dashed=dashed, **extra))
+        if sh.has_text_frame and sh.text_frame.text.strip():
+            ph = sh.placeholder_format.type if sh.is_placeholder else None
+            bulleted = ph in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT)
+            md, size, align, colour = self.text_of(sh.text_frame, bulleted)
+            size = size or DEFAULT_PT.get(ph, 18)
+            # text PowerPoint shrinks to fit its box (Autofit): as shown
+            fit = sh._element.find(".//a:bodyPr/a:normAutofit", NS)
+            if fit is not None and fit.get("fontScale"):
+                size *= int(fit.get("fontScale")) / 100000
+            if ph in (PP_PLACEHOLDER.CENTER_TITLE, PP_PLACEHOLDER.SUBTITLE) and align == "left":
+                align = "center"  # PowerPoint's default for title-slide placeholders
+            anchor = sh.text_frame.vertical_anchor
+            valign = "center" if anchor == MSO_ANCHOR.MIDDLE or (anchor is None and ph in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE)) \
+                else "bottom" if anchor == MSO_ANCHOR.BOTTOM else "top"
+            family = None
+            for p in sh.text_frame.paragraphs:
+                for r in p.runs:
+                    family = family or r.font.name
+            out.append(model.text(x, y, w, h, md, size * self.pt, colour=colour or "#000000", align=align,
+                                  valign=valign, family=family, **extra))
 
     def group_transform(self, group, outer):
         gx, gy, gw, gh = outer(group)
@@ -314,6 +370,22 @@ class Converter:
 
     def connector(self, sh, xf, extra):
         x, y, w, h = xf(sh)
+        extra = {k: v for k, v in extra.items() if k != "rotate"}  # lines turn their points
+        st = sh._element.find(".//a:stCxn", NS)
+        en = sh._element.find(".//a:endCxn", NS)
+        if st is not None or en is not None:
+            # attached in PowerPoint: an attached line here (core/connectors.js)
+            prst = pptx_draw.preset_of(sh._element)
+            colour, width = self.line(sh)
+            start, end = pptx_draw.arrows_of(sh._element)
+            dash = sh._element.find(".//a:ln/a:prstDash", NS)
+            el = model.path([(x, y), (x + w, y + h)], stroke=colour if colour != "transparent" else "#000000", width=width or 2,
+                            start="arrow" if start else "none", end="arrow" if end else "none",
+                            dash="dashed" if dash is not None and dash.get("val") not in (None, "solid") else "solid", **extra)
+            el["route"] = "curved" if prst.startswith("curved") else ("elbow" if prst.startswith("bent") else "straight")
+            cxn = lambda c: (int(c.get("id")), int(c.get("idx") or 0)) if c is not None else None
+            self.links.append((el, cxn(st), cxn(en)))
+            return el
         if not pptx_draw.is_plain_line(sh._element):
             d = pptx_draw.connector_path(pptx_draw.preset_of(sh._element), w, h, sh._element)
             extent = pptx_draw.connector_extent(pptx_draw.preset_of(sh._element), w, h, sh._element)
@@ -420,6 +492,7 @@ class Converter:
 
     def drawing(self, sh, d, box, extra, arrows=(False, False), extent=None):
         """A shape drawn as an SVG picture (pptx_draw.py) -> a figure element."""
+        extra = {k: v for k, v in extra.items() if k != "rotate"}  # the picture holds its turn
         fill = self.fill(sh)
         stroke, sw = self.line(sh)
         svg, (fx, fy, fw, fh) = pptx_draw.svg_picture(d, box, sh._element, fill, stroke, sw, arrows, extent)
@@ -499,7 +572,9 @@ class Converter:
             bg = self.background(slide) if not slide.follow_master_background else None
             if bg:
                 els.append(bg)
+            self.shape_ids, self.links = {}, []
             self.convert_shapes(slide.shapes, els, self.xf, self.click_steps(slide))
+            self.attach_links()
             title = ""
             try:
                 if slide.shapes.title is not None:

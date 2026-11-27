@@ -314,10 +314,12 @@ function serializeElementDirective(el) {
     if (Number(el.until) >= Math.max(1, Number(el.step) || 1)) head.push(`until:${Math.round(Number(el.until))}`);
     // Locked in the editor (can't be dragged); no effect on the slides.
     if (el.locked === 'yes') head.push('locked:yes');
+    // Turned about its centre, in degrees (clockwise).
+    if (Number(el.rotate)) head.push(`rotate:${Math.round(Number(el.rotate) * 10) / 10}`);
 
     if (!spec.registered) {
         const raw = Object.keys(el)
-            .filter(k => !['type', 'id', 'name', 'style', 'step', 'until', 'locked'].includes(k) && el[k] !== undefined && el[k] !== null)
+            .filter(k => !['type', 'id', 'name', 'style', 'step', 'until', 'locked', 'rotate'].includes(k) && el[k] !== undefined && el[k] !== null)
             .filter(k => !(typeof el[k] === 'string' && el[k].startsWith('data:')))
             .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`);
         return `.element.${el.type} ${[...head, ...raw].join(' ')}`.trimEnd();
@@ -685,9 +687,11 @@ function buildElement(type, params) {
     const until = Math.round(Number(params.until));
     if (until >= Math.max(1, step || 1)) el.until = until;
     if (params.locked === 'yes') el.locked = 'yes';
+    const rotate = Number(params.rotate);
+    if (rotate && Number.isFinite(rotate)) el.rotate = rotate;
     const spec = getElementGlSpec(type);
 
-    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step', 'until', 'locked'].includes(k));
+    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step', 'until', 'locked', 'rotate'].includes(k));
     keysToRead.forEach(key => {
         if (params[key] === undefined) return;
         const raw = params[key];

@@ -34,6 +34,12 @@ export function gridSteps() {
  * a group that was resized non-proportionally.
  */
 function computeScale(domEl, el) {
+    // From the container: a turned element's own rect is its bounding box.
+    const parent = domEl.parentElement;
+    if (Number(el.rotate) && parent && parent.offsetWidth && parent.offsetHeight) {
+        const pr = parent.getBoundingClientRect();
+        return { sx: pr.width / parent.offsetWidth || 0.5, sy: pr.height / parent.offsetHeight || 0.5 };
+    }
     const rect = domEl.getBoundingClientRect();
     return {
         sx: rect.width / (el.width || 1) || 0.5,
@@ -45,6 +51,23 @@ function computeScale(domEl, el) {
  * Which edges a local point is on. The edge zone shrinks on small
  * elements (e.g. dots) so their middle still moves instead of resizing.
  */
+/**
+ * A client point in the element's own frame (0..width, 0..height), its
+ * rotation undone: the resize zones of a turned element follow its sides.
+ */
+function localPoint(domEl, el, clientX, clientY) {
+    const parent = domEl.parentElement;
+    const pr = parent ? parent.getBoundingClientRect() : domEl.getBoundingClientRect();
+    const k = parent && parent.offsetWidth ? pr.width / parent.offsetWidth : 1;
+    const ky = parent && parent.offsetHeight ? pr.height / parent.offsetHeight : k;
+    const cx = pr.left + (el.x + el.width / 2) * k;
+    const cy = pr.top + (el.y + el.height / 2) * ky;
+    const a = -(Number(el.rotate) || 0) * Math.PI / 180;
+    const dx = (clientX - cx) / k;
+    const dy = (clientY - cy) / ky;
+    return [dx * Math.cos(a) - dy * Math.sin(a) + el.width / 2, dx * Math.sin(a) + dy * Math.cos(a) + el.height / 2];
+}
+
 function edgeHits(el, localX, localY) {
     const t = Math.min(EDGE_THRESHOLD, el.width / 4, el.height / 4);
     return {
@@ -57,10 +80,7 @@ function edgeHits(el, localX, localY) {
 
 /** Cursor feedback while hovering near edges of an element. */
 export function updateResizeCursor(domEl, el, mouseEvent) {
-    const rect = domEl.getBoundingClientRect();
-    const { sx, sy } = computeScale(domEl, el);
-    const localX = (mouseEvent.clientX - rect.left) / sx;
-    const localY = (mouseEvent.clientY - rect.top) / sy;
+    const [localX, localY] = localPoint(domEl, el, mouseEvent.clientX, mouseEvent.clientY);
 
     const { isLeft, isRight, isTop, isBottom } = edgeHits(el, localX, localY);
 
@@ -147,10 +167,9 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
     const orig = { x: el.x, y: el.y, w: el.width, h: el.height };
     let hasDragged = false;
 
-    const rect = domEl.getBoundingClientRect();
-    const localX = (e.clientX - rect.left) / sx;
-    const localY = (e.clientY - rect.top) / sy;
+    const [localX, localY] = localPoint(domEl, el, e.clientX, e.clientY);
     const { isLeft, isRight, isTop, isBottom } = edgeHits(el, localX, localY);
+    const turned = Number(el.rotate) || 0; // resized in its own frame (no grid / guides)
     const isResizing = allowResize && (isLeft || isRight || isTop || isBottom);
 
     const activeGroup = (!isResizing && Array.isArray(groupItems) && groupItems.length > 1)
@@ -246,12 +265,16 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
             }
             callbacks.onGeometryChanged();
         } else if (isResizing) {
+            // A turned element: the mouse's movement in its own frame.
+            const ar = turned * Math.PI / 180;
+            const ldx = turned ? dx * Math.cos(ar) + dy * Math.sin(ar) : dx;
+            const ldy = turned ? -dx * Math.sin(ar) + dy * Math.cos(ar) : dy;
             let newW = orig.w;
             let newH = orig.h;
-            if (isRight) newW = orig.w + dx;
-            if (isLeft) newW = orig.w - dx;
-            if (isBottom) newH = orig.h + dy;
-            if (isTop) newH = orig.h - dy;
+            if (isRight) newW = orig.w + ldx;
+            if (isLeft) newW = orig.w - ldx;
+            if (isBottom) newH = orig.h + ldy;
+            if (isTop) newH = orig.h - ldy;
             newW = Math.max(MIN_SIZE, newW);
             newH = Math.max(MIN_SIZE, newH);
 
@@ -272,6 +295,18 @@ export function startDragOrResize(domEl, el, e, callbacks, groupItems = null, { 
             // The opposite edge stays put.
             let newX = isLeft ? orig.x + orig.w - newW : orig.x;
             let newY = isTop ? orig.y + orig.h - newH : orig.y;
+
+            if (turned) {
+                // The opposite side stays put in the turned frame: the centre moves
+                // by the frame's change, turned.
+                const mx = newX + newW / 2 - (orig.x + orig.w / 2);
+                const my = newY + newH / 2 - (orig.y + orig.h / 2);
+                const cx = orig.x + orig.w / 2 + mx * Math.cos(ar) - my * Math.sin(ar);
+                const cy = orig.y + orig.h / 2 + mx * Math.sin(ar) + my * Math.cos(ar);
+                applyGeometry(Math.round(cx - newW / 2), Math.round(cy - newH / 2), Math.round(newW), Math.round(newH), false);
+                callbacks.onGeometryChanged();
+                return;
+            }
 
             // The moving edges snap to guides (not with fixed proportions:
             // snapping each side independently would break the ratio).

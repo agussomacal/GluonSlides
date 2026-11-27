@@ -190,6 +190,8 @@ export function applyCommonBoxStyles(domEl, el) {
     domEl.style.borderColor = el.borderCol;
     domEl.style.borderWidth = `${el.borderWidth}px`;
     domEl.style.borderStyle = el.borderStyle;
+    // Turned about its centre (rotate:30).
+    domEl.style.transform = Number(el.rotate) ? `rotate(${Number(el.rotate)}deg)` : '';
 }
 
 // ---------- Element DOM / export markup (shared) ----------
@@ -219,6 +221,7 @@ export function exportElementMarkup(raw) {
         + `background-color:${el.bg};`
         + `border: ${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
         + `box-sizing: border-box;`
+        + (Number(el.rotate) ? `transform:rotate(${Number(el.rotate)}deg);` : '')
         + (def && typeof def.exportStyle === 'function' ? def.exportStyle(el) : '');
 
     if (!def) return `<div class="el" style="${geo}"></div>`;

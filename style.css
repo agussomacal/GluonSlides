@@ -2090,3 +2090,30 @@ body.resizing-pane, body.resizing-pane * { cursor: col-resize !important; user-s
 }
 .anchor-dot.active { background: #3b82f6; transform: scale(1.3); }
 .link-btn { border: none; background: none; color: var(--accent-color); cursor: pointer; padding: 0 2px; font-size: 11px; text-decoration: underline; }
+
+/* Rotation handle above a selected element (editor.js startRotate) */
+.rotate-handle {
+    position: absolute;
+    left: 50%;
+    top: calc(-34px * var(--ui-unit, 1));
+    width: calc(14px * var(--ui-unit, 1));
+    height: calc(14px * var(--ui-unit, 1));
+    margin-left: calc(-7px * var(--ui-unit, 1));
+    border-radius: 50%;
+    background: #ffffff;
+    border: calc(2px * var(--ui-unit, 1)) solid #3b82f6;
+    box-sizing: border-box;
+    cursor: grab;
+    z-index: 20;
+    pointer-events: auto;
+}
+.rotate-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: calc(2px * var(--ui-unit, 1));
+    height: calc(20px * var(--ui-unit, 1));
+    margin-left: calc(-1px * var(--ui-unit, 1));
+    background: #3b82f6;
+}
