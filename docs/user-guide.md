@@ -18,6 +18,8 @@ What the editor can do and how. The [Gluon format reference](gluon-format.md) ha
   - [Figures: pasting and linked files](#figures-pasting-and-linked-files)
   - [Columns](#columns)
   - [Tables](#tables)
+  - [Variables: values from your results](#variables-values-from-your-results)
+  - [Interactive plots and sliders](#interactive-plots-and-sliders)
 - [Drawing](#drawing)
   - [Shapes](#shapes)
   - [Lines & curves](#lines--curves)
@@ -229,6 +231,35 @@ Widths are relative (here 60% / 40% of the space left by the gap). Markdown imag
 ```
 
 Rows and columns count from 1. The cells are always written, also for a linked table, so the project is complete on its own (a `|` in a cell is `\|`, a line break `<br>`).
+
+### Variables: values from your results
+
+Numbers in your text can come from your results instead of being typed: write `\var{err}` in any text box, column or table cell (also inside math: `$\sigma = \var{sigma}$`), or `\var{err}[%.2e]` with a format (`%.2f`, `%.3e`, `%.4g`, `%d`, `%.1%`). Typing `\var{` lists the variables with their values.
+
+**Project settings → Variables** is where they come from:
+
+- **From files**: *＋ Link a JSON or CSV file…* copies a file your script writes into the project's `data/` folder and follows it, like a linked table: rerun the analysis and the numbers on the slides update. A JSON object gives its keys (nested ones as `fit.a`); a CSV gives `name,value` rows, or a header of names and the last row of values (a log your script appends to). ↻ reads it again; ✕ stops using it.
+- **Written here**: values you just want in one place (a sample size, a date), with *＋ Add a value*.
+- **All variables** lists every name, its value and where it comes from. A file wins over a written value, a slider over both.
+
+An unknown name shows as a red `[? name]`. In the file: `.vars alpha:0.05` and `.vars {data/summary.json} sync:yes` (see the [format reference](gluon-format.md#vars)).
+
+### Interactive plots and sliders
+
+**Interactive ▾** in the toolbar adds a **plot** (with a formula in Python or in LaTeX) and a **slider**. A slider sets a variable (*Variable* in its panel, `mu` say); plots that use it are redrawn as it moves, and text showing it with `\var{mu}` changes too. It works on the canvas (drag the knob: the slider itself stays put), while presenting, in the presenter view (the audience's screen follows), and in the exported HTML, which needs nothing installed. The PDF export shows the starting values.
+
+A plot's panel has its formulas in a box:
+
+```
+.curve color:@primary width:4 label:"$\mathcal{N}(\mu,\sigma^2)$"
+y = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)
+.curve color:@muted dash:dashed label:"standard"
+y = exp(-x**2 / 2) / sqrt(2*pi)
+```
+
+Each `.curve` line starts a curve (colour, width, `dash:dashed` or `dotted`, a legend `label` with math), and the lines below it are its formula in `x`: helper lines first (`s2 = sigma**2`), then `y = …`. **Formulas** chooses how they are written: *Python* (`x**2`, `exp(…)`, `np.sin(…)`: copied from a script, they work as they are) or *LaTeX* (`\frac{1}{\sqrt{2\pi\sigma^2}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}`: the same text you show on the slide). The panel also has the x range, the y range (empty: from the curves, then kept while sliders move), axis labels (Markdown and math), text size and colour, grid and legend. A mistake (an unknown name, a bracket missing) is written on the plot in red, with its line.
+
+Formulas are read by GluonSlides' own small calculator, never run as code, so a presentation someone sends you can only draw curves. See the [format reference](gluon-format.md#plot) for every function and command understood.
 
 ## Drawing
 

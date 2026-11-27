@@ -24,6 +24,9 @@ core/               the model and what works on it (no editor UI)
   geometry.js       drag/resize/snap math, smart guides, rotation
   arrange.js        align, distribute, layer order, lock, rotated boxes
   connectors.js     lines attached to shapes (from / to / route)
+  variables.js      variables: .vars values and files, \var{…} in text, slider values
+  liveEngine.js     no imports (inlined into exports): formula readers (python, latex),
+                    the safe calculator, plot SVG, live updates and sliders
   steps.js          builds: step / until
   masters.js        master slides
   macros.js         macro definitions, instances and overrides
@@ -65,7 +68,7 @@ ui/                 windows, dialogs and chrome
   tutorial.js       the tutorial presentation
 elements/           one folder per element type, each self-registering
   index.js          one import per type
-  text/ shape/ figure/ path/ columns/ table/ group/ macro/
+  text/ shape/ figure/ path/ columns/ table/ group/ macro/ plot/ slider/
   figure/toLatex.js   "Convert to LaTeX" on a picture
 export/
   html.js           the interactive HTML presentation
@@ -76,7 +79,7 @@ present/
   audience.html     the audience window of the presenter view
 backend/            Python, exposed to the page as pywebview.api
   api.py            the Api class: every call the page makes
-  project_io.py dialogs.py figures.py tables.py fonts.py pdf_export.py
+  project_io.py dialogs.py figures.py tables.py variables.py fonts.py pdf_export.py
   presentation.py   presenter view: the second window
   desktop.py        system clipboard, dropped file paths, --debug logging
   net.py            HTTPS with the system's certificates

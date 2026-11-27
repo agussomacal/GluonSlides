@@ -57,7 +57,7 @@ A GluonSlides project is a plain-text `.gl` file. Everything you do in the edito
 | `bibliography.bib` | BibTeX entries for `\cite` |
 | `macros.gl` | reusable components (`.define` blocks), imported with `.import {macros.gl}` |
 | `figures/` | pictures used by figures and Markdown images (copies of the originals) |
-| `data/` | copies of linked CSV files (tables) |
+| `data/` | copies of linked CSV files (tables) and variable files (`.vars`) |
 | `fonts/` | font files that travel with the project |
 
 Paths in the `.gl` file (`filePath`, `.data`, `.import`, `![](…)`) are relative to the project folder.
@@ -125,6 +125,25 @@ The project's theme colours, `name:colour`. Elements refer to them as `@name`. W
 
 .slide {One} id:1
 ```
+
+### `.vars`
+
+Variables: values that text shows with `\var{name}` and that [plots](#plot) compute with. Two forms, as many lines as needed:
+
+```gl
+.project {Deck}
+.vars alpha:0.05 method:Adam
+.vars {data/summary.json} sync:yes original:"/home/me/run/summary.json"
+
+.slide {One} id:1
+```
+
+- `.vars name:value …`: values written in the project. A value that reads as a number is a number, anything else is text.
+- `.vars {file}`: the values of a JSON or CSV file in the project folder (usually `data/`). `sync:yes` (the default) copies `original` again when it changes, like a linked table; `sync:no` keeps the copy as it is.
+
+A JSON file holds an object; nested objects give dotted names (`{"fit": {"a": 2}}` gives `fit.a`), lists are skipped. A CSV file is either `name,value` rows (a first row `name,value` is a header), or a header row of names and rows of values, of which the last is used (a log your script appends to). Names use letters, digits, `_` and `.`.
+
+When the same name comes from several places, a file wins over a value written here, and a [slider](#slider) over both.
 
 ### `.defaults.<type>`
 
@@ -475,6 +494,63 @@ Elements grouped together. The body has the children, one level deeper, in the g
 
 Children are `.element.*` or `.macro.*` lines; other directives aren't allowed inside a group.
 
+### plot
+
+Curves `y = f(x)` computed from formulas, with the project's [variables](#vars): moving a [slider](#slider) redraws them, on the canvas, while presenting and in an exported HTML. The body is the formulas, kept exactly as written: a `.curve` line starts each curve, and its formula follows.
+
+```gl
+.project {Deck}
+.slide {Gauss} id:1
+.element.slider id:41 x:100 y:900 width:600 height:70 var:mu min:-3 max:3 step:0.1 value:0 label:"$\mu$"
+.element.slider id:42 x:800 y:900 width:600 height:70 var:sigma min:0.2 max:3 step:0.1 value:1 label:"$\sigma$"
+.element.plot id:40 x:100 y:100 width:1200 height:700 lang:python xmin:-6 xmax:6 ymin:0 ymax:1 xlabel:"$x$"
+	.curve color:@primary width:4 label:"$\mathcal{N}(\mu,\sigma^2)$"
+	s2 = sigma**2
+	y = exp(-(x - mu)**2 / (2*s2)) / sqrt(2*pi*s2)
+	.curve color:@muted dash:dashed label:"standard" lang:latex
+	\frac{1}{\sqrt{2\pi}} e^{-x^2/2}
+```
+
+| Parameter | Values | Built-in | Meaning |
+|---|---|---|---|
+| `lang` | `python` / `latex` | `python` | how the formulas are written (a `.curve` can say its own) |
+| `xmin`, `xmax` | numbers | `-5`, `5` | the x range |
+| `ymin`, `ymax` | numbers | from the curves | the y range; left out, it is found from the curves at the starting values and then kept while sliders move |
+| `xlabel`, `ylabel` | text (Markdown and math) | | axis labels |
+| `grid` | `yes` / `no` | `yes` | grid lines |
+| `legend` | `yes` / `no` | `yes` | the legend of the curves that have a `label` |
+| `samples` | number | `400` | points computed per curve |
+| `fontSize`, `fontFamily`, `fontColor` | | `28`, `sans-serif`, dark | tick labels, axis labels and legend; `fontColor` also draws the axes |
+
+**`.curve` lines** take `color` (a colour, `@theme` too), `width` (pixels, default `3`), `dash` (`dashed` / `dotted`), `label` (Markdown and math, for the legend) and `lang`. The lines under a `.curve` are its formula in `x`: helper lines `name = …` first, then the curve, `y = …` (or a last line with no name). Text before any `.curve` is a first curve. Formulas use the project's variables by name; an unknown name, or anything the reader doesn't understand, is written on the plot in red with its line.
+
+**`lang:python`**: Python's syntax: `+ - * / // % **`, comparisons, `and` `or` `not`, `a if c else b`, `#` comments, a line ending in an operator or inside brackets continuing on the next. Functions: `exp log log10 log2 sqrt abs sin cos tan asin acos atan atan2 sinh cosh tanh floor ceil round min max pow sign erf erfc gamma factorial clip where heaviside sinc hypot`, constants `pi e tau inf nan`. `math.`, `np.` and `numpy.` in front of a name are ignored, so formulas copied from a script work as they are.
+
+**`lang:latex`**: the formula as you would typeset it: `\frac{a}{b}`, `\sqrt{…}` and `\sqrt[n]{…}`, `x^{2}`, `e^{…}` (the exponential), `\exp`, `\ln` and `\log` (natural), `\sin` and the other functions (with or without brackets: `\sin x`), `|x|`, `\left( … \right)`, `\cdot`, `\times`, products without a sign (`2\pi\sigma^2`), Greek letters (`\mu` is the variable `mu`), subscripts as part of a name (`x_0`, `\sigma_{1}`), `\pi`, `\infty`. Lines (or `\\`) can be `y = …` or `\sigma_2 = …` helpers; `f(x) = …` is the curve.
+
+Formulas are read by the app's own small parser: they can compute numbers and nothing else, so a shared file or an exported presentation can't run code.
+
+### slider
+
+A slider that sets a variable. Plots that use it are redrawn and values in text that show it (`\var{mu}`, also inside `$…$`) change as it moves, while presenting, in the presenter view (the audience's screen follows) and in an exported HTML. In the PDF export everything is at the starting values.
+
+```gl
+.project {Deck}
+.slide {One} id:1
+.element.slider id:41 x:100 y:900 width:600 height:70 var:mu min:-3 max:3 step:0.1 value:0 label:"$\mu$" format:%.1f
+```
+
+| Parameter | Values | Built-in | Meaning |
+|---|---|---|---|
+| `var` | a name | | the variable it sets |
+| `min`, `max`, `step` | numbers | `0`, `1`, `0.01` | the range and its steps |
+| `value` | number | `min` | where it starts (moving it doesn't change the file) |
+| `label` | text (Markdown and math) | | shown before it |
+| `format` | `%.2f`, `%.3e`, `%d`, `%.1%`… | a short number | how the value after it is shown |
+| `showValue` | `yes` / `no` | `yes` | show the value after it |
+| `accent` | colour | blue | the slider's colour |
+| `fontSize`, `fontFamily`, `fontColor` | | | its label and value |
+
 ### macro instance
 
 `.macro.<name>` places an instance of the definition `<name>` (see [`.define`](#define-and-macroname)), scaled to `width` × `height`. Its body has, in this order:
@@ -509,6 +585,7 @@ The body of a text box, a column or a table cell:
 - **Math** with KaTeX: `$…$` inline, `$$…$$` displayed (centred unless the project says `equations:text`). Macros from `macros.tex` work.
 - **Text commands**: `\textcolor{colour}{…}`, `\highlight{colour}{…}`, `\colorbox{colour}{…}`, `\textbf{…}`, `\textit{…}`, `\emph{…}`, `\underline{…}`, `\texttt{…}`. Colours here may also be CSS / xcolor names (`red`, `ForestGreen`), theme colours (`@accent`) and xcolor mixes (`red!60`, `red!50!blue`). Macros from `macros.tex` whose definition uses these commands work in text too.
 - **Fields**, replaced on each slide: `\slidenumber`, `\totalslides`, `\slidetitle`, `\sectiontitle`, `\presentationtitle`, `\author`, `\date`, `\tableofcontents`.
+- **Variables**: `\var{name}`, or `\var{name}[%.2f]` with a format (`%.2f`, `%.3e`, `%.4g`, `%d`, `%.1%`), shows a [variable](#vars)'s value, in text and inside math; one moved by a slider changes in place while presenting. An unknown name shows as `[? name]`.
 - **Citations**: `\cite{key}`, `\citep`, `\citet`, `\parencite`, `\textcite`, `\fullcite`, `\cite[p.~5]{key}`, and `\printbibliography` (optionally `[9-]`, `[1-8]`, `[5]`), from `bibliography.bib`.
 - HTML, such as `<span style="color:red">…</span>`.
 

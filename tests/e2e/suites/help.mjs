@@ -34,9 +34,9 @@ const tut = await app(async () => {
     };
 });
 check('the tutorial opens in the editor', tut.editor && tut.name === 'GluonSlides tutorial', JSON.stringify(tut.name));
-check('…its slides', tut.slides.length === 9 && tut.slides[0] === 'Welcome' && tut.slides[8] === 'Next steps', JSON.stringify(tut.slides));
+check('…its slides', tut.slides.length === 10 && tut.slides[0] === 'Welcome' && tut.slides[9] === 'Next steps', JSON.stringify(tut.slides));
 check('…not saved anywhere', !tut.path);
-check('…a master, notes, and every kind of object', tut.masters === 1 && tut.notes.includes('Speaker notes') && tut.types === 'columns,figure,group,path,table,text', tut.types);
+check('…a master, notes, and every kind of object', tut.masters === 1 && tut.notes.includes('Speaker notes') && tut.types === 'columns,figure,group,path,plot,slider,table,text', tut.types);
 check('…the connector attached by name', tut.connector && tut.connector.from === '{Data}@right' && tut.connector.to === '{Model}@left' && tut.connector.width > 300, JSON.stringify(tut.connector));
 check('…blank lines between paragraphs kept', /highlights\.\n\nTyping/.test(tut.hint || ''), JSON.stringify(tut.hint));
 check('no tour by itself in a browser', !(await page.$('.tour-layer')));
