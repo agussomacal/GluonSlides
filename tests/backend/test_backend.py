@@ -1134,6 +1134,34 @@ Second block of text
 class ExtrasTest(TempDirTest):
     """The PDF component download (backend/importers/extras.py), with a fake download."""
 
+    def test_certificate_errors_retry_with_the_systems_certificates(self):
+        import ssl
+        import urllib.error
+        from backend import net
+        calls = []
+
+        def fake(req, timeout, context=None):
+            calls.append(context)
+            if len(calls) == 1:
+                raise urllib.error.URLError(ssl.SSLCertVerificationError("unable to get local issuer certificate"))
+            return "response"
+
+        with mock.patch.object(net, "ssl_contexts", return_value=[None, "system"]), \
+                mock.patch("urllib.request.urlopen", fake):
+            self.assertEqual(net.open_url("https://example.org", 5), "response")
+        self.assertEqual(calls, [None, "system"])
+
+        def offline(req, timeout, context=None):
+            calls.append(context)
+            raise urllib.error.URLError(OSError("Network is unreachable"))
+
+        calls.clear()
+        with mock.patch.object(net, "ssl_contexts", return_value=[None, "system"]), \
+                mock.patch("urllib.request.urlopen", offline):
+            with self.assertRaises(urllib.error.URLError):
+                net.open_url("https://example.org", 5)
+        self.assertEqual(calls, [None])  # not a certificate problem: no retries
+
     def test_a_wrong_file_is_refused(self):
         from backend.importers import extras
         with mock.patch.dict(os.environ, {"GLUONSLIDES_DATA_DIR": self.tmp}), \

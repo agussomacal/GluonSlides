@@ -4,6 +4,8 @@
 // project-level settings (dark mode, citation style).
 // ============================================================
 
+import { prepareTabFor, projectLoaded, setTabHooks, renderTabs } from './tabs.js';
+import { clearBibPages } from '../core/bibPages.js';
 import {
     state, pyApi, whenApiReady, parseTexMacros, markDirty, flushPendingSave,
     serializeProject, deserializeProject, currentSnapshot, resetHistory,
@@ -162,7 +164,25 @@ function enterEditor() {
     syncProjectChrome();
     showView('editor-view');
     renderEditor();
+    projectLoaded();
 }
+
+// Tabs (ui/tabs.js): a tab's project shown again (its history kept), or the start screen.
+setTabHooks({
+    enter() {
+        clearBibPages();
+        loadProjectFonts();
+        syncProjectChrome();
+        document.dispatchEvent(new CustomEvent('project-switched'));
+        showView('editor-view');
+        renderEditor();
+    },
+    start() {
+        showView('welcome-view');
+        renderRecents();
+        renderTabs();
+    },
+});
 
 /**
  * Creates a project. With the Python API this asks for a parent folder,
@@ -170,6 +190,7 @@ function enterEditor() {
  * bibliography. Returns { success, error? }.
  */
 export async function createProject(name) {
+    await prepareTabFor();
     clearFigureCache();
     const api = await whenApiReady(RECENTS_QUICK_WAIT_MS);
     if (!api) {
@@ -210,7 +231,8 @@ export async function openProjectByPath(path, content) {
             }
             content = res.content;
         }
-        await flushPendingSave();
+        // Open already: its tab. Otherwise a new tab if a project is open.
+        if (await prepareTabFor(path)) return;
         clearFigureCache();
         resetProjectState({ path, folder: path.replace(/[/\\][^/\\]+$/, '') });
         deserializeProject(content);
@@ -245,7 +267,8 @@ export async function openProjectFromFile() {
     await openProjectByPath(res.path, res.content);
 }
 
-export function openSampleProject() {
+export async function openSampleProject() {
+    await prepareTabFor();
     clearFigureCache();
     resetProjectState({ name: 'Sample Presentation' });
     state.slides[0].title = 'Introduction';

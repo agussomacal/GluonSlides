@@ -4,6 +4,8 @@
 // and undo/redo.
 // ============================================================
 
+import { clipboardSourceNow, fromAnotherProject, bringAlong } from './projectTransfer.js';
+import { busy } from '../ui/busy.js';
 import {
     state,
     markDirty,
@@ -67,6 +69,7 @@ function copySelectionToClipboard() {
         if (copiedEls.length > 0) {
             state.elementClipboard = copiedEls;
             state.slideClipboard = null;
+            state.clipboardSource = clipboardSourceNow(); // pasted in another tab: files come along
             return {kind: 'elements', count: copiedEls.length};
         }
         return null;
@@ -81,6 +84,7 @@ function copySelectionToClipboard() {
         if (copiedSlides.length > 0) {
             state.slideClipboard = copiedSlides;
             state.elementClipboard = null;
+            state.clipboardSource = clipboardSourceNow();
             return {kind: 'slides', count: copiedSlides.length};
         }
     }
@@ -246,33 +250,45 @@ export function initKeyboardShortcuts() {
 }
 
 /** Pastes the objects or slides copied in the app (Ctrl+V without an image). */
-function pasteInternal(onMaster, slide) {
+async function pasteInternal(onMaster, slide) {
     if (Array.isArray(state.elementClipboard) && state.elementClipboard.length > 0 && slide) {
         const pastedIndices = [];
-        state.elementClipboard.forEach(templateEl => {
-            const newEl = JSON.parse(JSON.stringify(templateEl));
+        const copies = state.elementClipboard.map(el => JSON.parse(JSON.stringify(el)));
+        // From another project (tab): its figures, tables, macros and styles come along,
+        // and the objects keep their place (a duplicate here would be offset).
+        const other = fromAnotherProject(state.clipboardSource);
+        const missing = other ? await busy('Copying the files they use…', bringAlong(copies, state.clipboardSource)) : [];
+        copies.forEach(newEl => {
             // Paste mints a fresh ID: copy keeps the original's identity,
             // paste creates a distinct element so IDs stay unique.
             reassignIdsDeep(newEl);
-            newEl.x += PASTE_OFFSET_PX;
-            newEl.y += PASTE_OFFSET_PX;
+            if (!other) {
+                newEl.x += PASTE_OFFSET_PX;
+                newEl.y += PASTE_OFFSET_PX;
+            }
             activeElements().push(newEl);
             pastedIndices.push(activeElements().length - 1);
         });
         setSelectedElementIndices(pastedIndices, pastedIndices[pastedIndices.length - 1]);
         markDirty();
         renderEditor();
-        flashSaveIndicator(pastedIndices.length > 1 ? `${pastedIndices.length} objects pasted ✓` : 'Object pasted ✓');
+        flashSaveIndicator(missing.length ? `Pasted; not found in the other project: ${missing.join(', ')}`
+            : pastedIndices.length > 1 ? `${pastedIndices.length} objects pasted ✓` : 'Object pasted ✓');
         return;
     }
 
     if (!onMaster && Array.isArray(state.slideClipboard) && state.slideClipboard.length > 0) {
         const insertAfter = Math.max(0, Math.min(state.currentSlideIndex, state.slides.length - 1));
         const pastedSlideIndices = [];
-        state.slideClipboard.forEach((templateSlide, offset) => {
-            const newSlide = JSON.parse(JSON.stringify(templateSlide));
+        const slideCopies = state.slideClipboard.map(s => JSON.parse(JSON.stringify(s)));
+        const otherProject = fromAnotherProject(state.clipboardSource);
+        if (otherProject) {
+            await busy('Copying the files they use…', bringAlong(slideCopies.flatMap(s => s.elements || []), state.clipboardSource));
+        }
+        slideCopies.forEach((newSlide, offset) => {
+            const templateSlide = state.slideClipboard[offset];
             newSlide.id = allocateSlideId();
-            newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
+            if (!otherProject) newSlide.title = `${templateSlide.title || 'Slide'} (Copy)`;
             // Pasted slides carry their elements with their original
             // IDs; those are remapped below to stay unique.
             newSlide.elements = (newSlide.elements || []).map(el => reassignIdsDeep(el));

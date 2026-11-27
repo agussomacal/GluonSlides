@@ -16,11 +16,17 @@ import { openProjectByPath } from './project.js';
 import { escapeHtml } from '../core/render.js';
 import { registerDropZone } from '../editor/fileDrop.js';
 import { progressBar } from './busy.js';
+import { prepareTabFor } from './tabs.js';
 
 /** import_talk with a progress bar in the dialog (the backend reports how far it is). */
-async function importWithProgress(api, source, folder, name, options) {
+function importWithProgress(api, source, folder, name, options) {
+    return withProgress(api, 'Importing', () => api.import_talk(source, folder, name, options));
+}
+
+/** Runs `call` with the dialog's progress bar following the backend's progress. */
+async function withProgress(api, firstStage, call) {
     const status = $('import-status');
-    progressBar(status, { stage: 'Importing' });
+    progressBar(status, { stage: firstStage });
     const poll = setInterval(async () => {
         if (typeof api.import_progress !== 'function') return;
         try {
@@ -29,7 +35,7 @@ async function importWithProgress(api, source, folder, name, options) {
         } catch (e) { /* the bar just stays */ }
     }, 250);
     try {
-        return await api.import_talk(source, folder, name, options);
+        return await call();
     } finally {
         clearInterval(poll);
     }
@@ -190,6 +196,7 @@ export async function confirmImport() {
             res = await importWithProgress(api, source, chosen.folder, name, { pdfMode, usePdf });
         }
         if (!res || !res.success) throw new Error((res && res.error) || 'Import failed');
+        await prepareTabFor(); // the import becomes a project of its own tab
         const path = await buildImportedProject(api, res, name);
         const warnings = res.project.warnings || [];
         $('import-status').textContent = '';
@@ -232,8 +239,8 @@ async function askDownloadExtra(api, res) {
     });
     box.hidden = true;
     if (!answer) return false;
-    $('import-status').textContent = 'Downloading the PDF component…';
-    const got = await api.install_extra(res.needs_extra);
+    // About 25 MB: the bar shows the megabytes as they come.
+    const got = await withProgress(api, 'Downloading the PDF component', () => api.install_extra(res.needs_extra));
     $('import-status').textContent = '';
     if (!got || !got.success) {
         $('import-error').textContent = (got && got.error) || 'Download failed';

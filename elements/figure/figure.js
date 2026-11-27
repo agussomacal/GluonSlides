@@ -330,6 +330,24 @@ export function clearFigureCache() {
     figureSources.clear();
 }
 
+/** The figure images of the project being left for another tab (ui/tabs.js). */
+export function takeFigureCache() {
+    const kept = new Map(figureSources);
+    figureSources.clear();
+    return kept;
+}
+
+/** Puts back the images of a tab's project. */
+export function putFigureCache(kept) {
+    figureSources.clear();
+    (kept || new Map()).forEach((v, k) => figureSources.set(k, v));
+}
+
+/** An image already read (a figure brought from another project). */
+export function rememberFigureSource(relPath, dataUri) {
+    if (relPath && dataUri) figureSources.set(relPath, dataUri);
+}
+
 
 const FigureElement = {
     type: 'figure',

@@ -19,6 +19,11 @@ import { beginCitationPass } from './citations.js';
 /** \printbibliography without a [range]: paginated automatically. */
 const AUTO_BIB_RE = /\\printbibliography(?!\s*\[)/;
 const cache = new Map();
+
+/** Forgets the measured pages (another project: other references). */
+export function clearBibPages() {
+    cache.clear();
+}
 let host = null;
 
 export function hasAutoBibliography(el) {

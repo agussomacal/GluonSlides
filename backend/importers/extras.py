@@ -81,11 +81,20 @@ def install(name="pymupdf", fetch=None):
         return {"success": False, "error": f"No PDF component for this system ({' '.join(_system())}); "
                                            "install PyMuPDF yourself (pip install pymupdf)."}
     url, sha = wheel
-    fetch = fetch or _download
+    from . import progress
+
+    def report(done, total):
+        mb = 1024 * 1024
+        progress.report("Downloading the PDF component (MB)", done // mb, total // mb if total else 0)
+
     try:
-        data = fetch(url)
+        data = fetch(url) if fetch else _download(url, report)
     except Exception as e:
+        from ..desktop import debug
+        debug(f"[extras] could not download {url}: {e!r}")
         return {"success": False, "error": f"Could not download the PDF component: {e}"}
+    finally:
+        progress.reset()
     if hashlib.sha256(data).hexdigest() != sha:
         return {"success": False, "error": "The downloaded PDF component is not the expected file; nothing was installed."}
     target = _target()
@@ -111,7 +120,19 @@ def install(name="pymupdf", fetch=None):
     return {"success": True}
 
 
-def _download(url):
+def _download(url, report=None):
+    """The file at `url`; report(done_bytes, total_bytes) as it comes."""
+    from ..net import open_url
     req = urllib.request.Request(url, headers={"User-Agent": "GluonSlides"})
-    with urllib.request.urlopen(req, timeout=120) as res:
-        return res.read()
+    with open_url(req, timeout=60) as res:
+        total = int(res.headers.get("Content-Length") or 0)
+        chunks, done = [], 0
+        while True:
+            chunk = res.read(256 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            done += len(chunk)
+            if report:
+                report(done, total)
+        return b"".join(chunks)

@@ -56,7 +56,8 @@ def _fetch_latest():
         "Accept": "application/vnd.github+json",
         "User-Agent": "GluonSlides-update-check",
     })
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as res:
+    from .net import open_url
+    with open_url(req, timeout=TIMEOUT_S) as res:
         return json.loads(res.read().decode("utf-8"))
 
 

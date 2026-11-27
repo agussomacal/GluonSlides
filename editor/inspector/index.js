@@ -474,6 +474,7 @@ export function initGlInspector() {
         refreshFromState();
     };
     document.addEventListener('editor-rendered', onCanvasChanged);
+    document.addEventListener('project-switched', () => closeGlInspector()); // ui/tabs.js
     document.addEventListener('open-macro-definition', (e) => openMacroDefinition(e.detail.name));
     document.addEventListener('slide-content-changed', onCanvasChanged);
     document.addEventListener('slide-thumbnail-changed', onCanvasChanged);
