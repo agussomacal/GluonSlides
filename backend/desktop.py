@@ -310,7 +310,7 @@ def watch_native_drops(window):
             uris = list(data.get_uris() or []) or (data.get_text() or "").split()
         except Exception:
             uris = []
-        paths = [p for p in _paths_from_uris(uris) if os.path.isfile(p)]
+        paths = [p for p in _paths_from_uris(uris) if os.path.exists(p)]  # folders too (import a talk)
         if paths:
             pending.update(paths=paths, received=time.monotonic())
             deliver()

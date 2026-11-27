@@ -1,6 +1,9 @@
 // ============================================================
 // ui/importTalk.js — "Import talk…": a Beamer .tex, a Slidev slides.md (or a
 // .zip of either), a PowerPoint .pptx or a PDF becomes a new project.
+// Files can be chosen (several at once: a talk split over many files),
+// a folder, or dropped on the dialog; a compiled PDF among them (or next
+// to the main file) is used to check the layout (groundtruth.py).
 //
 // The backend (backend/importers/) converts the file, copies figures into
 // the new project folder and returns slides and elements; this module
@@ -8,28 +11,58 @@
 // bibliography.bib, and opens it like any other project.
 // ============================================================
 
-import { state, whenApiReady, ensureIds, serializeProject, resetProjectState } from '../core/state.js';
+import { state, whenApiReady, ensureIds, serializeProject, resetProjectState, flashSaveIndicator } from '../core/state.js';
 import { openProjectByPath } from './project.js';
 import { escapeHtml } from '../core/render.js';
+import { registerDropZone } from '../editor/fileDrop.js';
 
 const $ = (id) => document.getElementById(id);
-let chosen = { source: '', folder: '' };
+let chosen = { sources: [], folder: '' };
+
+const fileName = (path) => String(path || '').split(/[/\\]/).filter(Boolean).pop() || '';
+const extOf = (path) => (fileName(path).match(/\.(\w+)$/) || [, ''])[1].toLowerCase();
 
 function baseName(path) {
-    return String(path || '').split(/[/\\]/).pop().replace(/\.(tex|zip|pptx|pdf|md)$/i, '').replace(/[_]+/g, ' ').trim();
+    return fileName(path).replace(/\.(tex|zip|pptx|pdf|md)$/i, '').replace(/[_]+/g, ' ').trim();
+}
+
+/** A name for the project: the main-looking file (or the folder / zip). */
+function suggestedName(paths) {
+    const pick = paths.find(p => /\.(zip|pptx)$/i.test(p)) || paths.find(p => !/\.\w+$/.test(fileName(p)))
+        || paths.find(p => /^(main|slides|talk|presentation)\.(tex|md)$/i.test(fileName(p)))
+        || paths.find(p => /\.(tex|md)$/i.test(p)) || paths[0];
+    const name = baseName(pick);
+    return /^(main|slides|talk|presentation)$/i.test(name) && pick.split(/[/\\]/).length > 1
+        ? fileName(pick.slice(0, pick.length - fileName(pick).length)) || name  // its folder's name
+        : name;
+}
+
+function setSources(paths) {
+    const fresh = paths.filter(p => p && !chosen.sources.includes(p));
+    if (!fresh.length) return;
+    chosen.sources = [...chosen.sources, ...fresh];
+    if (!$('import-name').value.trim()) $('import-name').value = suggestedName(chosen.sources);
+    $('import-error').textContent = '';
+    refresh();
 }
 
 function refresh() {
-    const ext = (chosen.source.match(/\.(\w+)$/) || [, ''])[1].toLowerCase();
-    $('import-source').textContent = chosen.source || 'No file chosen';
+    const list = $('import-source');
+    list.innerHTML = chosen.sources.map((p, i) => `
+        <li><span class="import-source-name" title="${escapeHtml(p)}">${/\.\w+$/.test(fileName(p)) ? '📄' : '📁'} ${escapeHtml(fileName(p))}</span>
+        <button class="import-source-remove" data-remove-source="${i}" title="Remove">×</button></li>`).join('');
+    const exts = chosen.sources.map(extOf);
+    const onlyPdf = exts.length > 0 && exts.every(e => e === 'pdf');
+    const source = exts.some(e => ['tex', 'md', 'zip', ''].includes(e));
     $('import-folder').textContent = chosen.folder || 'No folder selected';
-    $('import-pdf-options').hidden = ext !== 'pdf';
+    $('import-pdf-options').hidden = !onlyPdf;
+    $('import-use-pdf-row').hidden = !source;
     const name = $('import-name').value.trim();
-    $('import-go').disabled = !(chosen.source && chosen.folder && name);
+    $('import-go').disabled = !(chosen.sources.length && chosen.folder && name);
 }
 
 export function showImportModal() {
-    chosen = { source: '', folder: '' };
+    chosen = { sources: [], folder: '' };
     $('import-name').value = '';
     $('import-error').textContent = '';
     $('import-warnings').innerHTML = '';
@@ -41,13 +74,35 @@ export function showImportModal() {
 export async function chooseImportSource() {
     const api = await whenApiReady(3000);
     if (!api) return;
-    const res = await api.select_import_file();
-    if (res && res.success && res.path) {
-        chosen.source = res.path;
-        if (!$('import-name').value.trim()) $('import-name').value = baseName(res.path);
-        refresh();
-    }
+    const res = typeof api.select_import_files === 'function' ? await api.select_import_files() : await api.select_import_file();
+    if (res && res.success) setSources(res.paths || (res.path ? [res.path] : []));
 }
+
+export async function chooseImportSourceFolder() {
+    const api = await whenApiReady(3000);
+    if (!api || typeof api.select_import_folder !== 'function') return;
+    const res = await api.select_import_folder();
+    if (res && res.success) setSources(res.paths || []);
+}
+
+const importOpen = () => Boolean($('import-modal') && $('import-modal').classList.contains('show'));
+
+// Files dropped on the window while this dialog is open are the talk to import.
+registerDropZone(importOpen, (items) => {
+    const paths = items.map(it => it.path).filter(Boolean);
+    if (!paths.length) {
+        $('import-error').textContent = 'Their location is unknown here: use “Choose Files...”.';
+        return;
+    }
+    setSources(paths);
+});
+
+document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-remove-source]');
+    if (!b) return;
+    chosen.sources.splice(Number(b.dataset.removeSource), 1);
+    refresh();
+});
 
 export async function chooseImportFolder() {
     const api = await whenApiReady(3000);
@@ -97,11 +152,13 @@ export async function confirmImport() {
     if (!api) return;
     const name = $('import-name').value.trim();
     const pdfMode = (document.querySelector('input[name="import-pdf-mode"]:checked') || {}).value || 'editable';
+    const usePdf = $('import-use-pdf').checked;
+    const source = chosen.sources.length === 1 ? chosen.sources[0] : chosen.sources;
     $('import-error').textContent = '';
     $('import-status').textContent = 'Importing…';
     $('import-go').disabled = true;
     try {
-        let res = await api.import_talk(chosen.source, chosen.folder, name, { pdfMode });
+        let res = await api.import_talk(source, chosen.folder, name, { pdfMode, usePdf });
         if (res && !res.success && res.needs_extra) {
             // PDF import needs an extra component, downloaded once (asked first).
             $('import-status').textContent = '';
@@ -111,22 +168,27 @@ export async function confirmImport() {
                 return;
             }
             $('import-status').textContent = 'Importing…';
-            res = await api.import_talk(chosen.source, chosen.folder, name, { pdfMode });
+            res = await api.import_talk(source, chosen.folder, name, { pdfMode, usePdf });
         }
         if (!res || !res.success) throw new Error((res && res.error) || 'Import failed');
         const path = await buildImportedProject(api, res, name);
         const warnings = res.project.warnings || [];
         $('import-status').textContent = '';
+        const gt = res.project.groundTruth;
+        const opened = async () => {
+            await openProjectByPath(path);
+            if (gt) flashSaveIndicator(`Layout checked against ${gt.pdf} ✓ (${gt.slides} slides)`);
+        };
         if (warnings.length) {
             // Show what to check, then open on "Open project".
             $('import-warnings').innerHTML = `<p>Imported ${res.project.slides.length} slides. Worth checking:</p><ul>${warnings.slice(0, 12).map(w => `<li>${escapeHtml(w)}</li>`).join('')}${warnings.length > 12 ? `<li>… and ${warnings.length - 12} more</li>` : ''}</ul>`;
             $('import-go').textContent = 'Open project';
             $('import-go').disabled = false;
-            $('import-go').onclick = () => { closeImport(); openProjectByPath(path); };
+            $('import-go').onclick = () => { closeImport(); opened(); };
             return;
         }
         closeImport();
-        await openProjectByPath(path);
+        await opened();
     } catch (e) {
         $('import-status').textContent = '';
         $('import-error').textContent = e.message;

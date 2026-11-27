@@ -21,7 +21,7 @@ PROJECT_FILE_TYPES = ("Slide Project Files (*.gl)", "Legacy Projects (*.ssproj;*
 FIGURE_FILE_TYPES = ("Figure Files (*.png;*.jpg;*.jpeg;*.svg;*.pdf;*.eps)", "All Files (*.*)")
 PDF_FILE_TYPES = ("PDF Files (*.pdf)", "All Files (*.*)")
 TABLE_FILE_TYPES = ("Tables (*.csv;*.tsv;*.txt)", "All Files (*.*)")
-IMPORT_FILE_TYPES = ("Talks (*.tex;*.md;*.zip;*.pptx;*.pdf)", "All Files (*.*)")
+IMPORT_FILE_TYPES = ("Talks (*.tex;*.md;*.zip;*.pptx;*.pdf)", "All Files (*.*)")  # several: a split talk + its PDF
 FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
 
@@ -195,8 +195,19 @@ class Api:
         path = dialogs.ask_open(IMPORT_FILE_TYPES)
         return {"success": True, "path": path} if path else _cancelled()
 
+    def select_import_files(self):
+        """Pick the talk's files: one, or all of a talk split over several (and its PDF)."""
+        paths = dialogs.ask_open_many(IMPORT_FILE_TYPES)
+        return {"success": True, "paths": paths} if paths else _cancelled()
+
+    def select_import_folder(self):
+        """Pick the talk's project folder."""
+        path = dialogs.ask_folder()
+        return {"success": True, "paths": [path]} if path else _cancelled()
+
     def import_talk(self, source, parent_folder, name, options=None):
-        """Convert `source` into a new project folder <parent>/<name>/; returns its slides."""
+        """Convert `source` (a path or a list of files / folders) into a new project
+        folder <parent>/<name>/; returns its slides."""
         from . import importers
         return importers.import_talk(source, parent_folder, name, options or {})
 

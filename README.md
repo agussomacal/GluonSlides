@@ -111,7 +111,7 @@ A figure imported from a file elsewhere (**📁 Browse**, dropping or pasting a 
 
 ### Columns
 
-**Columns ▾** in the toolbar adds text in 2–4 columns: one box, each column edited like a text box (Markdown, math, lists, citations, and images with `![](figures/plot.png)`). Double-click a column to edit it (**Tab** / **Shift+Tab**: next / previous column; **Esc** or a click outside: done); drag the handles on the dividers to change the widths, or pick a preset (50/50, 60/40, 30/70...) in the panel, with the gap, a divider line, and each column's horizontal and vertical alignment. Without a font of their own, columns use the project's text font.
+**Text ▾** in the toolbar (its ▾; the button itself adds a text box) has columns: text in 2–4 columns: one box, each column edited like a text box (Markdown, math, lists, citations, and images with `![](figures/plot.png)`). Double-click a column to edit it (**Tab** / **Shift+Tab**: next / previous column; **Esc** or a click outside: done); drag the handles on the dividers to change the widths, or pick a preset (50/50, 60/40, 30/70...) in the panel, with the gap, a divider line, and each column's horizontal and vertical alignment. Without a font of their own, columns use the project's text font.
 
 ```
 .element.columns id:12 x:100 y:200 width:1700 height:600 gap:40 divider:line
@@ -125,7 +125,7 @@ Widths are relative (here 60% / 40% of the space left by the gap). Markdown imag
 
 ### Tables
 
-**Table** in the toolbar adds a table; cells hold Markdown and math. Double-click a cell to edit it (**Tab** / **Shift+Tab**: next / previous cell, and Tab in the last cell adds a row; **Enter**: the cell below; **Esc** or a click outside: done). A click picks the cell the panel works on: add or delete rows and columns there, and style the cell, its row or its column (bold, italics, colour, background, alignment, and a number format for a column such as `%.2f`, `%.3e`, `%.1%`). The table has a header row, borders (horizontal rules as in papers, all, or none), striped rows, a header background and line colour; drag the handles on its top edge to change column widths. **Pasting cells** copied from a spreadsheet makes a table.
+**Text ▾** in the toolbar has three ways to add a table: **Table (draw it)**, drag a box on the slide and get the grid that fits it (a click gives the usual 3×3); **Table from a CSV file…**, linked to the file (below); and **Table from pasted cells…**, a box to paste cells copied from a spreadsheet, a CSV or a Markdown table into. Cells hold Markdown and math. Double-click a cell to edit it (**Tab** / **Shift+Tab**: next / previous cell, and Tab in the last cell adds a row; **Enter**: the cell below; **Esc** or a click outside: done). A click picks the cell the panel works on: add or delete rows and columns there, and style the cell, its row or its column (bold, italics, colour, background, alignment, and a number format for a column such as `%.2f`, `%.3e`, `%.1%`). The table has a header row, borders (horizontal rules as in papers, all, or none), striped rows, a header background and line colour; drag the handles on its top edge to change column widths. **Pasting cells** copied from a spreadsheet makes a table, and so does **dropping a CSV file** on the window: it is linked like below (dropped on a table, that table follows the file).
 
 **Import CSV...** copies a file's cells into the table. **Link CSV...** makes the table follow the file: it is copied into the project's `data/` folder and, like a linked figure, the copy is updated when the original changes (a results file your script rewrites), with ↻ Reload and **Unlink** (keep the cells, stop following). A linked table's cells are edited in the file; its styling is kept when the data changes.
 
@@ -174,16 +174,19 @@ Select several elements (drag a box on empty canvas space, or Ctrl+click) and pr
 
 Here the children live in a 400×200 frame drawn at 800×400, i.e. at 2× scale. Double-click a group to edit its children (Esc or a click outside to finish); **Ctrl+Shift+G** ungroups and bakes the scale into the children.
 
-### Importing a talk (Beamer, PowerPoint, PDF)
+### Importing a talk (Beamer, Slidev, PowerPoint, PDF)
 
-**⬇ Import Talk...** on the start screen turns an existing talk into a new project (in a folder you choose, with the figures copied into `figures/`):
+**⬇ Import Talk...** on the start screen turns an existing talk into a new project (in a folder you choose, with the figures copied into `figures/`). Drop it on the dialog or choose it: the `.zip` (as Overleaf downloads it), the project folder, or **all its files at once**. A talk split over several `.tex` or `.md` files is fine: the main one is found and the others are read from where they are.
+
+**With the compiled PDF.** If the PDF of the talk comes along (in the zip or the folder, next to the main file, or chosen with it), it is used as the ground truth for the layout: slides are paired with its pages (Beamer numbers pages by frame, and the last overlay page of a frame is used), text, columns and tables are moved onto the PDF's text and take its font sizes, figures go where its pictures are, and boxes, formulas and rules move with what they belong to. Only positions and sizes change, never the content; a PDF that isn't this talk is ignored. It needs the PDF component (below). The dialog's *Use the compiled PDF* turns it off.
+
 
 - **Beamer**: the `.tex`, or the `.zip` of the LaTeX project as Overleaf downloads it (the main file is found). Frames become slides with their titles, `\section`s become sections (with section slides if the talk has `\AtBeginSection`), the title page is rebuilt, and the footer's page number and the frame-title bar go on a master slide. Text keeps bold, italics and colours; math stays LaTeX (`align*` becomes `aligned`), and the document's macros (`\newcommand`, `\DeclareMathOperator`) go into `macros.tex` with colour names resolved; `itemize`/`enumerate`, `\includegraphics`, `tcolorbox` and Beamer blocks are converted; `columns` (also nested) become a columns element (separate boxes when a column reveals content step by step) and `tabular` a table element (header and rules from its `\hline`s / `\midrule`s, all borders with `|` in the column spec); `\cite` and the `.bib` are kept. Overlays (`\pause`, `\item<2->`, `\only`, `\onslide`, `\includegraphics<2>`) become build steps; where Beamer *replaces* content, the later version covers the earlier one at the same place. LaTeX's own layout isn't available, so positions are estimated and a frame that is too full is shown smaller: a good draft to tidy, not a pixel copy. TikZ drawings are not converted (a placeholder shows where they were).
 - **Slidev**: the `slides.md` (or the `.zip` of the project). Slidev is Markdown with KaTeX like GluonSlides' text, so text, math, coloured `<span>`s and MDC `[text]{style=...}` are kept as they are. Slides follow `---` and frontmatter, with `src:` pages included and `hide: true` skipped; `# Title` becomes the slide title; `<div class="grid grid-cols-N">` and `layout: two-cols` (`::right::`) become a columns element (or boxes per column when clicks are inside); Markdown tables become tables; `<div class="absolute left-…px bottom-…px">` boxes and `<Arrow>`s are placed exactly (Slidev's 980 × 552 canvas); `<img>` and `background:` become figures; `v-click`, `<v-click>` and `<v-clicks>` become build steps; the last HTML comment of a slide becomes its notes; the KaTeX macros of `setup/katex.ts` go into `macros.tex`. Other Vue components are listed as not converted.
 - **PowerPoint** `.pptx`: text boxes and placeholders (paragraphs, bullet and numbering levels, bold, italics, underline, colours including theme colours, sizes, fonts, alignment, links), pictures (saved into `figures/`), rectangles, rounded rectangles and ovals (fill, outline) with their text, lines and connectors (arrowheads), tables (as table elements, with PowerPoint's header row and banded rows), groups, solid backgrounds, speaker notes, PowerPoint's sections, and click animations (as build steps). The shapes of each slide layout used (a logo, a footer line) become a master slide. Charts, SmartArt and freeform drawings are not converted (a placeholder box, and a warning).
 - **PDF**: three ways, chosen in the dialog. *Editable* (default): text blocks become text boxes (bold, italics, colours, sizes, fonts), rectangles, rounded boxes and ellipses become shapes, lines and polygons become lines and paths, embedded pictures become figures; equations (a PDF doesn't keep their LaTeX) and dense vector drawings such as plots become pictures of that region. *Picture with editable text*: each page as a picture with its text removed, and the text as editable boxes on top. *Pages as pictures*: exact, not editable. In all three, content repeated on most pages (a logo, the footer, the frame-title bar) becomes a master slide, with page numbers as `\slidenumber / \totalslides`, and consecutive pages of one frame (Beamer overlays, `\pause`) become one slide with build steps. PDF import uses PyMuPDF (AGPL-3.0): the app downloads it (about 25 MB, from PyPI, its SHA-256 checked) the first time, after asking; from source, `uv sync --extra pdf`.
 
-The import lists anything worth checking (a figure not found, a very full slide, content that Beamer hides again later).
+The import lists anything worth checking (a figure not found, a very full slide, content that Beamer hides again later, slides not found in the compiled PDF).
 
 ### Arranging: align, guides, layers, lock
 
@@ -307,6 +310,8 @@ A **master slide** holds what every slide shows: a background, a logo, a footer 
 Slides use the first master unless they say `master:none` or `master:Name`.
 
 ### Presenting, builds and speaker notes
+
+**◧** and **◨** at the ends of the toolbar hide the slides pane and the properties pane (**Ctrl+Alt+1**, **Ctrl+Alt+2**), to give the slide the whole window, for instance next to another window; the choice is remembered.
 
 **▶ Present** (top right of the toolbar, or **Shift+F5**) starts the slide show from the current slide; **F5** starts from the first one. It shows exactly what the HTML export shows, full screen. **Esc** returns to the editor on the slide where you stopped.
 
@@ -461,7 +466,7 @@ backend/
   api.py          Api class exposed to JS as pywebview.api
   dialogs.py project_io.py figures.py pdf_export.py
   tables.py         CSV files for tables (import, link, refresh)
-  importers/        Import Talk: beamer.py slidev.py pptx.py pdf.py (+ extras.py)
+  importers/        Import Talk: beamer.py slidev.py pptx.py pdf.py, groundtruth.py (the compiled PDF), extras.py
   desktop.py        system clipboard (Ctrl+V) and dropped file paths
   user_settings.py  recents + inspector settings (~/.config/gluonslides)
   vendor_libs.py    downloads JS/CSS libs listed in dependencies.yaml

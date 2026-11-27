@@ -774,6 +774,152 @@ class PdfImportTest(TempDirTest):
         self.assertTrue(all(len(s["elements"]) == 1 and s["elements"][0]["type"] == "figure" for s in p["slides"]))
 
 
+GT_TEX = r"""\documentclass{beamer}
+\begin{document}
+\begin{frame}{Hello world}
+Alpha beta gamma delta.
+\end{frame}
+\begin{frame}{Second frame}
+\begin{itemize}
+\item Epsilon zeta
+\pause
+\item Theta iota
+\end{itemize}
+\end{frame}
+\end{document}
+"""
+
+
+def build_compiled_pdf(path, unrelated=False):
+    """What pdflatex would give for GT_TEX (16:9, frame page labels 1, 2, 2), drawn by PyMuPDF."""
+    import pymupdf as fz
+    doc = fz.open()
+    W, H = 453.5, 255.1
+    p = doc.new_page(width=W, height=H)
+    p.insert_text((180, 22), "Other things" if unrelated else "Hello world", fontsize=14)
+    p.insert_text((40, 120), "Nothing alike here" if unrelated else "Alpha beta gamma delta.", fontsize=10)
+    for items in (["Epsilon zeta"], ["Epsilon zeta", "Theta iota"]):
+        p = doc.new_page(width=W, height=H)
+        p.insert_text((170, 22), "Second frame", fontsize=14)
+        for k, item in enumerate(items):
+            p.insert_text((50, 100 + 30 * k), item, fontsize=10)
+    doc.set_page_labels([{"startpage": 0, "prefix": "", "style": "D", "firstpagenum": 1},
+                         {"startpage": 1, "prefix": "", "style": "D", "firstpagenum": 2},
+                         {"startpage": 2, "prefix": "", "style": "D", "firstpagenum": 2}])
+    doc.save(path)
+    return path
+
+
+class ImportSourcesTest(TempDirTest):
+    """Several files, folders, a zip: which file is the talk (backend/importers/__init__.py)."""
+
+    def setUp(self):
+        super().setUp()
+        from backend.importers import resolve_sources
+        self.resolve = resolve_sources
+
+    def write(self, rel, text="x"):
+        p = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(text)
+        return p
+
+    def test_split_tex_files_find_the_main_one(self):
+        part = self.write("talk/sections/intro.tex", "\\begin{frame}{Intro}\\end{frame}")
+        main = self.write("talk/main.tex", GT_TEX.replace("\\begin{document}", "\\begin{document}\\input{sections/intro}"))
+        self.assertEqual(self.resolve([part, main])["path"], main)
+        self.assertEqual(self.resolve([os.path.join(self.tmp, "talk")])["path"], main)  # a folder
+
+    def test_only_parts_says_what_is_missing(self):
+        part = self.write("talk/sections/intro.tex", "\\begin{frame}{Intro}\\end{frame}")
+        self.assertIn("main one", self.resolve([part])["error"] if "error" in self.resolve([part]) else self.resolve([part, part])["error"])
+
+    def test_slidev_entry_among_md_files(self):
+        page = self.write("deck/pages/extra.md", "# More")
+        entry = self.write("deck/slides.md", "---\ntheme: default\n---\n# Hi")
+        self.assertEqual(self.resolve([page, entry])["path"], entry)
+
+    def test_compiled_pdf_candidates(self):
+        main = self.write("talk/talk.tex", GT_TEX)
+        self.write("talk/figures/plot.pdf")   # a figure: never the talk
+        other = self.write("talk/handout.pdf")
+        same = self.write("talk/talk.pdf")
+        got = self.resolve(main)
+        self.assertEqual(got["pdfs"], [same, other])  # the one named like the .tex first
+        self.assertEqual(self.resolve([main, other])["pdfs"][0], other)  # given along: before the rest
+
+
+class GroundTruthTest(TempDirTest):
+    """A compiled PDF given with the source corrects the layout (backend/importers/groundtruth.py)."""
+
+    def setUp(self):
+        super().setUp()
+        try:
+            import pymupdf  # noqa: F401
+        except ImportError:
+            self.skipTest("PyMuPDF not installed (uv sync --extra pdf)")
+        from backend.importers import import_talk
+        self.import_talk = import_talk
+        os.makedirs(os.path.join(self.tmp, "src"))
+        self.tex = os.path.join(self.tmp, "src", "talk.tex")
+        with open(self.tex, "w") as f:
+            f.write(GT_TEX)
+
+    def run_import(self, source, name, **opts):
+        res = self.import_talk(source, self.tmp, name, opts)
+        self.assertTrue(res["success"], res)
+        return res
+
+    def text(self, project, slide, words):
+        return next(e for e in project["slides"][slide]["elements"] if e["type"] == "text" and words in e["content"])
+
+    def test_without_a_pdf_nothing_changes(self):
+        res = self.run_import(self.tex, "Plain")
+        self.assertEqual(res["ground_truth"], "")
+        self.assertNotIn("groundTruth", res["project"])
+
+    def test_the_pdf_places_text_and_fixes_the_aspect_ratio(self):
+        plain = self.run_import(self.tex, "Plain")["project"]
+        pdf = build_compiled_pdf(os.path.join(self.tmp, "src", "talk.pdf"))
+        res = self.run_import([self.tex, pdf], "Checked")
+        p = res["project"]
+        self.assertEqual(res["ground_truth"], "talk.pdf")
+        self.assertEqual(p["groundTruth"]["slides"], 2)
+        self.assertEqual((p["width"], p["height"]), (1280, 720))  # the PDF is 16:9, not Beamer's default 4:3
+        k = p["width"] / 453.5
+        alpha = self.text(p, 0, "Alpha")
+        self.assertLess(abs(alpha["y"] - (120 - 9) * k), 30, alpha)  # where the PDF has it
+        self.assertLess(abs(alpha["x"] - 40 * k), 15, alpha)
+        self.assertNotEqual(self.text(plain, 0, "Alpha")["y"], alpha["y"])
+        items = self.text(p, 1, "Theta")
+        self.assertLess(abs(items["y"] - (100 - 9) * k), 30, items)
+        # it reaches the second item: only on the frame's last overlay page
+        self.assertGreater(items["y"] + items["height"], 130 * k, items)
+        self.assertEqual(alpha["content"], self.text(plain, 0, "Alpha")["content"])  # content untouched
+
+    def test_a_pdf_next_to_the_tex_is_used(self):
+        build_compiled_pdf(os.path.join(self.tmp, "src", "talk.pdf"))
+        self.assertEqual(self.run_import(self.tex, "Next")["ground_truth"], "talk.pdf")
+        self.assertEqual(self.run_import(self.tex, "Off", usePdf=False)["ground_truth"], "")
+
+    def test_a_pdf_of_another_talk_is_ignored(self):
+        plain = self.run_import(self.tex, "Plain")["project"]
+        pdf = build_compiled_pdf(os.path.join(self.tmp, "other.pdf"), unrelated=True)
+        res = self.run_import([self.tex, pdf], "Other")
+        self.assertEqual(res["ground_truth"], "")
+        self.assertEqual(self.text(res["project"], 0, "Alpha")["y"], self.text(plain, 0, "Alpha")["y"])
+
+    def test_in_a_zip(self):
+        import zipfile
+        pdf = build_compiled_pdf(os.path.join(self.tmp, "talk.pdf"))
+        z = os.path.join(self.tmp, "talk.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.write(self.tex, "talk.tex")
+            zf.write(pdf, "talk.pdf")
+        self.assertEqual(self.run_import(z, "Zipped")["ground_truth"], "talk.pdf")
+
+
 class ExtrasTest(TempDirTest):
     """The PDF component download (backend/importers/extras.py), with a fake download."""
 

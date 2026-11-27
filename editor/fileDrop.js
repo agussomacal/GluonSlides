@@ -133,7 +133,7 @@ export function initFileDrop(insert) {
     window.addEventListener('dragover', (e) => {
         if (textFieldDrop(e)) return;
         e.preventDefault();
-        const ok = editorActive();
+        const ok = editorActive() || Boolean(activeZone());
         if (e.dataTransfer) e.dataTransfer.dropEffect = ok ? 'copy' : 'none';
         document.body.classList.toggle('file-drag-over', ok);
     });
@@ -145,8 +145,13 @@ export function initFileDrop(insert) {
         if (textFieldDrop(e)) return;
         e.preventDefault(); // never let the window open what was dropped
         const dt = e.dataTransfer;
-        if (!dt || !editorActive()) return;
+        const zone = activeZone();
+        if (!dt || (!zone && !editorActive())) return;
         const items = await droppedItems(dt);
+        if (zone) {
+            if (items.length) zone.onDrop(items);
+            return;
+        }
         if (!items.length) {
             if (webAddress(dt)) flashSaveIndicator('Images from a web page: copy the image and paste it with Ctrl+V');
             return;
@@ -158,10 +163,30 @@ export function initFileDrop(insert) {
     // get no files): paths and the drop point in page pixels.
     window.gluonNativeDrop = (paths, x, y) => {
         document.body.classList.remove('file-drag-over');
-        if (!editorActive() || !Array.isArray(paths) || !paths.length) return;
+        if (!Array.isArray(paths) || !paths.length) return;
         const items = paths.map(path => ({ name: baseName(path), path }));
+        const zone = activeZone();
+        if (zone) {
+            zone.onDrop(items);
+            return;
+        }
+        if (!editorActive()) return;
         importDropped(items, insert, document.elementFromPoint(x, y), slidePoint(x, y));
     };
+}
+
+// ---------- Drop zones (e.g. the Import dialog) ----------
+
+const zones = [];
+
+/** While `isActive()`, files dropped on the window go to `onDrop(items)`
+ *  ([{ name, path?, file? }]) instead of the slide. */
+export function registerDropZone(isActive, onDrop) {
+    zones.push({ isActive, onDrop });
+}
+
+function activeZone() {
+    return zones.find(z => z.isActive()) || null;
 }
 
 // The same drop can arrive twice (page event and backend): once per file name.

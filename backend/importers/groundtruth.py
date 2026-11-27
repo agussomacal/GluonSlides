@@ -1,0 +1,335 @@
+"""The compiled PDF of an imported talk as ground truth for its layout.
+
+The Beamer / Slidev converters guess where things go from the source; the
+PDF the author compiled shows where they really are. align_with_pdf()
+takes an import result (model.py) and that PDF and:
+
+  - matches slides to pages: Beamer numbers pages by frame (page labels),
+    so a frame's overlay pages share a label and the last one (everything
+    uncovered) is used; then slides and frames are paired in order by
+    their words, allowing for slides or pages the other side doesn't have;
+  - fixes the slide size when the PDF's aspect ratio differs;
+  - places each text (and columns / table) element on the PDF text blocks
+    holding its words, with the font size found there;
+  - places figures on the page's images of the same shape, in order;
+  - moves boxes (shapes) with the text they contain.
+
+Content is never changed, only positions and sizes; anything not found in
+the PDF keeps the converter's layout. Returns False (and changes nothing)
+when the PDF does not look like this talk.
+"""
+
+import re
+from statistics import median
+
+from . import extras
+
+WORD = re.compile(r"[^\W\d_]{2,}|\d{2,}", re.UNICODE)
+MIN_SLIDE_MATCH = 0.35  # share of a slide's words found on its page
+MIN_BLOCK_SHARE = 0.6   # share of a block's words that belong to the element
+MIN_ELEMENT_COVER = 0.5  # share of the element's words found in its blocks
+TEXT_TYPES = ("text", "columns", "table")
+
+
+# ---------- words ----------
+
+def _strip_source(text):
+    """Markdown / LaTeX source -> the words a reader sees."""
+    t = re.sub(r"\$\$.*?\$\$|\$[^$]*\$", " ", text, flags=re.S)       # math (rendered as glyphs)
+    t = re.sub(r"\\(cite|ref|label|eqref|url|includegraphics)\*?(\[[^\]]*\])?\{[^}]*\}", " ", t)
+    t = re.sub(r"\\[A-Za-z]+\*?", " ", t)                              # other commands: keep their arguments
+    t = re.sub(r"</?(?!https?:|mailto:)[A-Za-z][^>]*>|!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)", " ", t)  # html tags (not <https://…>), images, link targets
+    t = re.sub(r"[<>]", " ", t)
+    return t
+
+
+def words(text):
+    return [w.lower() for w in WORD.findall(text or "")]
+
+
+def element_source(el):
+    if el.get("type") == "text":
+        return el.get("content") or ""
+    if el.get("type") == "columns":
+        return "\n".join(c.get("content") or "" for c in el.get("columns") or [])
+    if el.get("type") == "table":
+        return "\n".join(" ".join(r) for r in el.get("rows") or [])
+    return ""
+
+
+def element_words(el):
+    return set(words(_strip_source(element_source(el))))
+
+
+def slide_words(slide):
+    out = set(words(_strip_source(slide.get("title") or "")))
+    for el in slide.get("elements") or []:
+        out |= element_words(el)
+    return out
+
+
+# ---------- the PDF ----------
+
+class Page:
+    """Text blocks and images of one PDF page, in slide pixels."""
+
+    def __init__(self, page, scale):
+        self.blocks = []
+        for b in page.get_text("dict")["blocks"]:
+            if b.get("type") != 0:
+                continue
+            spans = [s for line in b["lines"] for s in line["spans"] if s["text"].strip()]
+            text = " ".join(s["text"] for s in spans)
+            ws = set(words(text))
+            if not ws:
+                continue
+            chars = {}
+            for sp in spans:
+                k = round(sp["size"], 1)
+                chars[k] = chars.get(k, 0) + len(sp["text"].strip())
+            self.blocks.append({"box": [v * scale for v in b["bbox"]], "words": ws,
+                                "size": max(chars, key=chars.get) * scale})
+        self.images = []
+        area = page.rect.width * page.rect.height
+        for im in page.get_image_info():
+            x0, y0, x1, y1 = im["bbox"]
+            if (x1 - x0) * (y1 - y0) > 0.01 * area:
+                self.images.append([x0 * scale, y0 * scale, x1 * scale, y1 * scale])
+        self.words = set().union(*(b["words"] for b in self.blocks)) if self.blocks else set()
+
+
+def frame_pages(doc):
+    """The page index showing each frame complete: the last page of each run
+    of equal page labels (Beamer overlays), or every page."""
+    labels = []
+    for i in range(doc.page_count):
+        try:
+            labels.append(doc[i].get_label() or "")
+        except Exception:
+            labels.append("")
+    if not any(labels):
+        return list(range(doc.page_count))
+    out = []
+    for i, lab in enumerate(labels):
+        if i + 1 < len(labels) and labels[i + 1] == lab and lab:
+            continue
+        out.append(i)
+    return out
+
+
+def pair_slides(slide_sets, page_sets):
+    """Pairs slides with pages in order, maximising the words they share
+    (either side may have extra ones): [(slide index, page index, score)]."""
+    n, m = len(slide_sets), len(page_sets)
+    sim = [[(len(s & p) / len(s)) if s else 0.0 for p in page_sets] for s in slide_sets]
+    best = [[0.0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n - 1, -1, -1):
+        for j in range(m - 1, -1, -1):
+            take = sim[i][j] + best[i + 1][j + 1] if sim[i][j] >= MIN_SLIDE_MATCH else -1
+            best[i][j] = max(take, best[i + 1][j], best[i][j + 1])
+    pairs, i, j = [], 0, 0
+    while i < n and j < m:
+        if sim[i][j] >= MIN_SLIDE_MATCH and best[i][j] == sim[i][j] + best[i + 1][j + 1]:
+            pairs.append((i, j, sim[i][j]))
+            i, j = i + 1, j + 1
+        elif best[i][j] == best[i + 1][j]:
+            i += 1
+        else:
+            j += 1
+    return pairs
+
+
+# ---------- placing ----------
+
+def _union(boxes):
+    return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
+
+
+def _inside(inner, outer, slack=4):
+    return (inner["x"] >= outer["x"] - slack and inner["y"] >= outer["y"] - slack
+            and inner["x"] + inner["width"] <= outer["x"] + outer["width"] + slack
+            and inner["y"] + inner["height"] <= outer["y"] + outer["height"] + slack)
+
+
+def place_text(elements, page, W, H):
+    """Moves text-like elements onto their blocks; returns {id(el): (dx, dy)} moved."""
+    texts = [(el, element_words(el)) for el in elements if el.get("type") in TEXT_TYPES]
+    texts = [(el, ws) for el, ws in texts if ws]
+    owner = {}  # block index -> element
+    for bi, b in enumerate(page.blocks):
+        best, best_key = None, None
+        for el, ws in texts:
+            inter = len(ws & b["words"])
+            if inter / len(b["words"]) < MIN_BLOCK_SHARE:
+                continue
+            centre = el.get("y", 0) + el.get("height", 0) / 2
+            key = (inter, -abs(centre - (b["box"][1] + b["box"][3]) / 2))
+            if best_key is None or key > best_key:
+                best, best_key = el, key
+        if best is not None:
+            owner[bi] = best
+    moved = {}
+    for el, ws in texts:
+        blocks = [page.blocks[bi] for bi, o in owner.items() if o is el]
+        if not blocks or len(ws & set().union(*(b["words"] for b in blocks))) / len(ws) < MIN_ELEMENT_COVER:
+            continue
+        x0, y0, x1, y1 = _union([b["box"] for b in blocks])
+        fs = median([b["size"] for b in blocks])
+        before = (el["x"], el["y"])
+        kind = el.get("type")
+        if kind == "text" and (not el.get("fontSize") or abs(fs - el["fontSize"]) > 0.15 * el["fontSize"]):
+            el["fontSize"] = round(fs)
+        size = el.get("fontSize") or fs
+        pad = 0.15 * size
+        align = el.get("textAlign") or el.get("align") or "left"
+        w = el.get("width", 0)
+        if kind == "table":
+            w = max(w, x1 - x0 + 2 * pad)  # cells with only math have no words: never narrower
+        w = min(w, W)
+        # across: the text's own alignment decides which edge (or the centre) is kept
+        if kind == "text" and align == "center":
+            x = (x0 + x1) / 2 - w / 2
+        elif kind == "text" and align == "right":
+            x = x1 + pad - w
+        else:
+            x = x0 - pad
+            if x + w > W:
+                w = W - x  # narrower rather than moved off its margin
+        if kind == "columns":
+            x = el.get("x", 0)  # the first block found may be in any column: only move down
+        x = max(0, min(W - w, x))
+        # down: vertically centred text (a title in its box) keeps its box, centred on the PDF's
+        if kind == "text" and el.get("verticalAlign") == "center":
+            h = el.get("height", 0)
+            y = (y0 + y1) / 2 - h / 2
+        else:
+            y = y0 - pad
+            h = max(el.get("height", 0), y1 - y0 + 2 * pad, 1.2 * size)
+        y = max(0, min(H - h, y))
+        el["x"], el["y"], el["width"], el["height"] = round(x), round(y), round(w), round(min(h, H))
+        moved[id(el)] = (el["x"] - before[0], el["y"] - before[1])
+    return moved
+
+
+def place_figures(elements, page):
+    """Figures onto page images of a similar shape, in reading order."""
+    figs = sorted((el for el in elements if el.get("type") == "figure" and el.get("width") and el.get("height")),
+                  key=lambda e: (e["y"], e["x"]))
+    images = sorted(page.images, key=lambda b: (b[1], b[0]))
+    used, n = set(), 0
+    placed = {}
+    for el in figs:
+        key = (el["x"], el["y"], el["width"], el["height"])
+        if key in placed:  # a figure that replaces another on a later step: same place
+            el["x"], el["y"], el["width"], el["height"] = placed[key]
+            continue
+        ratio = el["width"] / el["height"]
+        for k, b in enumerate(images):
+            if k in used:
+                continue
+            w, h = b[2] - b[0], b[3] - b[1]
+            if h > 0 and abs(w / h - ratio) / ratio < 0.25:
+                used.add(k)
+                placed[key] = (round(b[0]), round(b[1]), round(w), round(h))
+                el["x"], el["y"], el["width"], el["height"] = placed[key]
+                n += 1
+                break
+    return n
+
+
+def follow_text(elements, moved, before):
+    """Boxes (shapes) that held a moved text element move with it."""
+    for el in elements:
+        if el.get("type") != "shape" or id(el) in moved:
+            continue
+        box = before.get(id(el))
+        for other in elements:
+            if id(other) in moved and box and _inside(before[id(other)], box):
+                dx, dy = moved[id(other)]
+                el["x"] += dx
+                el["y"] += dy
+                break
+
+
+def follow_above(elements, moved, before):
+    """Elements with no words to match (formulas, unmatched figures) keep
+    their place under the nearest moved element above them in the same
+    column: they move down (or up) with it."""
+    anchors = [el for el in elements if id(el) in moved]
+    for el in elements:
+        if id(el) in moved or (el.get("x"), el.get("y")) != (before[id(el)]["x"], before[id(el)]["y"]):
+            continue  # placed already (or moved with its text)
+        b = before[id(el)]
+        best = None
+        for a in anchors:
+            ab = before[id(a)]
+            overlap = min(ab["x"] + ab["width"], b["x"] + b["width"]) - max(ab["x"], b["x"])
+            if ab["y"] <= b["y"] and overlap > 0.3 * min(ab["width"], b["width"]) and (best is None or ab["y"] > before[id(best)]["y"]):
+                best = a
+        if best is not None:
+            el["y"] = max(0, el["y"] + moved[id(best)][1])
+            moved[id(el)] = (0, moved[id(best)][1])
+
+
+def rescale_height(result, new_h):
+    """The PDF has another aspect ratio: the slide height follows it."""
+    old_h = result.get("height") or new_h
+    k = new_h / old_h
+    for s in (result.get("slides") or []) + (result.get("masters") or []):
+        for el in s.get("elements") or []:
+            if "y" in el:
+                el["y"] = round(el["y"] * k)
+            if "height" in el:
+                el["height"] = round(el["height"] * k)
+    result["height"] = new_h
+
+
+# ---------- all together ----------
+
+def align_with_pdf(result, pdf_path, folder=None):
+    fitz = extras.load_pymupdf()
+    if fitz is None:
+        return False
+    slides = result.get("slides") or []
+    with fitz.open(pdf_path) as doc:
+        if doc.page_count == 0 or doc.page_count < 0.6 * len(slides):
+            return False
+        rect = doc[0].rect
+        if rect.width <= rect.height:
+            return False  # a portrait page: an article / a figure, not slides
+        W = result.get("width") or 1920
+        scale = W / rect.width
+        pages = [Page(doc[i], scale) for i in frame_pages(doc)]
+    pairs = pair_slides([slide_words(s) for s in slides], [p.words for p in pages])
+    worded = [s for s in slides if slide_words(s)]
+    if not pairs or len(pairs) < 0.6 * len(worded):
+        return False  # not this talk
+
+    new_h = round(rect.height * scale)
+    if abs(new_h - (result.get("height") or new_h)) > 0.02 * new_h:
+        rescale_height(result, new_h)
+    H = result["height"] if result.get("height") else new_h
+
+    texts = figures = 0
+    for si, pi, _score in pairs:
+        elements = slides[si].get("elements") or []
+        before = {id(el): {k: el.get(k, 0) for k in ("x", "y", "width", "height")} for el in elements}
+        moved = place_text(elements, pages[pi], W, H)
+        texts += len(moved)
+        n = place_figures(elements, pages[pi])
+        figures += n
+        for el in elements:  # placed figures are anchors too
+            if el.get("type") == "figure" and (el["x"], el["y"]) != (before[id(el)]["x"], before[id(el)]["y"]):
+                moved[id(el)] = (el["x"] - before[id(el)]["x"], el["y"] - before[id(el)]["y"])
+        follow_text(elements, moved, before)  # boxes around moved text first
+        follow_above(elements, moved, before)  # then formulas, rules, the rest
+
+    paired = {si for si, _pi, _s in pairs}
+    missing = [s.get("title") or f"slide {i + 1}" for i, s in enumerate(slides) if i not in paired and slide_words(s)]
+    name = pdf_path.replace("\\", "/").split("/")[-1]
+    result["groundTruth"] = {"pdf": name, "slides": len(pairs), "texts": texts, "figures": figures}
+    if missing:
+        shown = ", ".join(f"“{t}”" for t in missing[:5]) + (" …" if len(missing) > 5 else "")
+        result.setdefault("warnings", []).append(
+            f"Not found in {name} (layout as converted): {shown}")
+    return True

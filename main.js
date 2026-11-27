@@ -26,7 +26,7 @@ import { initFileDrop } from './editor/fileDrop.js';
 import { startTableSync } from './elements/table/table.js';
 import { initPanes, togglePane } from './ui/panes.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
-import { showImportModal, chooseImportSource, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
+import { showImportModal, chooseImportSource, chooseImportSourceFolder, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
 import {
     renderEditor, renameCurrentSlide, groupSelected, ungroupSelected, enterSelectedGroup, leaveGroup,
@@ -57,6 +57,7 @@ const clickActions = {
     'import-talk': showImportModal,
     'toggle-pane': togglePane,
     'import-choose-source': chooseImportSource,
+    'import-choose-source-folder': chooseImportSourceFolder,
     'import-choose-folder': chooseImportFolder,
     'import-go': () => { if (!document.getElementById('import-go').onclick) confirmImport(); },
     'create-project': confirmCreateProject,

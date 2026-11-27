@@ -2,10 +2,13 @@
 
     import_talk(source, parent_folder, name, options)
 
-source: a Beamer .tex, a .zip of a LaTeX project (Overleaf's download),
-a PowerPoint .pptx, or a .pdf. Creates <parent>/<name>/ with figures/
-(copied), macros.tex and bibliography.bib, and returns the slides (see
-model.py); the page builds the project from them and writes the .gl.
+source: a Beamer .tex, a Slidev .md, a .zip of either project (Overleaf's
+download), a PowerPoint .pptx, or a .pdf; or several of those paths at
+once, folders included (a talk split over many .tex / .md files: the
+main one is found, the others are read from where they are). Creates
+<parent>/<name>/ with figures/ (copied), macros.tex and bibliography.bib,
+and returns the slides (see model.py); the page builds the project from
+them and writes the .gl.
 """
 
 import os
@@ -33,13 +36,104 @@ def _safe_extract(zf, dest):
             shutil.copyfileobj(src, out)
 
 
+def _is_main_tex(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return False
+    return "\\documentclass" in text and "\\begin{document}" in text
+
+
+def _slidev_entry(mds):
+    """The Slidev entry among .md files: slides.md (or the usual names), else one with a front matter."""
+    for name in ("slides.md", "presentation.md", "index.md"):
+        for p in mds:
+            if os.path.basename(p).lower() == name:
+                return p
+    for p in mds:
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                if f.read(4) == "---\n":
+                    return p
+        except OSError:
+            continue
+    return mds[0] if mds else None
+
+
+def resolve_sources(source):
+    """What to import from `source` (a path, or a list of files / folders):
+    {"path": file to convert, "ext": its kind, "pdfs": candidate compiled
+    PDFs of it (given along, or next to the main .tex / .md)} or {"error"}.
+    A .zip stays a .zip (extracted later)."""
+    paths = [source] if isinstance(source, str) else [p for p in (source or []) if p]
+    if not paths:
+        return {"error": "Choose the talk to import."}
+    missing = [p for p in paths if not os.path.exists(p)]
+    if missing:
+        return {"error": f"File not found: {missing[0]}"}
+    files = [p for p in paths if os.path.isfile(p)]
+    folders = [p for p in paths if os.path.isdir(p)]
+    by_ext = lambda e: [p for p in files if p.lower().endswith(e)]
+    pdfs = by_ext(".pdf")
+
+    def with_pdf(main, ext):
+        """Candidate compiled PDFs of the talk, best first: given along, or
+        next to the main file (not in subfolders: those are figures). The
+        ground-truth step checks they really are the talk."""
+        stem = os.path.splitext(os.path.basename(main))[0].lower()
+        here = os.path.dirname(main)
+        near = sorted(os.path.join(here, f) for f in os.listdir(here) if f.lower().endswith(".pdf"))
+        cands = []
+        for p in pdfs + near:
+            if p not in cands:
+                cands.append(p)
+        # given along first, then the one named like the talk
+        cands.sort(key=lambda p: (p not in pdfs, os.path.splitext(os.path.basename(p))[0].lower() not in (stem, "slides-export")))
+        return {"path": main, "ext": ext, "pdfs": cands}
+
+    # one file: as it is (a lone PDF is the talk itself)
+    if len(paths) == 1 and files:
+        ext = os.path.splitext(files[0])[1].lower()
+        if ext not in SUPPORTED:
+            return {"error": "Choose a Beamer .tex, a Slidev .md (or a .zip of either), a .pptx or a .pdf."}
+        if ext == ".tex":
+            return with_pdf(files[0], ext) if _is_main_tex(files[0]) else {"path": files[0], "ext": ext, "pdfs": []}
+        if ext == ".md":
+            return with_pdf(files[0], ext)
+        return {"path": files[0], "ext": ext, "pdfs": []}
+
+    # several files, or folders: the main .tex, else the Slidev entry, else a zip / pptx / pdf
+    from .beamer import find_main_tex
+    from .slidev import find_entry
+    mains = [p for p in by_ext(".tex") if _is_main_tex(p)]
+    for folder in folders:
+        m = find_main_tex(folder)
+        if m:
+            mains.append(m)
+    if mains:
+        return with_pdf(mains[0], ".tex")
+    entry = _slidev_entry(by_ext(".md"))
+    for folder in folders:
+        entry = entry or find_entry(folder)
+    if entry:
+        return with_pdf(entry, ".md")
+    for ext in (".zip", ".pptx", ".pdf"):
+        found = by_ext(ext)
+        if found:
+            return {"path": found[0], "ext": ext, "pdfs": []}
+    if by_ext(".tex"):
+        return {"error": "None of these .tex files is the main one (with \\documentclass and \\begin{document}): add it too."}
+    return {"error": "No talk found there: a Beamer .tex, a Slidev slides.md, a .zip, a .pptx or a .pdf."}
+
+
 def import_talk(source, parent_folder, name, options=None):
     options = options or {}
-    ext = os.path.splitext(source or "")[1].lower()
-    if ext not in SUPPORTED:
-        return {"success": False, "error": "Choose a Beamer .tex, a Slidev .md (or a .zip of either), a .pptx or a .pdf."}
-    if not os.path.isfile(source):
-        return {"success": False, "error": f"File not found: {source}"}
+    found = resolve_sources(source)
+    if found.get("error"):
+        return {"success": False, "error": found["error"]}
+    source, ext = found["path"], found["ext"]
+    ground_truth = found.get("pdfs", []) if options.get("usePdf", True) else []
     target = os.path.join(parent_folder or "", "".join(c for c in name if c.isalnum() or c in (" ", "-", "_")).strip() or "Presentation")
     if os.path.isdir(target) and os.listdir(target):
         return {"success": False, "error": "A folder with this name already exists there: choose another name."}
@@ -47,6 +141,7 @@ def import_talk(source, parent_folder, name, options=None):
     if not paths.get("success"):
         return paths
     folder = paths["folder"]
+    ground_truth_used = ""
     try:
         if ext in (".tex", ".zip", ".md"):
             from .beamer import find_main_tex, import_beamer
@@ -55,15 +150,19 @@ def import_talk(source, parent_folder, name, options=None):
                 with tempfile.TemporaryDirectory(prefix="gluon-import-") as tmp:
                     with zipfile.ZipFile(source) as zf:
                         _safe_extract(zf, tmp)
-                    main = find_main_tex(tmp)
-                    entry = None if main else find_entry(tmp)
-                    if not main and not entry:
+                    inner = resolve_sources([tmp])
+                    if inner.get("error") or inner["ext"] not in (".tex", ".md"):
                         return {"success": False, "error": "No LaTeX document (\\documentclass ... \\begin{document}) or Slidev slides.md in the zip."}
-                    result = import_beamer(main, folder, linked=False) if main else import_slidev(entry, folder, linked=False)
+                    pdf = inner.get("pdfs", []) if options.get("usePdf", True) else []
+                    result = (import_beamer(inner["path"], folder, linked=False) if inner["ext"] == ".tex"
+                              else import_slidev(inner["path"], folder, linked=False))
+                    ground_truth_used = _apply_ground_truth(result, pdf, folder)
             elif ext == ".md":
                 result = import_slidev(source, folder)
+                ground_truth_used = _apply_ground_truth(result, ground_truth, folder)
             else:
                 result = import_beamer(source, folder, linked=True)
+                ground_truth_used = _apply_ground_truth(result, ground_truth, folder)
         elif ext == ".pptx":
             from .pptx import import_pptx
             result = import_pptx(source, folder)
@@ -83,4 +182,28 @@ def import_talk(source, parent_folder, name, options=None):
         return {"success": False, "error": f"Could not import {os.path.basename(source)}: {type(e).__name__}: {e}"}
     if not result.get("slides"):
         return {"success": False, "error": "No slides were found in that file."}
-    return {"success": True, "path": paths["path"], "folder": folder, "project": result}
+    out = {"success": True, "path": paths["path"], "folder": folder, "project": result, "source": source}
+    if ext in (".tex", ".md", ".zip"):
+        out["ground_truth"] = ground_truth_used
+    return out
+
+
+def _apply_ground_truth(result, pdfs, folder):
+    """Corrects the converted slides with the compiled PDF (see groundtruth.py).
+    Returns the PDF's name when it was used, "" when there was none, or why not."""
+    if not pdfs or not result.get("slides"):
+        return ""
+    from . import extras
+    if extras.load_pymupdf() is None:
+        result.setdefault("warnings", []).append(
+            f"{os.path.basename(pdfs[0])} was not used to check the layout: that needs the PDF component (import a PDF once to get it).")
+        return "needs-pymupdf"
+    from .groundtruth import align_with_pdf
+    for pdf in pdfs:
+        try:
+            if align_with_pdf(result, pdf, folder):
+                return os.path.basename(pdf)
+        except Exception as e:  # never lose the import for this
+            result.setdefault("warnings", []).append(f"Could not compare with {os.path.basename(pdf)}: {type(e).__name__}: {e}")
+            return "failed"
+    return ""

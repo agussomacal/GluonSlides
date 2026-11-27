@@ -28,6 +28,12 @@ def ask_open(file_types):
     return ask_path(webview.OPEN_DIALOG, allow_multiple=False, file_types=file_types)
 
 
+def ask_open_many(file_types):
+    """Several files at once (a talk split over many files): a list, empty if cancelled."""
+    result = webview.windows[0].create_file_dialog(webview.OPEN_DIALOG, allow_multiple=True, file_types=file_types)
+    return [p for p in (result or []) if p]
+
+
 def ask_save(default_filename, file_types, start_dir=None):
     return ask_path(
         webview.SAVE_DIALOG,

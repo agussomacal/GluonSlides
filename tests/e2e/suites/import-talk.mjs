@@ -41,9 +41,10 @@ async function start(behaviour) {
         const ok = (o = {}) => Promise.resolve({ success: true, ...o });
         window.pywebview = { api: {
             select_import_file: () => ok({ path: behaviour.source }),
+            ...(behaviour.sources ? { select_import_files: () => ok({ paths: behaviour.sources }) } : {}),
             select_folder: () => ok({ path: '/home/me/talks' }),
             import_talk: (source, folder, name, options) => {
-                window.__calls.push(['import', source, folder, name, options.pdfMode]);
+                window.__calls.push(['import', source, folder, name, options.pdfMode, options.usePdf]);
                 attempts += 1;
                 if (behaviour.error) return Promise.resolve({ success: false, error: behaviour.error });
                 if (behaviour.needsExtra && attempts === 1) {
@@ -51,6 +52,7 @@ async function start(behaviour) {
                 }
                 const p = JSON.parse(JSON.stringify(project));
                 if (behaviour.warnings) p.warnings = behaviour.warnings;
+                if (behaviour.groundTruth) p.groundTruth = behaviour.groundTruth;
                 return ok({ path: `${folder}/${name}/${name}.gl`, folder: `${folder}/${name}`, project: p });
             },
             install_extra: (name) => { window.__calls.push(['install', name]); return ok(); },
@@ -83,7 +85,7 @@ check('…and with a folder, Import is enabled', !(await page.isDisabled('#impor
 await page.click('#import-go');
 await page.waitForTimeout(800);
 const calls = await page.evaluate(() => window.__calls);
-check('the backend is asked to import into <folder>/<name>', JSON.stringify(calls[0]) === JSON.stringify(['import', '/home/me/Downloads/Natural_Gradient.zip', '/home/me/talks', 'Natural Gradient', 'editable']));
+check('the backend is asked to import into <folder>/<name>', JSON.stringify(calls[0]) === JSON.stringify(['import', '/home/me/Downloads/Natural_Gradient.zip', '/home/me/talks', 'Natural Gradient', 'editable', true]));
 check('the project opens in the editor', await page.isVisible('#editor-view.active'));
 const st = await page.evaluate(async () => JSON.parse(JSON.stringify((await import('/core/state.js')).state, (k, v) => (k.startsWith('_') || k === 'undoStack' || k === 'redoStack' ? undefined : v))));
 check('size, author, date from the talk', st.slideWidth === 1920 && st.slideHeight === 1080 && st.author === 'Ana, Bo' && st.date === '2026');
@@ -141,6 +143,39 @@ await page.click('[data-extra="no"]');
 await page.waitForTimeout(300);
 check('declining: nothing downloaded or imported', JSON.stringify((await page.evaluate(() => window.__calls)).map(c => c[0])) === '["import"]'
     && (await page.textContent('#import-error')).includes('nothing was imported'));
+await page.close();
+
+// ---------- A talk split over several files, dropped or chosen; its compiled PDF ----------
+page = await start({ sources: ['/home/me/talk/sections/intro.tex', '/home/me/talk/main.tex'], groundTruth: { pdf: 'main.pdf', slides: 3 } });
+check('the dialog says a zip, a folder or many files are fine', /zip/.test(await page.textContent('#import-drop')) && /folder/.test(await page.textContent('#import-drop')) && /several/.test(await page.textContent('#import-drop')));
+await page.click('[data-action="import-choose-source"]');
+check('several files chosen at once are listed', JSON.stringify(await page.$$eval('#import-source li .import-source-name', ns => ns.map(n => n.textContent.trim().replace(/^\S+\s/, '')))) === '["intro.tex","main.tex"]');
+check('the name comes from the main file\'s folder', await page.inputValue('#import-name') === 'talk', await page.inputValue('#import-name'));
+check('the compiled-PDF option is offered for LaTeX', await page.isVisible('#import-use-pdf-row'));
+// dropping more files on the dialog (from the backend, with paths): added, not put on a slide
+await page.evaluate(() => window.gluonNativeDrop(['/home/me/talk/main.pdf', '/home/me/talk/extra.tex'], 600, 300));
+await page.waitForTimeout(100);
+let listed = await page.$$eval('#import-source li .import-source-name', ns => ns.map(n => n.textContent.trim().replace(/^\S+\s/, '')));
+check('files dropped on the dialog are added', JSON.stringify(listed) === '["intro.tex","main.tex","main.pdf","extra.tex"]', JSON.stringify(listed));
+await page.click('#import-source li:nth-child(4) [data-remove-source]');
+listed = await page.$$eval('#import-source li', ns => ns.length);
+check('× removes one', listed === 3);
+await page.click('[data-action="import-choose-folder"]');
+await page.click('#import-go');
+await page.waitForTimeout(800);
+let c = (await page.evaluate(() => window.__calls))[0];
+check('all of them go to the backend, with the PDF option on', JSON.stringify(c[1]) === JSON.stringify(['/home/me/talk/sections/intro.tex', '/home/me/talk/main.tex', '/home/me/talk/main.pdf']) && c[5] === true, JSON.stringify(c));
+check('it says the layout was checked against the PDF', (await page.textContent('#save-indicator')).includes('checked against main.pdf'), await page.textContent('#save-indicator'));
+await page.close();
+
+page = await start({ sources: ['/home/me/talk'] });
+await page.click('[data-action="import-choose-source"]');
+await page.uncheck('#import-use-pdf');
+await page.click('[data-action="import-choose-folder"]');
+await page.click('#import-go');
+await page.waitForTimeout(600);
+c = (await page.evaluate(() => window.__calls))[0];
+check('a folder alone is one source; the PDF can be left out', c[1] === '/home/me/talk' && c[5] === false, JSON.stringify(c));
 await page.close();
 
 // ---------- Errors ----------
