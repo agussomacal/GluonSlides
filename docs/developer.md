@@ -26,7 +26,11 @@ core/               the model and what works on it (no editor UI)
   connectors.js     lines attached to shapes (from / to / route)
   variables.js      variables: .vars values and files, \var{…} in text, slider values
   liveEngine.js     no imports (inlined into exports): formula readers (python, latex),
-                    the safe calculator, plot SVG, live updates and sliders
+                    the safe calculator, plot layers and their SVG, live updates and sliders
+  plotSchema.js     each plot layer's settings (types, defaults, help): read by the
+                    layer cards, the source view's suggestions and the checks
+  plotLayers.js     a plot's body edited one layer at a time (rewrites only what changed)
+  plotData.js       CSV files plots draw: read, cached, followed
   steps.js          builds: step / until
   masters.js        master slides
   macros.js         macro definitions, instances and overrides
@@ -69,6 +73,7 @@ ui/                 windows, dialogs and chrome
 elements/           one folder per element type, each self-registering
   index.js          one import per type
   text/ shape/ figure/ path/ columns/ table/ group/ macro/ plot/ slider/
+                    (plot/layerCards.js: a plot's layers as cards in its panel)
   figure/toLatex.js   "Convert to LaTeX" on a picture
 export/
   html.js           the interactive HTML presentation

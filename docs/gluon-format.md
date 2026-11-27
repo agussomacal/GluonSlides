@@ -529,7 +529,7 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 | `samples` | number | `400` | points computed per curve (a layer can say its own) |
 | `fontSize`, `fontFamily`, `fontColor` | | `28`, `sans-serif`, dark | tick labels, axis labels and legend; `fontColor` also draws the axes |
 
-**Layers.** Every layer takes `color` (a colour, `@theme` too; else one of a set), `label` (Markdown and math, for the legend; on markers, plain text next to them) and `lang`. Lines take `width` and `dash` (`dashed` / `dotted`); areas take `opacity`. Parameters marked *formula* may be a number or a formula of the variables (`x:mu`, `from:mu-sigma`).
+**Layers.** Every layer takes `color` (a colour, `@theme` too; else one of a set), `label` (Markdown and math, for the legend; on markers, plain text next to them), `lang`, and `hidden:yes` (kept but not drawn, also when presenting and exporting). Lines take `width` and `dash` (`dashed` / `dotted`); areas take `opacity`. Parameters marked *formula* may be a number or a formula of the variables (`x:mu`, `from:mu-sigma`).
 
 | Layer | Its lines | Parameters |
 |---|---|---|
@@ -547,7 +547,7 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 | `.contour` | `z = …` in `x` and `y` | `levels` (how many, 10) or `at:"0.5, 1, 2"` (which values, *formulas*), `colormap` (else `color`), `resolution` (100) |
 | `.quiver` | `u = …` and `v = …` in `x` and `y` | `grid` (16 arrows across), `scale` (else the longest arrow fits a cell) |
 
-Text before any layer line is a first `.curve`. Rows are separated by commas, semicolons or tabs (or spaces); a first row of names only is a header, and `#` starts a comment.
+Text before any layer line is a first `.curve` (comments there belong to the first layer). Rows are separated by commas, semicolons or tabs (or spaces); a first row of names only is a header, and `#` starts a comment.
 
 **Data files**: `data:{data/run.csv}` reads a CSV of the project folder (the panel's *＋ Data file…* copies one into `data/` and writes `original:"…"`, so the copy follows the file your script rewrites, like a linked table). Columns are chosen by their header's name (`x:step y:loss`, quoted if they have spaces) or by number. A file with very many rows is drawn from 20 000 of them, evenly spread (5 000 in an exported HTML), the last one always kept.
 
