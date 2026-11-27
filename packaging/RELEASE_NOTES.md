@@ -1,3 +1,19 @@
+## What's new in 0.3.0
+
+**Import your existing talks.** *Import Talk…* on the start screen turns a Beamer talk (`.tex`, or the `.zip` Overleaf downloads), a Slidev `slides.md`, a PowerPoint `.pptx` or a PDF into an editable project. Drop the whole folder, the zip, or all the files at once. With the compiled PDF alongside, the layout is checked against it and figures missing from the source are taken from it. Overlays and clicks become build steps; text, math, colours, columns, tables, notes and sections are kept.
+
+- **Equations in pictures** (PowerPoint, PDF) can be read back to LaTeX, at import or by right-clicking a picture → *Convert to LaTeX*. This uses an optional component (about 220 MB, downloaded once after asking) that runs on your computer.
+- **Columns** and **tables**: from the *Text ▾* menu; tables drawn, pasted from a spreadsheet, or from a CSV file, and linked to the file so they update when it changes. Dropping a CSV on the window makes a linked table.
+- **Connectors**: lines and arrows attached to shapes follow them when they move. **Rotation** of any object.
+- **Builds that go away**: *Disappears after step* (`until`), for content that replaces other content, and a step preview in the toolbar.
+- **Text commands** in any text: `\textcolor{red}{…}`, `\highlight{yellow}{…}`, `\textbf`, theme colours, and your own `macros.tex` macros. Select or double-click words for a small format bar (bold, italic, colours).
+- **Tabs**: several projects open at once, with copy and paste between them.
+- **Help**: the **?** button has a quick tour, a tutorial presentation, the keyboard shortcuts (now changeable), and the `.gl` file of the project (Ctrl+E).
+- The side panes can be hidden and resized; new projects go where the last one went; a progress bar for long jobs; display equations centred as in LaTeX; double-clicking a `.gl` file opens it; a note when a new version is out.
+- Documentation: a [user guide](https://github.com/agussomacal/GluonSlides/blob/main/docs/user-guide.md) and a [reference of the .gl format](https://github.com/agussomacal/GluonSlides/blob/main/docs/gluon-format.md).
+
+PDF import and the equation reader are optional components the app downloads the first time you need them (PyMuPDF about 25 MB; the equation model about 220 MB).
+
 ## Download
 
 | System | File | Or, without installing |

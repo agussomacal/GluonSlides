@@ -9,7 +9,8 @@ An import result:
      "macros": "...",        # LaTeX macros (macros.tex), one per line
      "bib": "...",           # BibTeX (bibliography.bib)
      "warnings": ["..."]}
-Elements have no ids: the page gives them ids when it builds the project.
+Elements usually have no ids: the page gives them ids when it builds the project
+(the PowerPoint importer numbers its own from 10000, so connectors can name them).
 """
 
 import re

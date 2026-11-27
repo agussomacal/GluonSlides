@@ -41,10 +41,10 @@
 // data-prop="fontSize" updates that property of the selection
 // (selects on change, other inputs while typing).
 //
-// .gl SERIALIZATION — element properties are whitelisted in
-// core/gl/glformat.js (SCHEMAS). When adding a new element type,
-// add its schema entry there too; unregistered types throw a
-// friendly error at .gl parse time and serialize best-effort.
+// .gl SERIALIZATION — each element's own `gl` block lists the
+// properties written to the file (props, numericProps, body);
+// core/gl/glformat.js reads it. An unknown type in a file is kept
+// with its parameters as they are (see docs/gluon-format.md).
 // ============================================================
 
 const definitions = new Map();
