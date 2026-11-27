@@ -223,7 +223,8 @@ body {
 }
 
 .slides-sidebar {
-    width: 260px;
+    width: var(--slides-w, 260px);
+    position: relative;
     background-color: var(--panel-bg);
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -1311,9 +1312,10 @@ body {
 }
 
 .properties-sidebar {
-    width: 280px;
-    min-width: 280px;
-    max-width: 280px;
+    width: var(--props-w, 280px);
+    min-width: var(--props-w, 280px);
+    max-width: var(--props-w, 280px);
+    position: relative;
     background-color: var(--panel-bg);
     border-left: 1px solid var(--border-color);
     display: flex;
@@ -2056,3 +2058,19 @@ body.has-tabs .properties-sidebar { height: calc(100vh - var(--tabs-h)); }
 .project-tab-close:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
 .project-tab-new { align-self: center; width: 24px; height: 22px; font-size: 16px; color: var(--text-muted, #94a3b8); }
 .project-tab-new:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-main); }
+
+/* Pane resizers (ui/panes.js): drag the inner edge; nearly shut hides the pane */
+.pane-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    z-index: 30;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+}
+.slides-sidebar > .pane-resizer { right: -4px; }
+.properties-sidebar > .pane-resizer { left: -4px; }
+.pane-resizer:hover, .pane-resizer.dragging { background: rgba(59, 130, 246, 0.45); }
+body.resizing-pane, body.resizing-pane * { cursor: col-resize !important; user-select: none !important; }

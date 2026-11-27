@@ -330,7 +330,7 @@ Opening, creating or importing a project while one is open puts it in a **tab** 
 
 ### Presenting, builds and speaker notes
 
-**◧** and **◨** at the ends of the toolbar hide the slides pane and the properties pane (**Ctrl+Alt+1**, **Ctrl+Alt+2**), to give the slide the whole window, for instance next to another window; the choice is remembered.
+**◧** and **◨** at the ends of the toolbar hide the slides pane and the properties pane (**Ctrl+Alt+1**, **Ctrl+Alt+2**), to give the slide the whole window, for instance next to another window. **Drag a pane's inner edge** to make it wider or narrower (dragged nearly shut it hides; a double-click gives the usual width back). Both are remembered.
 
 **▶ Present** (top right of the toolbar, or **Shift+F5**) starts the slide show from the current slide; **F5** starts from the first one. It shows exactly what the HTML export shows, full screen. **Esc** returns to the editor on the slide where you stopped.
 

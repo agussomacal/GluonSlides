@@ -58,6 +58,45 @@ const r = await page.$eval('#slide-canvas', c => { const a = c.getBoundingClient
 check('the slide stays centred', Math.abs(r[0] - r[1]) <= 2, JSON.stringify(r.map(Math.round)));
 await page.close();
 
+// ---------- widths: drag the inner edge ----------
+page = await start();
+await page.keyboard.press('Control+Alt+Digit1'); // (both were left hidden above)
+await page.keyboard.press('Control+Alt+Digit2');
+await page.waitForTimeout(200);
+const paneW = (sel) => page.$eval(sel, n => n.getBoundingClientRect().width);
+const handle = async (name) => page.$eval(`.pane-resizer[data-pane="${name}"]`, n => { const r = n.getBoundingClientRect(); return [r.x + r.width / 2, r.y + 200]; });
+let [hx, hy] = await handle('slides');
+const before = await paneW('.slides-sidebar');
+await page.mouse.move(hx, hy); await page.mouse.down();
+await page.mouse.move(hx + 120, hy, { steps: 5 }); await page.mouse.up();
+await page.waitForTimeout(200);
+const wider = await paneW('.slides-sidebar');
+check('dragging the slides pane edge widens it', Math.abs(wider - before - 120) < 6, `${Math.round(before)} -> ${Math.round(wider)}`);
+[hx, hy] = await handle('properties');
+const pBefore = await paneW('.properties-sidebar');
+await page.mouse.move(hx, hy); await page.mouse.down();
+await page.mouse.move(hx + 80, hy, { steps: 5 }); await page.mouse.up();
+await page.waitForTimeout(200);
+check('…and the properties pane narrower from its left edge', Math.abs(pBefore - (await paneW('.properties-sidebar')) - 80) < 6);
+await page.close();
+page = await start();
+await page.waitForTimeout(200);
+check('widths are remembered', Math.abs((await paneW('.slides-sidebar')) - wider) < 3);
+[hx, hy] = await handle('slides');
+await page.mouse.move(hx, hy); await page.mouse.down();
+await page.mouse.move(40, hy, { steps: 5 }); await page.mouse.up();
+await page.waitForTimeout(200);
+check('dragged nearly shut: the pane is hidden', !(await page.isVisible('.slides-sidebar')));
+await page.keyboard.press('Control+Alt+Digit1');
+await page.waitForTimeout(200);
+check('shown again: at the width it had', Math.abs((await paneW('.slides-sidebar')) - wider) < 3);
+await page.dblclick('.pane-resizer[data-pane="slides"]');
+await page.waitForTimeout(200);
+check('double-click: the usual width', Math.abs((await paneW('.slides-sidebar')) - 260) < 3, await paneW('.slides-sidebar'));
+await page.keyboard.press('Control+Alt+Digit1');
+await page.keyboard.press('Control+Alt+Digit2');
+await page.close();
+
 page = await start();
 check('hidden panes are remembered', !(await page.isVisible('.slides-sidebar')) && !(await page.isVisible('.properties-sidebar')));
 await page.keyboard.press('Control+Alt+Digit1');
