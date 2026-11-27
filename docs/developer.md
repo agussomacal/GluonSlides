@@ -27,6 +27,9 @@ core/               the model and what works on it (no editor UI)
   variables.js      variables: .vars values and files, \var{…} in text, slider values
   liveEngine.js     no imports (inlined into exports): formula readers (python, latex),
                     the safe calculator, plot layers and their SVG, live updates and sliders
+  mplEngine.js      lang:matplotlib: reads a matplotlib / numpy script (a part of Python,
+                    numpy-style arrays) into plot layers; no imports but liveEngine's
+                    (inlined after it into exports that need it)
   plotSchema.js     each plot layer's settings (types, defaults, help): read by the
                     layer cards, the source view's suggestions and the checks
   plotLayers.js     a plot's body edited one layer at a time (rewrites only what changed)

@@ -518,7 +518,7 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 
 | Parameter | Values | Built-in | Meaning |
 |---|---|---|---|
-| `lang` | `python` / `latex` | `python` | how the formulas are written (a layer can say its own) |
+| `lang` | `python` / `latex` / `matplotlib` | `python` | how the formulas are written (a layer can say its own); `matplotlib`: the body is a script (below) |
 | `xmin`, `xmax`, `ymin`, `ymax` | numbers | from the layers | the ranges; one left out is found from the layers at the starting values, then kept while sliders move |
 | `xscale`, `yscale` | `log` | linear | logarithmic axes (ticks at powers of 10) |
 | `xticks`, `yticks` | `pi` | numbers | ticks at multiples of π (π/2, π, 3π/2…) |
@@ -558,6 +558,39 @@ Text before any layer line is a first `.curve` (comments there belong to the fir
 **`lang:latex`**: the formula as you would typeset it: `\frac{a}{b}`, `\sqrt{…}` and `\sqrt[n]{…}`, `x^{2}`, `e^{…}` (the exponential), `\exp`, `\ln` and `\log` (natural), `\sin` and the other functions (with or without brackets: `\sin x`), `|x|`, `\left( … \right)`, `\cdot`, `\times`, products without a sign (`2\pi\sigma^2`), Greek letters (`\mu` is the variable `mu`), subscripts as part of a name (`x_0`, `\sigma_{1}`), `\pi`, `\infty`. Lines (or `\\`) can be `y = …` or `\sigma_2 = …` helpers; `f(x) = …` is the curve.
 
 Formulas are read by the app's own small parser: they can compute numbers and nothing else, so a shared file or an exported presentation can't run code. A mistake (an unknown name, a missing column, a bracket) is written on the plot in red, with the layer and line.
+
+#### Plots written with matplotlib
+
+With `lang:matplotlib` the body is a script in matplotlib and numpy, as you would write it in Python, using the project's variables by name. GluonSlides reads it itself (it is not run as Python), turns each call into the layers above, and reads it again whenever a slider moves, also in the exported HTML.
+
+```gl
+.project {Deck}
+.slide {Gauss} id:1
+.element.slider id:41 x:100 y:960 width:600 height:70 var:mu min:-3 max:3 step:0.1 value:0 label:"$\mu$"
+.element.plot id:40 x:100 y:60 width:1400 height:880 lang:matplotlib
+	import numpy as np
+	import matplotlib.pyplot as plt
+
+	x = np.linspace(-5, 5, 400)
+	fig, ax = plt.subplots()
+	ax.hist(np.random.normal(mu, 1, 2000), bins=40, density=True, alpha=0.4, label='samples')
+	ax.plot(x, np.exp(-(x - mu)**2 / 2) / np.sqrt(2*np.pi), 'C0', lw=2, label=r'$\mathcal{N}(\mu, 1)$')
+	ax.axvline(mu, ls='--', color='k')
+	for k in range(3):
+	    ax.plot(x, 0.1 * np.sin(x + k), label=f'k = {k}')
+	ax.set_xlabel('$x$')
+	ax.set_title(f'$\\mu = {mu:.1f}$')
+	ax.legend()
+```
+
+What it reads:
+
+- **Python**: assignments (also `a, b = …` and `+=`), `for` and `if` / `elif` / `else` blocks, list comprehensions, f-strings, texts, lists and tuples, keyword arguments, `import numpy as np` / `import matplotlib.pyplot as plt` (other modules are refused). No `def`, `while` or dictionaries.
+- **numpy**: arrays with element-wise arithmetic and comparisons (masks: `x[x > 0]`), slicing (`X[::5, ::5]`), `linspace`, `arange`, `meshgrid`, `zeros` / `ones` / `full`, the math functions (`exp`, `sin`, `sqrt`, `log`…), `sum`, `mean`, `std`, `min`, `max`, `cumsum`, `diff`, `clip`, `where`, `interp`, `trapz`, `polyval`…, and `np.random`: `normal`, `uniform`, `rand`, `randn`, `exponential`, `poisson`, `binomial`, `randint`, `seed`. The draws are seeded: the same every time, so a slider moves them smoothly.
+- **matplotlib** (`plt.…` or the axes of `fig, ax = plt.subplots()`): `plot` (with format strings like `'r--'` and `'o'`), `scatter`, `errorbar`, `fill_between` (also `where=`), `hist`, `bar`, `axvline`, `axhline`, `text`, `imshow`, `pcolormesh`, `contourf`, `contour`, `quiver`, `colorbar`; `xlim`, `ylim`, `xlabel`, `ylabel`, `title`, `xscale` / `yscale` (and `loglog`, `semilogy`), `legend`, `grid`, `axis('off')`, `axis('equal')`, `set_aspect`, and the `set_…` names of the axes. Colours: `'C0'`…`'C9'` (matplotlib's cycle, also used when none is given), `'r'`, `'k'`…, `'tab:blue'`, CSS names, `'#hex'`, `(r, g, b)`; `alpha`, `lw`, `ls`, `marker`, `ms`, `label`, `cmap` (viridis, magma, coolwarm, Blues, gray… shown with the nearest of the app's maps).
+- As in matplotlib, there is a legend only when the script calls `legend()`, and no grid unless it calls `grid()`. One plot per element: `plt.subplots(2, 1)` is refused (put two plots on the slide).
+
+Anything else (`twinx`, annotations with arrows, styles…) is written on the plot with its line, as are mistakes. In the panel, *Written as: a matplotlib script* shows the script in an editor (colours, suggestions after `np.`, `np.random.` and `plt.`, the line of a mistake marked) instead of the layer cards.
 
 ### slider
 
