@@ -1081,6 +1081,9 @@ class Layout:
                 if rel:
                     out.append(model.figure(self.X(ix), self.Y(yy), self.L(w), self.L(ih), rel, original,
                                             sync=bool(original), **cover, **extra))
+                else:  # not found: a placeholder the compiled PDF may fill
+                    out.append(model.figure(self.X(ix), self.Y(yy), self.L(w), self.L(ih), model.missing_figure_path(b["src"]),
+                                            missing=b["src"], **cover, **extra))
             elif k == "rule":
                 ry = self.Y(yy + h / 2)
                 out.append(model.path([(self.X(x), ry), (self.X(x + width * b["frac"]), ry)],
@@ -1146,8 +1149,7 @@ class Layout:
                     parts.append("\n".join(lines))
                 elif k == "image":
                     rel, _ = self.assets.copy(blk["src"])
-                    if rel:
-                        parts.append(f"![]({rel})")
+                    parts.append(f"![]({rel or model.missing_figure_path(blk['src'])})")
                 elif k == "table":
                     parts.append(blk["md"])
             c["center"] = all(blk.get("align") == "center" for blk in c["blocks"] if blk["kind"] in ("text", "image")) and c["blocks"]

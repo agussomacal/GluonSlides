@@ -161,6 +161,15 @@ def text(x, y, w, h, content, size, colour="#000000", align="left", valign="top"
     return el
 
 
+def missing_figure_path(name):
+    """Where a figure that was not found goes (figures/<name>.png): the
+    compiled PDF's picture of it may fill it (groundtruth.py)."""
+    rel = re.sub(r"^(\./|\.\./)+", "", (name or "figure").replace("\\", "/")).lstrip("/")
+    rel = re.sub(r"^public/", "", rel)
+    rel = rel if rel.startswith("figures/") else "figures/" + rel
+    return re.sub(r"\.(pdf|eps|svg|png|jpe?g|gif|webp|bmp|tiff?)$", "", rel, flags=re.I) + ".png"
+
+
 def figure(x, y, w, h, file_path, original="", sync=False, **extra):
     el = {"type": "figure", "x": round(x), "y": round(y), "width": max(4, round(w)), "height": max(4, round(h)),
           "filePath": file_path, "originalPath": original, "bg": "transparent",

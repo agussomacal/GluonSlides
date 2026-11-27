@@ -985,6 +985,67 @@ class GroundTruthTest(TempDirTest):
         self.assertLess(abs(early["y"] - (80 - 9) * k), 30, early)   # from page 1, where it is
         self.assertLess(abs(late["y"] - (190 - 9) * k), 30, late)    # from page 2
 
+    MISSING_TEX = r"""\documentclass{beamer}
+\begin{document}
+\begin{frame}{Results here}
+Convergence of the method shown below.
+
+\includegraphics[width=0.5\linewidth]{figures/lost_plot}
+\end{frame}
+\begin{frame}{Drawn plot}
+A plot drawn in the PDF itself.
+
+\includegraphics[width=0.5\linewidth]{figures/lost_vector.pdf}
+\end{frame}
+\end{document}
+"""
+
+    def missing_figure_talk(self):
+        import pymupdf as fz
+        from PIL import Image as PILImage
+        tex = os.path.join(self.tmp, "src", "lost.tex")
+        with open(tex, "w") as f:
+            f.write(self.MISSING_TEX)
+        png = os.path.join(self.tmp, "picture.png")
+        PILImage.new("RGB", (300, 200), "green").save(png)
+        doc = fz.open()
+        p = doc.new_page(width=453.5, height=255.1)
+        p.insert_text((160, 22), "Results here", fontsize=14)
+        p.insert_text((40, 70), "Convergence of the method shown below.", fontsize=10)
+        p.insert_image(fz.Rect(150, 100, 300, 200), filename=png)
+        p = doc.new_page(width=453.5, height=255.1)
+        p.insert_text((160, 22), "Drawn plot", fontsize=14)
+        p.insert_text((40, 70), "A plot drawn in the PDF itself.", fontsize=10)
+        for i in range(80):  # a vector plot: many small segments
+            p.draw_line(fz.Point(120 + i * 2.5, 200), fz.Point(121 + i * 2.5, 200 - (i % 9) * 10), color=(0, 0, 1), width=0.5)
+        doc.set_page_labels([{"startpage": 0, "prefix": "", "style": "D", "firstpagenum": 1}])
+        pdf = os.path.join(self.tmp, "src", "lost.pdf")
+        doc.save(pdf)
+        return tex, pdf
+
+    def test_figures_missing_from_the_source_are_taken_from_the_pdf(self):
+        tex, pdf = self.missing_figure_talk()
+        res = self.run_import([tex, pdf], "Lost")
+        p, folder = res["project"], res["folder"]
+        figs = [e for s in p["slides"] for e in s["elements"] if e["type"] == "figure"]
+        self.assertEqual([f["filePath"] for f in figs], ["figures/lost_plot.png", "figures/lost_vector.png"])
+        for f in figs:
+            self.assertTrue(os.path.isfile(os.path.join(folder, f["filePath"])), f)
+            self.assertNotIn("missing", f)
+        k = p["width"] / 453.5
+        self.assertLess(abs(figs[0]["x"] - 150 * k), 10, figs[0])  # where the PDF shows it
+        self.assertLess(abs(figs[0]["width"] - 150 * k), 10, figs[0])
+        self.assertEqual(p["groundTruth"]["recovered"], 2)
+        self.assertFalse([w for w in p["warnings"] if "not found" in w.lower()], p["warnings"])
+        self.assertTrue(any("taken from lost.pdf" in w for w in p["warnings"]), p["warnings"])
+
+    def test_without_a_pdf_a_missing_figure_stays_a_placeholder(self):
+        tex, _ = self.missing_figure_talk()
+        p = self.run_import(tex, "NoPdf", usePdf=False)["project"]
+        fig = next(e for e in p["slides"][0]["elements"] if e["type"] == "figure")
+        self.assertEqual(fig["filePath"], "figures/lost_plot.png")
+        self.assertTrue(any("Figure not found" in w for w in p["warnings"]))
+
     def test_in_a_zip(self):
         import zipfile
         pdf = build_compiled_pdf(os.path.join(self.tmp, "talk.pdf"))
@@ -1028,6 +1089,23 @@ Nonlinear manifold of functions.
     def row(self, res):
         self.assertTrue(res["success"], res)
         return next(e for e in res["project"]["slides"][0]["elements"] if e["type"] == "columns")
+
+    def test_missing_images_of_the_row_come_from_the_compiled_pdf(self):
+        import pymupdf as fz
+        for n in "abc":
+            os.rename(os.path.join(self.src, "figures", f"{n}.png"), os.path.join(self.tmp, f"{n}.png"))
+        doc = fz.open()
+        p = doc.new_page(width=980, height=551)
+        p.insert_text((60, 60), "Toy example", fontsize=30)
+        p.insert_text((60, 110), "Nonlinear manifold of functions.", fontsize=18)
+        for i, n in enumerate("abc"):
+            p.insert_image(fz.Rect(140 + i * 240, 300, 360 + i * 240, 465), filename=os.path.join(self.tmp, f"{n}.png"))
+        doc.save(os.path.join(self.src, "slides-export.pdf"))
+        res = self.import_talk(self.src, self.tmp, "Recovered", {})
+        row = self.row(res)
+        for n in "abc":
+            self.assertTrue(os.path.isfile(os.path.join(res["folder"], "figures", f"{n}.png")), n)
+        self.assertLess(abs(row["x"] - 140 * 1920 / 980), 40, row)
 
     def test_the_row_is_as_wide_as_its_images(self):
         row = self.row(self.import_talk(self.src, self.tmp, "Plain", {}))

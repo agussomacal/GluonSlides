@@ -109,6 +109,25 @@ def inside(inner, outer, slack=1.0):
     return inner[0] >= outer[0] - slack and inner[1] >= outer[1] - slack and inner[2] <= outer[2] + slack and inner[3] <= outer[3] + slack
 
 
+def dense_regions(drawings, page):
+    """Regions where many drawing pieces meet (plots, diagrams): snapshots."""
+    rects = [tuple(d["rect"]) for d in drawings if d["rect"].width < page.rect.width * 0.95 or d["rect"].height < page.rect.height * 0.95]
+    groups = []
+    for d in drawings:
+        r = tuple(d["rect"])
+        n = len(d.get("items", []))
+        for g in groups:
+            if touches(r, g["rect"], 2.0):
+                g["rect"] = union([g["rect"], r])
+                g["n"] += n
+                g["count"] += 1
+                break
+        else:
+            groups.append({"rect": r, "n": n, "count": 1})
+    dense = [g["rect"] for g in groups if g["n"] > 60 or g["count"] > 25]
+    return merge_rects(dense, 2.0) if rects else []
+
+
 class Converter:
     def __init__(self, path, folder, mode):
         self.fitz = load_pymupdf()
@@ -245,22 +264,7 @@ class Converter:
         return "|".join(str(el.get(k, "")) for k in keys) + "|" + ",".join(map(str, geo))
 
     def dense_regions(self, drawings, page):
-        """Regions where many drawing pieces meet (plots, diagrams): snapshots."""
-        rects = [tuple(d["rect"]) for d in drawings if d["rect"].width < page.rect.width * 0.95 or d["rect"].height < page.rect.height * 0.95]
-        groups = []
-        for d in drawings:
-            r = tuple(d["rect"])
-            n = len(d.get("items", []))
-            for g in groups:
-                if touches(r, g["rect"], 2.0):
-                    g["rect"] = union([g["rect"], r])
-                    g["n"] += n
-                    g["count"] += 1
-                    break
-            else:
-                groups.append({"rect": r, "n": n, "count": 1})
-        dense = [g["rect"] for g in groups if g["n"] > 60 or g["count"] > 25]
-        return merge_rects(dense, 2.0) if rects else []
+        return dense_regions(drawings, page)
 
     def background_without_text(self, page, k, keep):
         """The page as a picture with its text removed (math kept), at the back."""

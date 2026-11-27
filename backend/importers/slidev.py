@@ -237,7 +237,10 @@ def clean_md(md):
 
 def img_md(attrs, ctx):
     """<img> inside columns -> a Markdown image (copied into figures/)."""
-    rel = ctx.assets.copy(attr(attrs, "src"), ctx.base)
+    src = attr(attrs, "src")
+    rel = ctx.assets.copy(src, ctx.base)
+    if not rel and src and not re.match(r"^(https?:|data:)", src):
+        rel = model.missing_figure_path(src)  # the compiled PDF may give its picture
     return f"![{attr(attrs, 'alt') or ''}]({rel})" if rel else ""
 
 
@@ -566,6 +569,9 @@ class Layout:
             return len(b["rows"]) * fs * 1.8 + 0.4 * fs
         if k == "image":
             rel = self.assets.copy(b["src"], b.get("base", "")) if b.get("rel") is None else b["rel"]
+            if not rel and b.get("src") and not re.match(r"^(https?:|data:)", b["src"]):
+                rel = model.missing_figure_path(b["src"])  # a placeholder the compiled PDF may fill
+                b["missing"] = b["src"]
             b["rel"] = rel
             if not rel:
                 return 0
@@ -646,7 +652,8 @@ class Layout:
             elif k == "image" and b.get("rel"):
                 w = min(width, (b["width"] or 400) * K)
                 ix = x + (width - w) / 2 if (b.get("center") or center) else x
-                out.append(model.figure(ix, y, w, w * self.assets.aspect(b["rel"]), b["rel"], **extra))
+                out.append(model.figure(ix, y, w, w * self.assets.aspect(b["rel"]), b["rel"],
+                                        **({"missing": b["missing"]} if b.get("missing") else {}), **extra))
             elif k == "columns":
                 n = len(b["cols"])
                 gap = b["gap"] * K

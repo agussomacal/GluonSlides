@@ -19,6 +19,7 @@ the PDF keeps the converter's layout. Returns False (and changes nothing)
 when the PDF does not look like this talk.
 """
 
+import os
 import re
 from statistics import median
 
@@ -322,26 +323,126 @@ def rescale_height(result, new_h):
 
 # ---------- all together ----------
 
+# ---------- figures the source didn't have: the PDF's picture of them ----------
+
+MD_IMAGE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
+
+
+def figure_regions(fpage, scale):
+    """Where the page has figures, in slide pixels: its pictures and the
+    regions dense with drawing (plots, diagrams included as PDF / TikZ)."""
+    from .pdf import dense_regions
+    area = fpage.rect.width * fpage.rect.height
+    out = []
+    for im in fpage.get_image_info():
+        x0, y0, x1, y1 = im["bbox"]
+        if 0.01 * area < (x1 - x0) * (y1 - y0) < 0.8 * area:
+            out.append((x0, y0, x1, y1))
+    try:
+        for r in dense_regions(fpage.get_drawings(), fpage):
+            if (r[2] - r[0]) * (r[3] - r[1]) > 0.01 * area and not any(_overlap(r, o) > 0.5 for o in out):
+                out.append(tuple(r))
+    except Exception:
+        pass
+    return [tuple(v * scale for v in r) for r in out]
+
+
+def _overlap(a, b):
+    """Share of the smaller box covered by the other."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    if w <= 0 or h <= 0:
+        return 0.0
+    small = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1])) or 1
+    return w * h / small
+
+
+def _box(el):
+    return (el.get("x", 0), el.get("y", 0), el.get("x", 0) + el.get("width", 0), el.get("y", 0) + el.get("height", 0))
+
+
+def save_region(fpage, box, scale, folder, rel):
+    """The region (slide pixels) of the PDF page as a PNG at `rel` in the project."""
+    import pymupdf as fz
+    clip = fz.Rect(*(v / scale for v in box)) & fpage.rect
+    pix = fpage.get_pixmap(matrix=fz.Matrix(2 * scale, 2 * scale), clip=clip, alpha=False)
+    dest = os.path.join(folder, rel)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    pix.save(dest)
+
+
+def fill_missing(elements, fpage, scale, folder):
+    """Figures not found in the source (placeholders with `missing`), and
+    Markdown images of columns whose files are missing: taken from the
+    page, where it shows a figure nobody else uses. Returns the names filled."""
+    if not folder:
+        return []
+    regions = figure_regions(fpage, scale)
+    taken = [_box(el) for el in elements if el.get("type") == "figure" and not el.get("missing")]
+    free = [r for r in regions if not any(_overlap(r, t) > 0.5 for t in taken)]
+    filled = []
+    # placeholders: the free region nearest to where the converter put them
+    for el in sorted((e for e in elements if e.get("type") == "figure" and e.get("missing")), key=lambda e: (e["y"], e["x"])):
+        if not free:
+            break
+        cx, cy = el["x"] + el["width"] / 2, el["y"] + el["height"] / 2
+        best = min(free, key=lambda r: abs((r[0] + r[2]) / 2 - cx) + abs((r[1] + r[3]) / 2 - cy))
+        free.remove(best)
+        save_region(fpage, best, scale, folder, el["filePath"])
+        el["x"], el["y"] = round(best[0]), round(best[1])
+        el["width"], el["height"] = round(best[2] - best[0]), round(best[3] - best[1])
+        filled.append(el.pop("missing"))
+    # columns of images (a row of plots) whose files are missing: a row of as many regions
+    for el in elements:
+        if el.get("type") != "columns":
+            continue
+        rels = [r for c in el.get("columns") or [] for r in MD_IMAGE.findall(c.get("content") or "")]
+        absent = [r for r in rels if not os.path.isfile(os.path.join(folder, r))]
+        if not absent:
+            continue
+        for a in list(free):
+            row = sorted((r for r in free if abs(r[1] - a[1]) < 0.3 * (a[3] - a[1])), key=lambda r: r[0])
+            if len(row) == len(rels):
+                for rel, r in zip(rels, row):
+                    if rel in absent:
+                        save_region(fpage, r, scale, folder, rel)
+                        filled.append(rel)
+                x0, y0 = min(r[0] for r in row), min(r[1] for r in row)
+                x1, y1 = max(r[2] for r in row), max(r[3] for r in row)
+                el["x"], el["y"], el["width"], el["height"] = round(x0), round(y0), round(x1 - x0), round(y1 - y0)
+                for r in row:
+                    free.remove(r)
+                break
+    return filled
+
+
 def align_with_pdf(result, pdf_path, folder=None):
     fitz = extras.load_pymupdf()
     if fitz is None:
         return False
     slides = result.get("slides") or []
-    with fitz.open(pdf_path) as doc:
-        if doc.page_count == 0 or doc.page_count < 0.6 * len(slides):
-            return False
-        rect = doc[0].rect
-        if rect.width <= rect.height:
-            return False  # a portrait page: an article / a figure, not slides
-        W = result.get("width") or 1920
-        scale = W / rect.width
-        from . import progress
-        name = pdf_path.replace("\\", "/").split("/")[-1]
-        groups = frame_groups(doc)
-        read = {}  # page index -> Page (every overlay page: content may disappear before the last)
-        for n, i in enumerate(i for g in groups for i in g):
-            progress.report(f"Reading {name}", n, doc.page_count)
-            read[i] = Page(doc[i], scale)
+    doc = fitz.open(pdf_path)
+    try:
+        return _align(result, doc, pdf_path, folder, slides)
+    finally:
+        doc.close()
+
+
+def _align(result, doc, pdf_path, folder, slides):
+    if doc.page_count == 0 or doc.page_count < 0.6 * len(slides):
+        return False
+    rect = doc[0].rect
+    if rect.width <= rect.height:
+        return False  # a portrait page: an article / a figure, not slides
+    W = result.get("width") or 1920
+    scale = W / rect.width
+    from . import progress
+    name = pdf_path.replace("\\", "/").split("/")[-1]
+    groups = frame_groups(doc)
+    read = {}  # page index -> Page (every overlay page: content may disappear before the last)
+    for n, i in enumerate(i for g in groups for i in g):
+        progress.report(f"Reading {name}", n, doc.page_count)
+        read[i] = Page(doc[i], scale)
     pages = [read[g[-1]] for g in groups]
     pairs = pair_slides([slide_words(s) for s in slides], [p.words for p in pages])
     worded = [s for s in slides if slide_words(s)]
@@ -354,6 +455,7 @@ def align_with_pdf(result, pdf_path, folder=None):
     H = result["height"] if result.get("height") else new_h
 
     texts = figures = 0
+    recovered = []
     for n, (si, pi, _score) in enumerate(pairs):
         progress.report(f"Placing things as in {name}", n, len(pairs))
         elements = slides[si].get("elements") or []
@@ -363,7 +465,10 @@ def align_with_pdf(result, pdf_path, folder=None):
         for idx in sorted({page_for(el, groups[pi]) for el in elements}):
             subset = [el for el in elements if page_for(el, groups[pi]) == idx]
             moved.update(place_text(subset, read[idx], W, H))
-            figures += place_figures(subset, read[idx])
+            figures += place_figures([el for el in subset if not el.get("missing")], read[idx])
+            got = fill_missing(subset, doc[idx], scale, folder)
+            recovered.extend(got)
+            figures += len(got)
         texts += len(moved)
         for el in elements:  # placed figures are anchors too
             if el.get("type") == "figure" and (el["x"], el["y"]) != (before[id(el)]["x"], before[id(el)]["y"]):
@@ -373,7 +478,14 @@ def align_with_pdf(result, pdf_path, folder=None):
 
     paired = {si for si, _pi, _s in pairs}
     missing = [s.get("title") or f"slide {i + 1}" for i, s in enumerate(slides) if i not in paired and slide_words(s)]
-    result["groundTruth"] = {"pdf": name, "slides": len(pairs), "texts": texts, "figures": figures}
+    result["groundTruth"] = {"pdf": name, "slides": len(pairs), "texts": texts, "figures": figures, "recovered": len(recovered)}
+    if recovered:
+        # "not found" no more: say where they came from instead
+        names = {r.split("/")[-1].rsplit(".", 1)[0] for r in recovered}
+        result["warnings"] = [w for w in result.get("warnings", [])
+                              if not (re.match(r"^(Figure|Image) not found: ", w) and w.split(": ", 1)[1].replace("\\", "/").split("/")[-1].rsplit(".", 1)[0] in names)]
+        result["warnings"].append(f"{len(recovered)} figure{'s' if len(recovered) > 1 else ''} not in the source taken from {name} "
+                                  f"(pictures of them at twice the slide's resolution): {', '.join(sorted(set(r.split('/')[-1] for r in recovered))[:6])}")
     if missing:
         shown = ", ".join(f"“{t}”" for t in missing[:5]) + (" …" if len(missing) > 5 else "")
         result.setdefault("warnings", []).append(
