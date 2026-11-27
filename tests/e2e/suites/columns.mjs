@@ -140,8 +140,20 @@ await app(async () => {
     document.dispatchEvent(new CustomEvent('slide-content-changed'));
 });
 await page.waitForTimeout(300);
-const mathAlign = await app(() => getComputedStyle(document.querySelector('#slide-canvas .gl-column .katex-display > .katex')).textAlign);
-check('canvas: an equation in a left column is on the left (as exported)', mathAlign === 'left' || mathAlign === 'start', mathAlign);
+const mathAlign = () => app(() => getComputedStyle(document.querySelector('#slide-canvas .gl-column .katex-display > .katex')).textAlign);
+check('$$…$$ is centred even in a left column (as in LaTeX)', await mathAlign() === 'center', await mathAlign());
+// Project setting: equations aligned with the text
+await app(async () => {
+    const m = await import('/core/state.js');
+    m.applyProjectData({ ...JSON.parse(m.currentSnapshot()), equations: 'text' }, { resetSelection: false });
+    document.dispatchEvent(new CustomEvent('slide-content-changed'));
+});
+await page.waitForTimeout(200);
+check('equations:text — the equation follows the column (left)', ['left', 'start'].includes(await mathAlign()), await mathAlign());
+const eqGl = await app(async () => (await import('/core/state.js')).serializeProject());
+const eqBack = await app(async (t) => (await import('/core/state.js')).parseProjectContent(t).equations, eqGl);
+const eqHtml = await app(async () => (await import('/export/html.js')).getExportHtmlString());
+check('equations:text in the .gl header, read back, and in exports', /^\.project .* equations:text/m.test(eqGl) && eqBack === 'text' && eqHtml.includes('data-equations="text"'), eqBack);
 await app(async () => {
     const { state } = await import('/core/state.js');
     state.defaults = { text: { fontFamily: 'Merriweather' } };

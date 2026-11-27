@@ -379,7 +379,7 @@ class Converter:
         main_colour = statistics.mode(colours) if colours else "#000000"
         text_lines = []
         for parts in md_lines:
-            line = "".join(t if c == main_colour else f'<span style="color:{c}">{t}</span>' for t, c in parts)
+            line = "".join(t if c == main_colour else model.coloured(model.escape_braces(t), c) for t, c in parts)
             text_lines.append(line.strip())
         md = "\n".join(text_lines)
         md = re.sub(r"\*\*\s*\*\*", "", md)
@@ -413,8 +413,10 @@ class Converter:
     # ---------- all pages ----------
 
     def convert(self):
+        from . import progress
         pages = []
-        for page in self.doc:
+        for n, page in enumerate(self.doc):
+            progress.report("Reading the pages", n, self.doc.page_count)
             pages.append(self.page_elements(page))
         pages = [self.page_number_fields(p) for p in pages]
         master, pages, uses_master = self.find_master(pages)

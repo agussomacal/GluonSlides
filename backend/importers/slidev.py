@@ -202,6 +202,9 @@ def clean_md(md):
     md = re.sub(r"\$\$[ \t]*\{[\d\s|,*\-]*(?:all|none)?[\d\s|,*\-]*\}", "$$", md)  # $${1|all}: line highlights
     # MDC (mdc: true): [text]{style="..."} -> a span; [text]{.class} -> the text
     md = re.sub(r'\[([^\]\n]+)\]\{\s*style="([^"]*)"\s*\}', r'<span style="\2">\1</span>', md)
+    # a span that only sets a colour -> \textcolor{colour}{text} (core/textCommands.js)
+    md = re.sub(r'<span\s+style="\s*color:\s*([^;"]+?)\s*;?\s*">([^<\n]*)</span>',
+                lambda m: model.coloured(m.group(2), m.group(1)), md)
     md = re.sub(r"\[([^\]\n]+)\]\{\s*\.[\w-]+(?:\s+\.[\w-]+)*\s*\}", r"\1", md)
     md = re.sub(r"<br\s*/?>\s*(</br>)?", "\n", md, flags=re.I)
     md = re.sub(r"\n{3,}", "\n\n", md)
@@ -602,7 +605,9 @@ def import_slidev(entry, project_folder, linked=True):
     slides_src = expand(entry)
     head = slides_src[0][0] if slides_src else {}
     slides = []
+    from . import progress
     for n, (fm, content, base) in enumerate(slides_src):
+        progress.report("Converting the slides", n, len(slides_src))
         slides.append(convert_slide(fm, content, base, assets, warnings, n == 0))
     title = head.get("title") or (slides[0]["title"] if slides else "")
     if title == "Welcome to Slidev" and slides:

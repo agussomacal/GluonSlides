@@ -673,7 +673,7 @@ class PptxImportTest(TempDirTest):
         lines = body.split("\n")
         self.assertEqual(lines[0], "- First point")
         self.assertEqual(lines[1], "    - **bold sub**")
-        self.assertEqual(lines[2], '- [<span style="color:#ff0000">red link</span>](https://example.org)')
+        self.assertEqual(lines[2], '- [\\textcolor{#ff0000}{red link}](https://example.org)')
         self.assertEqual(lines[3], "1. Numbered")
         boxed = next(e for e in self.els(self.content, "text") if e["content"] == "In a box")
         self.assertEqual(boxed["textAlign"], "center")
@@ -1017,7 +1017,7 @@ class SlidevImportTest(TempDirTest):
 
     def test_text_mdc_grid_table(self):
         texts = [e["content"] for e in self.els("Results", "text")]
-        self.assertIn('Text with $x \\in \\R$ and <span style="color: white;">a ghost</span>.', texts)
+        self.assertIn('Text with $x \\in \\R$ and \\textcolor{white}{a ghost}.', texts)
         cols = self.els("Results", "columns")[0]
         self.assertEqual([c["content"] for c in cols["columns"]], ["Left column", "Right column"])
         table = self.els("Results", "table")[0]

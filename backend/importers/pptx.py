@@ -129,7 +129,7 @@ class Converter:
         except Exception:
             c = None
         if c and c not in ("#000000",):
-            core = f'<span style="color:{c}">{core}</span>'
+            core = model.coloured(model.escape_braces(core), c)
         try:
             if run.hyperlink and run.hyperlink.address:
                 core = f"[{core}]({run.hyperlink.address})"
@@ -370,7 +370,9 @@ class Converter:
         masters, used = [], {}
         sections = self.sections()
         slides = []
+        from . import progress
         for n, slide in enumerate(self.prs.slides):
+            progress.report("Converting the slides", n, len(self.prs.slides))
             layout = slide.slide_layout
             name = layout.name or "Layout"
             key = str(layout.part.partname)

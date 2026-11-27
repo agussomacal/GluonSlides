@@ -489,6 +489,7 @@ export function currentSnapshot() {
         palette: state.palette,
         author: state.author,
         date: state.date,
+        equations: state.equations,
         masters: state.masters,
         slides: state.slides,
     });
@@ -512,6 +513,7 @@ export function serializeProject() {
         citestyle: state.citestyle,
         author: state.author,
         date: state.date,
+        equations: state.equations,
         masters: state.masters,
         slides: state.slides,
     });
@@ -589,6 +591,9 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     state.nextId = Math.max(1, num(data.nextId, 1));
     state.author = data.author || '';
     state.date = data.date || '';
+    // Display equations: 'center' (as in LaTeX) or 'text' (follow the text's alignment).
+    state.equations = data.equations === 'text' ? 'text' : 'center';
+    document.documentElement.dataset.equations = state.equations;
     const name = data.name || data.projectName;
     if (name) state.projectName = name;
     applyMacroData(data);

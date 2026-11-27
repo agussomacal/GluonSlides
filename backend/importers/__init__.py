@@ -128,6 +128,16 @@ def resolve_sources(source):
 
 
 def import_talk(source, parent_folder, name, options=None):
+    from . import progress
+    progress.report("Starting", 0, 0)
+    try:
+        return _import_talk(source, parent_folder, name, options)
+    finally:
+        progress.reset()
+
+
+def _import_talk(source, parent_folder, name, options=None):
+    from . import progress
     options = options or {}
     found = resolve_sources(source)
     if found.get("error"):
@@ -148,6 +158,7 @@ def import_talk(source, parent_folder, name, options=None):
             from .slidev import find_entry, import_slidev
             if ext == ".zip":
                 with tempfile.TemporaryDirectory(prefix="gluon-import-") as tmp:
+                    progress.report("Unpacking the zip", 0, 0)
                     with zipfile.ZipFile(source) as zf:
                         _safe_extract(zf, tmp)
                     inner = resolve_sources([tmp])

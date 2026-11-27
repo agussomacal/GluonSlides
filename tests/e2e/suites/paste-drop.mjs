@@ -31,7 +31,8 @@ await page.addInitScript(() => {
         save_figure_data: (folder, uri, name) => ok({ relative_path: `figures/${name.replace(/\.\w+$/, '')}.png`, data_uri: uri }),
         import_figure: (folder, path) => {
             const base = path.split('/').pop();
-            return ok({ relative_path: `figures/${base}`, path: `${folder}/figures/${base}`, data_uri: red });
+            const res = { success: true, relative_path: `figures/${base}`, path: `${folder}/figures/${base}`, data_uri: red };
+            return window.__slowMs ? new Promise(r => setTimeout(() => r(res), window.__slowMs)) : Promise.resolve(res);
         },
         refresh_linked_figures: () => ok({ updated: [] }),
         link_table_file: (folder, path) => ok({ rows: [['k', 'v'], ['a', '1']], mtime: 1, relative_path: `data/${path.split('/').pop()}`, original: path }),
@@ -191,6 +192,19 @@ const nat = els.filter(e => (e.filePath || '').includes('native'));
 check('a drop sent by the backend: a linked figure where it was dropped, once', nat.length === 1 && nat[0].originalPath === '/home/me/analysis/native.png'
     && Math.abs(nat[0].x + nat[0].width / 2 - 1500) <= 1, JSON.stringify(nat));
 await app(async () => { const { state } = await import('/core/state.js'); state.slides[0].elements = state.slides[0].elements.filter(e => !(e.filePath || '').includes('native')); (await import('/editor/editor.js')).renderEditor(); });
+
+// A slow import (a big PDF figure): a box on the slide says so until the figure is there
+await app(() => { window.__slowMs = 1200; });
+[cx, cy] = await toClient(960, 540);
+await app(([x, y]) => window.gluonNativeDrop(['/home/me/analysis/big.pdf'], x, y), [cx, cy]);
+await page.waitForTimeout(600);
+const during = await app(() => ({ box: document.querySelector('#slide-canvas .busy-placeholder')?.textContent || '', bar: !document.querySelector('.busy-bar')?.hidden }));
+await page.waitForTimeout(1100);
+const after = await app(() => ({ box: !!document.querySelector('.busy-placeholder'), bar: !document.querySelector('.busy-bar')?.hidden }));
+els = await elements();
+check('a slow image import shows a box on the slide and a busy bar', during.box.includes('Importing big.pdf') && during.bar, JSON.stringify(during));
+check('…gone once the figure is added', !after.box && !after.bar && els.some(e => (e.filePath || '').includes('big.pdf')), JSON.stringify(after));
+await app(async () => { window.__slowMs = 0; const { state } = await import('/core/state.js'); state.slides[0].elements = state.slides[0].elements.filter(e => !(e.filePath || '').includes('big')); (await import('/editor/editor.js')).renderEditor(); });
 
 // A CSV: a table linked to the file (copied into data/), centred where dropped
 [cx, cy] = await toClient(960, 700);

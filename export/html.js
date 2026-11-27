@@ -79,7 +79,7 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
     const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));
     const start = Math.max(0, Math.min(pages.length - 1, wanted));
 
-    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${escapeHtml(state.projectName || 'Presentation')}</title>
+    return `<!DOCTYPE html><html lang="en" data-equations="${state.equations === 'text' ? 'text' : 'center'}"><head><meta charset="UTF-8"><title>${escapeHtml(state.projectName || 'Presentation')}</title>
         <style>${katexCss}</style>
         <style>${textStyles}</style>
         <style>${fontCss}</style>

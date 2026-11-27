@@ -30,6 +30,7 @@ import { ElementRegistry } from '../../core/registry.js';
 import { renderMarkdownAndKatex, escapeHtml } from '../../core/render.js';
 import { fontOptions } from '../text/text.js';
 import { resolveColor } from '../../core/colors.js';
+import { busy } from '../../ui/busy.js';
 
 const STYLE_KEYS = ['bold', 'italic', 'color', 'bg', 'align', 'format'];
 const MIN_SHARE = 0.05;
@@ -443,7 +444,7 @@ export async function tablePropsFromCsv(path) {
     const api = pyApi();
     if (!api || !path) return null;
     if (state.projectFolder && typeof api.link_table_file === 'function') {
-        const res = await api.link_table_file(state.projectFolder, path);
+        const res = await busy(`Reading ${path.split(/[/\\]/).pop()}…`, api.link_table_file(state.projectFolder, path));
         if (res && res.success) {
             flashSaveIndicator(`Linked to ${res.relative_path} ✓`);
             return propsForRows(res.rows, {

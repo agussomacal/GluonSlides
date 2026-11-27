@@ -66,13 +66,13 @@
     margin-bottom: 0;
 }
 
-/* DISPLAY EQUATIONS: full-width blocks whose inline content inherits the
-   box's text-align — centered when the box is centered, left when left,
-   right when right. (KaTeX's own stylesheet centers .katex-display by
-   default, so we must explicitly revert to inheritance here.) */
+/* DISPLAY EQUATIONS ($$...$$): centred in their box, as in LaTeX, whatever
+   the text's alignment. With the project setting "aligned with the text"
+   (.project ... equations:text -> html[data-equations="text"]) they follow
+   the box's alignment instead, like LaTeX's fleqn option. */
 .element-text .katex-display,
 .slide .katex-display {
-    text-align: inherit;
+    text-align: center;
     display: block;
     margin: 0.5em 0;
     width: auto;
@@ -85,11 +85,14 @@
     display: none !important;
 }
 
-/* Display equations: KaTeX's own stylesheet re-centers the inner
-   .katex span (.katex-display > .katex { text-align: center }).
-   Revert that too, so the equation follows the box's alignment. */
 .element-text .katex-display > .katex,
-.slide .katex-display > .katex {
+.slide .katex-display > .katex,
+.gl-column-text .katex-display > .katex,
+.gl-table .katex-display > .katex {
+    text-align: center;
+}
+html[data-equations="text"] .katex-display,
+html[data-equations="text"] .katex-display > .katex {
     text-align: inherit;
 }
 
@@ -127,9 +130,7 @@ img.md-image { max-width: 100%; height: auto; }
 .gl-column-text ol { list-style: decimal outside; }
 .gl-column-text ul ul { list-style-type: circle; }
 .gl-column-text li { margin-bottom: 0.15em; }
-.gl-column-text .katex-display { text-align: inherit; margin: 0.4em 0; }
-/* ...and the equation inside it too (KaTeX centres it), on the canvas as in exports */
-.gl-column-text .katex-display > .katex { text-align: inherit; }
+.gl-column-text .katex-display { text-align: center; margin: 0.4em 0; }
 .gl-column[style*="text-align: center"] .gl-column-text ul,
 .gl-column[style*="text-align: center"] .gl-column-text ol { width: fit-content; margin-left: auto; margin-right: auto; }
 

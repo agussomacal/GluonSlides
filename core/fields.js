@@ -17,6 +17,7 @@
 
 import { state } from './state.js';
 import { expandSlides } from './bibPages.js';
+import { TEXT_COMMANDS } from './textCommands.js';
 
 export const FIELDS = [
     { name: 'slidenumber', label: 'Slide number', example: '7' },
@@ -155,6 +156,6 @@ export const OPEN_COMMAND_RE = /(?:^|[^\\A-Za-z])\\([A-Za-z]*)$/;
 /** [{ name, label, insert }] whose name starts with `typed`. */
 export function commandCandidates(typed = '') {
     const t = typed.toLowerCase();
-    return [...FIELDS.map(f => ({ name: f.name, label: f.label, insert: f.name })), ...CITE_COMMANDS.map(c => ({ insert: c.name, ...c }))]
+    return [...FIELDS.map(f => ({ name: f.name, label: f.label, insert: f.name })), ...CITE_COMMANDS.map(c => ({ insert: c.name, ...c })), ...TEXT_COMMANDS]
         .filter(c => c.name.startsWith(t) && c.name !== t);
 }

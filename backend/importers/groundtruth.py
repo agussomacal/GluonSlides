@@ -37,6 +37,7 @@ def _strip_source(text):
     """Markdown / LaTeX source -> the words a reader sees."""
     t = re.sub(r"\$\$.*?\$\$|\$[^$]*\$", " ", text, flags=re.S)       # math (rendered as glyphs)
     t = re.sub(r"\\(cite|ref|label|eqref|url|includegraphics)\*?(\[[^\]]*\])?\{[^}]*\}", " ", t)
+    t = re.sub(r"\\(textcolor|highlight|colorbox)\{[^{}]*\}", " ", t)        # a colour is not a word on the slide
     t = re.sub(r"\\[A-Za-z]+\*?", " ", t)                              # other commands: keep their arguments
     t = re.sub(r"</?(?!https?:|mailto:)[A-Za-z][^>]*>|!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)", " ", t)  # html tags (not <https://…>), images, link targets
     t = re.sub(r"[<>]", " ", t)
@@ -299,7 +300,13 @@ def align_with_pdf(result, pdf_path, folder=None):
             return False  # a portrait page: an article / a figure, not slides
         W = result.get("width") or 1920
         scale = W / rect.width
-        pages = [Page(doc[i], scale) for i in frame_pages(doc)]
+        from . import progress
+        name = pdf_path.replace("\\", "/").split("/")[-1]
+        order = frame_pages(doc)
+        pages = []
+        for n, i in enumerate(order):
+            progress.report(f"Reading {name}", n, len(order))
+            pages.append(Page(doc[i], scale))
     pairs = pair_slides([slide_words(s) for s in slides], [p.words for p in pages])
     worded = [s for s in slides if slide_words(s)]
     if not pairs or len(pairs) < 0.6 * len(worded):
@@ -311,7 +318,8 @@ def align_with_pdf(result, pdf_path, folder=None):
     H = result["height"] if result.get("height") else new_h
 
     texts = figures = 0
-    for si, pi, _score in pairs:
+    for n, (si, pi, _score) in enumerate(pairs):
+        progress.report(f"Placing things as in {name}", n, len(pairs))
         elements = slides[si].get("elements") or []
         before = {id(el): {k: el.get(k, 0) for k in ("x", "y", "width", "height")} for el in elements}
         moved = place_text(elements, pages[pi], W, H)
@@ -326,7 +334,6 @@ def align_with_pdf(result, pdf_path, folder=None):
 
     paired = {si for si, _pi, _s in pairs}
     missing = [s.get("title") or f"slide {i + 1}" for i, s in enumerate(slides) if i not in paired and slide_words(s)]
-    name = pdf_path.replace("\\", "/").split("/")[-1]
     result["groundTruth"] = {"pdf": name, "slides": len(pairs), "texts": texts, "figures": figures}
     if missing:
         shown = ", ".join(f"“{t}”" for t in missing[:5]) + (" …" if len(missing) > 5 else "")

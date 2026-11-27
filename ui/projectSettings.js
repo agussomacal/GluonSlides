@@ -218,6 +218,13 @@ function presentationTab() {
                 <button class="btn btn-secondary" data-settings-action="date-today" title="Always the current day">Today</button>
             </div>
             <p class="prop-hint" data-date-preview>${datePreview(date)}</p>
+        </div>
+        <div class="prop-group">
+            <label for="project-equations">Display equations ($$…$$)</label>
+            <select id="project-equations" class="prop-control" data-project-field="equations">
+                <option value="center"${state.equations !== 'text' ? ' selected' : ''}>Centred, as in LaTeX</option>
+                <option value="text"${state.equations === 'text' ? ' selected' : ''}>Aligned with the text (left in a left-aligned box)</option>
+            </select>
         </div>`;
 }
 
@@ -293,6 +300,7 @@ function wire(m) {
         if (field) {
             if (e.type !== 'input') return;
             state[field.dataset.projectField] = field.value.trim();
+            if (field.dataset.projectField === 'equations') document.documentElement.dataset.equations = state.equations;
             commit({ redrawDialog: false });
             const preview = m.querySelector('[data-date-preview]');
             if (preview && field.dataset.projectField === 'date') preview.innerHTML = datePreview(state.date);

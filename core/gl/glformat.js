@@ -14,6 +14,8 @@ const NOTES_TYPE = '__slide_notes__';
 const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'citestyle', 'nextid'];
 /** Header values written only when set: shown by the \author and \date fields. */
 export const PROJECT_TEXT_PARAMS = ['author', 'date'];
+/** Display equations follow the text's alignment (written only then; centred otherwise). */
+const EQUATIONS_PARAM = 'equations';
 const DIRECTIVE_RE = /^\.(project|section|master|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
@@ -203,7 +205,8 @@ export function serializeGl(project) {
         .join(' ');
     (project.imports || []).forEach(file => lines.push(`.import {${encodeBraceArg(file)}}`));
     // Optional header values, written only when set (for \author, \date).
-    const extra = PROJECT_TEXT_PARAMS.filter(k => project[k]).map(k => ` ${k}:${encodeParamValue(project[k])}`).join('');
+    const extra = PROJECT_TEXT_PARAMS.filter(k => project[k]).map(k => ` ${k}:${encodeParamValue(project[k])}`).join('')
+        + (project.equations === 'text' ? ` ${EQUATIONS_PARAM}:text` : '');
     lines.push(`.project${headerArgs} ${header}${extra}`);
 
     // Theme colors, e.g. .palette primary:#1d4ed8 accent:#f59e0b
@@ -667,6 +670,7 @@ function applyProjectParams(project, name, params) {
     if (params.citestyle !== undefined) project.citestyle = params.citestyle === 'authoryear' ? 'authoryear' : 'numeric';
     if (params.nextid) project.nextId = Math.max(1, Number(params.nextid) || 1);
     PROJECT_TEXT_PARAMS.forEach(k => { if (params[k]) project[k] = params[k]; });
+    if (params[EQUATIONS_PARAM] === 'text') project.equations = 'text';
 }
 
 function buildElement(type, params) {

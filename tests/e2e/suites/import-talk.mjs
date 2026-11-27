@@ -43,8 +43,13 @@ async function start(behaviour) {
             select_import_file: () => ok({ path: behaviour.source }),
             ...(behaviour.sources ? { select_import_files: () => ok({ paths: behaviour.sources }) } : {}),
             select_folder: () => ok({ path: '/home/me/talks' }),
-            import_talk: (source, folder, name, options) => {
+            import_progress: () => ok(window.__progress || { stage: '', done: 0, total: 0 }),
+            import_talk: async (source, folder, name, options) => {
                 window.__calls.push(['import', source, folder, name, options.pdfMode, options.usePdf]);
+                if (behaviour.slow) {
+                    window.__progress = { stage: 'Converting the frames', done: 2, total: 10 };
+                    await new Promise(r => setTimeout(r, behaviour.slow));
+                }
                 attempts += 1;
                 if (behaviour.error) return Promise.resolve({ success: false, error: behaviour.error });
                 if (behaviour.needsExtra && attempts === 1) {
@@ -176,6 +181,18 @@ await page.click('#import-go');
 await page.waitForTimeout(600);
 c = (await page.evaluate(() => window.__calls))[0];
 check('a folder alone is one source; the PDF can be left out', c[1] === '/home/me/talk' && c[5] === false, JSON.stringify(c));
+await page.close();
+
+// ---------- Progress while importing ----------
+page = await start({ source: '/x/talk.tex', slow: 1200 });
+await page.click('[data-action="import-choose-source"]');
+await page.click('[data-action="import-choose-folder"]');
+await page.click('#import-go');
+await page.waitForTimeout(700);
+const prog = await page.evaluate(() => ({ label: document.querySelector('#import-status .progress-label')?.textContent || '', width: document.querySelector('#import-status .progress-fill')?.style.width }));
+check('a progress bar while importing: stage and count', prog.label.includes('Converting the frames') && prog.label.includes('3 / 10') && prog.width === '20%', JSON.stringify(prog));
+await page.waitForTimeout(1200);
+check('…and the project opens when done', await page.isVisible('#editor-view.active'));
 await page.close();
 
 // ---------- Errors ----------

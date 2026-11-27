@@ -15,6 +15,25 @@ import { state, whenApiReady, ensureIds, serializeProject, resetProjectState, fl
 import { openProjectByPath } from './project.js';
 import { escapeHtml } from '../core/render.js';
 import { registerDropZone } from '../editor/fileDrop.js';
+import { progressBar } from './busy.js';
+
+/** import_talk with a progress bar in the dialog (the backend reports how far it is). */
+async function importWithProgress(api, source, folder, name, options) {
+    const status = $('import-status');
+    progressBar(status, { stage: 'Importing' });
+    const poll = setInterval(async () => {
+        if (typeof api.import_progress !== 'function') return;
+        try {
+            const p = await api.import_progress();
+            if (p && p.success && p.stage) progressBar(status, p);
+        } catch (e) { /* the bar just stays */ }
+    }, 250);
+    try {
+        return await api.import_talk(source, folder, name, options);
+    } finally {
+        clearInterval(poll);
+    }
+}
 
 const $ = (id) => document.getElementById(id);
 let chosen = { sources: [], folder: '' };
@@ -158,7 +177,7 @@ export async function confirmImport() {
     $('import-status').textContent = 'Importing…';
     $('import-go').disabled = true;
     try {
-        let res = await api.import_talk(source, chosen.folder, name, { pdfMode, usePdf });
+        let res = await importWithProgress(api, source, chosen.folder, name, { pdfMode, usePdf });
         if (res && !res.success && res.needs_extra) {
             // PDF import needs an extra component, downloaded once (asked first).
             $('import-status').textContent = '';
@@ -168,7 +187,7 @@ export async function confirmImport() {
                 return;
             }
             $('import-status').textContent = 'Importing…';
-            res = await api.import_talk(source, chosen.folder, name, { pdfMode, usePdf });
+            res = await importWithProgress(api, source, chosen.folder, name, { pdfMode, usePdf });
         }
         if (!res || !res.success) throw new Error((res && res.error) || 'Import failed');
         const path = await buildImportedProject(api, res, name);

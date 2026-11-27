@@ -10,6 +10,7 @@ import { resolveFields } from './fields.js';
 import { ElementRegistry } from './registry.js';
 import { fontStack } from './fonts.js';
 import { forDrawing } from './defaults.js';
+import { applyTextCommands } from './textCommands.js';
 
 // ---------- Markdown + KaTeX ----------
 
@@ -84,10 +85,17 @@ export function renderMarkdownAndKatex(element, rawText) {
     }
 
     const { text: withoutMath, pieces } = protectMath(processed || '');
-    let html = withoutMath;
+    // \textcolor{red}{...}, \textbf{...}, your text macros (core/textCommands.js)
+    let source = withoutMath;
+    try {
+        source = applyTextCommands(withoutMath);
+    } catch (e) {
+        console.error('Text command error:', e);
+    }
+    let html = source;
     if (window.marked && typeof window.marked.parse === 'function') {
         try {
-            html = window.marked.parse(withoutMath, { breaks: true, gfm: true });
+            html = window.marked.parse(source, { breaks: true, gfm: true });
         } catch (e) {
             console.error('Markdown parsing error:', e);
         }

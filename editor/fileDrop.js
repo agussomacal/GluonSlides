@@ -20,6 +20,7 @@
 
 import { state, pyApi, activeElements, flashSaveIndicator, markDirty } from '../core/state.js';
 import { renderEditor } from './editor.js';
+import { placeholder } from '../ui/busy.js';
 import { addImageFile, addImagePath, replaceFigureImage, replaceFigureImageData } from '../elements/figure/figure.js';
 import { tablePropsFromCsv, parseCellsText } from '../elements/table/table.js';
 
@@ -216,7 +217,7 @@ async function tableProps(it) {
 async function importTables(tables, insert, target, at) {
     const onTable = elementUnder(target, 'table');
     for (const [i, it] of tables.entries()) {
-        const props = await tableProps(it);
+        const props = await placeholder(at && { x: at.x + i * 40, y: at.y + i * 40 }, `Reading ${it.name}…`, tableProps(it), { width: 640, height: 260 });
         if (!props) continue;
         if (onTable !== null && i === 0) {
             const el = activeElements()[onTable];

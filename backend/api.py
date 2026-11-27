@@ -211,6 +211,11 @@ class Api:
         from . import importers
         return importers.import_talk(source, parent_folder, name, options or {})
 
+    def import_progress(self):
+        """How far the running import is: {"stage", "done", "total"}."""
+        from .importers import progress
+        return {"success": True, **progress.get()}
+
     def install_extra(self, name):
         """Download an optional component (PDF import), after the user agreed."""
         from .importers import extras

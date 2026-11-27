@@ -13,6 +13,9 @@
 import { state, pyApi, markDirty, activeElements, forEachElementDeep } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml, setImageResolver } from '../../core/render.js';
+import { busy, placeholder } from '../../ui/busy.js';
+
+const fileName = (p) => String(p || '').split(/[/\\]/).pop();
 
 function notifyFullRender() {
     document.dispatchEvent(new CustomEvent('slide-content-changed'));
@@ -25,7 +28,7 @@ function notifyThumbnailOnly() {
 async function processAndAssignFigure(elIndex, filePath) {
     const api = pyApi();
     if (api && state.projectFolder) {
-        const res = await api.import_figure(state.projectFolder, filePath);
+        const res = await busy(`Importing ${fileName(filePath)}…`, api.import_figure(state.projectFolder, filePath));
         if (res && res.success) {
             assignFigureSource(elIndex, res.data_uri, filePath, res.relative_path);
             // Copied from elsewhere: follow the original by default.
@@ -254,8 +257,8 @@ export async function addImageFile(file, insert, at = null) {
 }
 
 /** Image data (a data URI, e.g. the clipboard's screenshot): saved into figures/ and added. */
-export async function addImageData(dataUri, insert, at = null, fileName = '') {
-    const stored = await storeImageData(dataUri, pastedName(fileName));
+export async function addImageData(dataUri, insert, at = null, name = '') {
+    const stored = await placeholder(at, 'Saving the image…', storeImageData(dataUri, pastedName(name)));
     figureSources.set(stored, dataUri);
     await placeFigure(dataUri, { filePath: stored }, insert, at);
     return stored;
@@ -270,7 +273,8 @@ export async function addImagePath(path, insert, at = null) {
     if (!api || typeof api.import_figure !== 'function' || !state.projectFolder) {
         throw new Error('Save the project first: figures are copied into its folder');
     }
-    const res = await api.import_figure(state.projectFolder, path);
+    // A box on the slide while it is copied (and converted: PDF, EPS...).
+    const res = await placeholder(at, `Importing ${fileName(path)}…`, api.import_figure(state.projectFolder, path));
     if (!res || !res.success) throw new Error((res && res.error) || `Could not import ${path}`);
     figureSources.set(res.relative_path, res.data_uri);
     const linked = res.relative_path !== path && res.path !== path;

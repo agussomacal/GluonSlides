@@ -415,13 +415,13 @@ def latex_to_md(s, ctx):
                 _, _, args, j = read_args(s, j, n)
                 colour = doc.colours.resolve(args[0]) if name == "textcolor" else "#cc0000"
                 inner = latex_to_md(args[-1], ctx)
-                out.append(f'<span style="color:{colour}">{inner}</span>' if colour else inner)
+                out.append(model.coloured(inner, colour) if colour else inner)
                 i = j
             elif name == "color":
                 _, _, args, j = read_args(s, j, 1)
                 colour = doc.colours.resolve(args[0])
                 rest = latex_to_md(s[j:], ctx)
-                out.append(f'<span style="color:{colour}">{rest}</span>' if colour and rest.strip() else rest)
+                out.append(model.coloured(rest, colour) if colour and rest.strip() else rest)
                 i = len(s)
             elif name in ("cite", "citep", "citet", "parencite", "textcite", "fullcite"):
                 _, opt, args, j = read_args(s, j, 1)
@@ -1313,7 +1313,10 @@ def build_slides(doc, layout):
     def title_md(t):
         return latex_to_md(t, Ctx(doc)).strip()
 
-    for kind, payload in frames(doc):
+    from . import progress
+    all_frames = frames(doc)
+    for n_frame, (kind, payload) in enumerate(all_frames):
+        progress.report("Converting the frames", n_frame, len(all_frames))
         if kind == "section":
             section = latex_to_md(payload, Ctx(doc)).strip()
             if doc.section_slides:

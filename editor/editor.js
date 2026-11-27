@@ -42,6 +42,7 @@ import { beginCitationPass } from '../core/citations.js';
 import { slideStepCount } from '../core/steps.js';
 import { withSlideContext, contextForSlide, invalidateNumbering, sectionNames } from '../core/fields.js';
 import { initMarqueeSelection } from './marquee.js';
+import './formatBar.js'; // bold / colour / highlight over selected words while editing text
 import './textAutocomplete.js'; // \ and \cite{ suggestions while typing on the canvas
 import { renderAddElementToolbar } from './toolbar.js';
 import { initDrawingTools, startTool } from './tools.js';
@@ -1002,6 +1003,8 @@ document.getElementById('slide-canvas').addEventListener('click', (e) => {
 // Clicking outside an editing text box commits it.
 window.addEventListener('click', (e) => {
     const editingEl = document.querySelector('.canvas-element.editing-mode');
+    // The format bar and the suggestion list belong to the editing.
+    if (e.target.closest && e.target.closest('.format-bar, .cite-menu')) return;
     if (editingEl && !editingEl.contains(e.target)) {
         const el = state.selectedElementIndex !== null ? activeElements()[state.selectedElementIndex] : null;
         if (!el) return;

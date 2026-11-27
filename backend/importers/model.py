@@ -16,6 +16,23 @@ import re
 
 # ---------- colours ----------
 
+SAFE_COLOUR = re.compile(r"^[#@A-Za-z0-9!./ -]+$")
+
+
+def coloured(text, colour):
+    """Text in a colour, as GluonSlides writes it: \\textcolor{red}{text}
+    (core/textCommands.js). Braces in the text are escaped."""
+    if not colour or not text:
+        return text
+    colour = colour.strip()
+    if not SAFE_COLOUR.match(colour):
+        return f'<span style="color:{colour}">{text}</span>'  # rgb(...) and the like
+    return "\\textcolor{" + colour + "}{" + text + "}"
+
+
+def escape_braces(text):
+    return re.sub(r"(?<!\\)([{}])", r"\\\1", text)
+
 # xcolor base colours and the common dvipsnames.
 NAMED = {
     "black": "000000", "white": "ffffff", "red": "ff0000", "green": "00ff00", "blue": "0000ff",
