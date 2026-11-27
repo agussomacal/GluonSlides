@@ -8,10 +8,11 @@
 // ============================================================
 
 const PANES = {
-    slides: { cls: 'hide-slides-pane', key: '1', label: 'slides pane' },
-    properties: { cls: 'hide-properties-pane', key: '2', label: 'properties pane' },
+    slides: { cls: 'hide-slides-pane', command: 'toggleSlides', label: 'slides pane' },
+    properties: { cls: 'hide-properties-pane', command: 'toggleProperties', label: 'properties pane' },
 };
 import { loadPrefs, pref, setPref } from '../core/prefs.js';
+import { matches, keysFor, display } from '../core/shortcuts.js';
 
 function sync() {
     Object.entries(PANES).forEach(([name, p]) => {
@@ -19,7 +20,7 @@ function sync() {
         const btn = document.querySelector(`[data-action="toggle-pane"][data-arg="${name}"]`);
         if (btn) {
             btn.classList.toggle('active', !hidden);
-            btn.title = `${hidden ? 'Show' : 'Hide'} the ${p.label} (Ctrl+Alt+${p.key}; drag its edge to resize)`;
+            btn.title = `${hidden ? 'Show' : 'Hide'} the ${p.label} (${(keysFor(p.command)[0] && display(keysFor(p.command)[0])) || 'no shortcut'}; drag its edge to resize)`;
         }
     });
 }
@@ -113,8 +114,7 @@ export function initPanes() {
     });
     sync();
     window.addEventListener('keydown', (e) => {
-        if (!(e.ctrlKey || e.metaKey) || !e.altKey) return;
-        const name = Object.keys(PANES).find(n => e.code === `Digit${PANES[n].key}`);
+        const name = Object.keys(PANES).find(n => matches(e, PANES[n].command));
         if (name) {
             e.preventDefault();
             togglePane(name);

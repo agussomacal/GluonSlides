@@ -9,7 +9,7 @@ import { clearBibPages } from '../core/bibPages.js';
 import {
     state, pyApi, whenApiReady, parseTexMacros, markDirty, flushPendingSave,
     serializeProject, deserializeProject, currentSnapshot, resetHistory,
-    resetProjectState, DEFAULT_TEX_MACROS,
+    resetProjectState, DEFAULT_TEX_MACROS, applyProjectData, parseProjectContent,
 } from '../core/state.js';
 import { escapeHtml, syncProjectChrome, syncThemeToggle } from '../core/render.js';
 import { setBibSource, CITATION_STYLES } from '../core/citations.js';
@@ -17,6 +17,8 @@ import { clearFigureCache, hydrateFigures } from '../elements/figure/figure.js';
 import { renderEditor } from '../editor/editor.js';
 import { loadImportedLibraries } from '../core/macros.js';
 import { loadProjectFonts } from '../core/fonts.js';
+import { tourOnFirstUse } from './tour.js';
+import { TUTORIAL_GL } from './tutorial.js';
 
 /** Macro definitions shaped like slides, so their figures load too. */
 function macroSlides() {
@@ -165,6 +167,7 @@ function enterEditor() {
     showView('editor-view');
     renderEditor();
     projectLoaded();
+    tourOnFirstUse(); // the quick tour, the first time in the app
 }
 
 // Tabs (ui/tabs.js): a tab's project shown again (its history kept), or the start screen.
@@ -287,6 +290,15 @@ export async function openSampleProject() {
         borderWidth: 0,
         borderStyle: 'solid',
     });
+    enterEditor();
+}
+
+/** The tutorial presentation (ui/tutorial.js), in a tab of its own; not saved anywhere. */
+export async function openTutorialProject() {
+    await prepareTabFor();
+    clearFigureCache();
+    resetProjectState({ name: 'GluonSlides tutorial' });
+    applyProjectData(parseProjectContent(TUTORIAL_GL));
     enterEditor();
 }
 

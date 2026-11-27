@@ -32,6 +32,7 @@
         <button class="btn btn-primary" data-action="new-project">+ Create New Project</button>
         <button class="btn btn-secondary" data-action="open-project">📂 Open Project File...</button>
         <button class="btn btn-secondary" data-action="import-talk">⬇ Import Talk (Beamer, Slidev, PowerPoint, PDF)...</button>
+        <button class="btn btn-secondary" data-action="help" data-arg="tutorial" title="A short presentation that shows what you can do, by doing it">🎓 Tutorial</button>
         <div class="existing-projects">
             <p style="font-size: 12px; margin-bottom: 6px;">Recent Projects:</p>
             <ul class="project-list" id="project-list"></ul>
@@ -230,6 +231,18 @@
                     title="Present from this slide (Shift+F5) · from the start: F5">
                 <span>▶</span> Present
             </button>
+            <div class="toolbar-dropdown help-dropdown" id="help-menu">
+                <button class="toolbar-btn help-btn" type="button" data-help-toggle title="Help: tour, tutorial, keyboard shortcuts">?</button>
+                <div class="toolbar-menu" role="menu">
+                    <button type="button" role="menuitem" data-help="tour"><span class="toolbar-menu-icon">🧭</span> Quick tour</button>
+                    <button type="button" role="menuitem" data-help="tutorial"><span class="toolbar-menu-icon">🎓</span> Tutorial presentation</button>
+                    <button type="button" role="menuitem" data-help="shortcuts"><span class="toolbar-menu-icon">⌨</span> Keyboard shortcuts <span class="help-keys" data-help-keys="shortcuts"></span></button>
+                    <div class="toolbar-menu-divider"></div>
+                    <button type="button" role="menuitem" data-help="glfile"><span class="toolbar-menu-icon">📄</span> The .gl file of this project <span class="help-keys" data-help-keys="glFile"></span></button>
+                    <button type="button" role="menuitem" data-help="format"><span class="toolbar-menu-icon">📘</span> Gluon format reference</button>
+                    <button type="button" role="menuitem" data-help="guide"><span class="toolbar-menu-icon">📖</span> User guide</button>
+                </div>
+            </div>
             <button class="toolbar-btn pane-btn active" data-action="toggle-pane" data-arg="properties" title="Hide the properties pane (Ctrl+Alt+2)">◨</button>
         </div>
 

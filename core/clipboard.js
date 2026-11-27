@@ -42,6 +42,7 @@ import { syncProjectChrome } from './render.js';
 import { withDefaults } from './defaults.js';
 import { addImageFile, addImageData, addImagePath } from '../elements/figure/figure.js';
 import { rowsFromClipboardText } from '../elements/table/table.js';
+import { matches } from './shortcuts.js';
 
 const PASTE_OFFSET_PX = 40;
 
@@ -104,25 +105,25 @@ export function initKeyboardShortcuts() {
         // delete or paste slides); Esc leaves the master.
         const onMaster = state.editingMasterIndex !== null;
 
-        // Ctrl/Cmd + G — group selection; Ctrl/Cmd + Shift + G — ungroup
-        if (hasCtrlOrCmd && !e.altKey && e.key.toLowerCase() === 'g') {
+        // The changeable shortcuts (core/shortcuts.js): group, layers, lock, undo...
+        if (matches(e, 'group') || matches(e, 'ungroup')) {
             e.preventDefault();
-            if (e.shiftKey) ungroupSelected();
+            if (matches(e, 'ungroup')) ungroupSelected();
             else groupSelected();
             return;
         }
 
         // Ctrl/Cmd + ] / [ — bring forward / send backward; with Shift: to front / back
-        if (hasCtrlOrCmd && !e.altKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
+        const layer = ['front', 'back', 'forward', 'backward'].find(id => matches(e, id));
+        if (layer) {
             if (getSelectedElementIndices().length === 0) return;
             e.preventDefault();
-            const up = e.code === 'BracketRight';
-            reorderSelected(e.shiftKey ? (up ? 'front' : 'back') : (up ? 'forward' : 'backward'));
+            reorderSelected(layer);
             return;
         }
 
         // Ctrl/Cmd + Shift + L — lock / unlock the selection
-        if (hasCtrlOrCmd && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+        if (matches(e, 'lock')) {
             if (getSelectedElementIndices().length === 0) return;
             e.preventDefault();
             toggleLockSelected();
@@ -136,7 +137,7 @@ export function initKeyboardShortcuts() {
         }
 
         // 0a. Ctrl/Cmd + Shift + Z (or Ctrl/Cmd + Y) — Redo
-        if (hasCtrlOrCmd && !e.altKey && ((e.shiftKey && e.key.toLowerCase() === 'z') || (!e.shiftKey && e.key.toLowerCase() === 'y'))) {
+        if (matches(e, 'redo')) {
             if (redo()) {
                 syncUiAfterHistoryChange();
                 e.preventDefault();
@@ -145,7 +146,7 @@ export function initKeyboardShortcuts() {
         }
 
         // 0b. Ctrl/Cmd + Z (without Shift) — Undo
-        if (hasCtrlOrCmd && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') {
+        if (matches(e, 'undo')) {
             if (undo()) {
                 syncUiAfterHistoryChange();
                 e.preventDefault();
@@ -181,7 +182,7 @@ export function initKeyboardShortcuts() {
         }
 
         // 1. Delete / Backspace — delete selected object(s), or selected slide(s) if no object is active
-        if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (matches(e, 'delete')) {
             if (getSelectedElementIndices().length > 0) {
                 if (deleteSelectedElements()) {
                     e.preventDefault();
@@ -195,7 +196,7 @@ export function initKeyboardShortcuts() {
         }
 
         // 2. Ctrl/Cmd + X — cut selected element(s) or selected slide(s) into clipboard
-        if (hasCtrlOrCmd && e.key.toLowerCase() === 'x') {
+        if (matches(e, 'cut')) {
             const copied = copySelectionToClipboard();
             if (!copied) return;
 
@@ -215,7 +216,7 @@ export function initKeyboardShortcuts() {
         }
 
         // 3. Ctrl/Cmd + C — copy selected element(s), or selected slide(s) if no element is active
-        if (hasCtrlOrCmd && e.key.toLowerCase() === 'c') {
+        if (matches(e, 'copy')) {
             const copied = copySelectionToClipboard();
             if (!copied) return;
 
@@ -230,7 +231,7 @@ export function initKeyboardShortcuts() {
 
         // 4. Ctrl/Cmd + V — an image from the system clipboard, else the
         // object(s) or slide(s) copied in the app.
-        if (hasCtrlOrCmd && e.key.toLowerCase() === 'v') {
+        if (matches(e, 'paste')) {
             clearTimeout(pendingPaste);
             pendingPaste = null;
             const api = pyApi();

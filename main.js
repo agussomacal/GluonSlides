@@ -7,6 +7,7 @@
 //   editor/inspector/     .gl source inspector
 //   export/               HTML / PDF export
 //   ui/present.js         Present mode (present/viewer.js is the slide show)
+//   ui/help.js            the ? menu: tour, tutorial, keyboard shortcuts
 // ============================================================
 
 import { startAutosave, flushPendingSave, whenApiReady } from './core/state.js';
@@ -27,6 +28,7 @@ import { startTableSync } from './elements/table/table.js';
 import { initPanes, togglePane } from './ui/panes.js';
 import { loadPrefs } from './core/prefs.js';
 import { initUpdateNotice } from './ui/updateNotice.js';
+import { initHelpMenu, runHelp } from './ui/help.js';
 import { showImportModal, chooseImportSource, chooseImportSourceFolder, chooseImportFolder, confirmImport, onImportNameInput } from './ui/importTalk.js';
 
 import {
@@ -72,6 +74,7 @@ const clickActions = {
     'export-html': projectExportHtml,
     'export-pdf': projectExportPdf,
     'present': () => startPresentation(),
+    'help': (arg) => runHelp(arg),
     'present-presenter': () => startPresentation({ presenter: true }),
     'go-home': goToHome,
     'group-selection': groupSelected,
@@ -146,6 +149,7 @@ initRecents();
 loadPrefs(); // the interface's saved choices (core/prefs.js)
 initPanes(); // hidden side panes (remembered)
 initUpdateNotice(); // "a new version is available" (backend/updates.py)
+initHelpMenu(); // the ? menu: tour, tutorial, shortcuts, docs
 whenApiReady(60000).then(async api => {
     if (!api) return;
     loadSystemFonts(); // "This computer" section of the font list

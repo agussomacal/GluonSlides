@@ -18,6 +18,7 @@
 import { state, flushPendingSave } from '../core/state.js';
 import { takeFigureCache, putFigureCache } from '../elements/figure/figure.js';
 import { escapeHtml } from '../core/render.js';
+import { matches } from '../core/shortcuts.js';
 
 // Shared by every tab (not part of a project).
 const SHARED_KEYS = new Set(['elementClipboard', 'slideClipboard', 'clipboardSource', 'recents']);
@@ -202,12 +203,12 @@ export function renderTabs() {
 }
 
 window.addEventListener('keydown', (e) => {
-    if (!(e.ctrlKey || e.metaKey) || !tabs.length) return;
-    if (e.key === 'Tab') {
+    if (!tabs.length) return;
+    if (matches(e, 'nextTab') || matches(e, 'prevTab')) {
         e.preventDefault();
         const n = tabs.length;
-        switchTab(((active + (e.shiftKey ? -1 : 1)) % n + n) % n);
-    } else if (e.key.toLowerCase() === 'w' && !e.shiftKey && !e.altKey && tabs.length > 1) {
+        switchTab(((active + (matches(e, 'prevTab') ? -1 : 1)) % n + n) % n);
+    } else if (matches(e, 'closeTab') && tabs.length > 1) {
         e.preventDefault();
         closeTab(active);
     }

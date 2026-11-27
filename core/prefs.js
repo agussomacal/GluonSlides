@@ -12,6 +12,12 @@ const LOCAL = 'gluonslides.prefs';
 let prefs = {};
 let defaultParent = null;
 let loaded = null;
+let fromApp = false;
+
+/** Whether the preferences are the app's own file (not a browser's storage). */
+export function prefsFromApp() {
+    return fromApp;
+}
 
 function local() {
     try {
@@ -31,6 +37,7 @@ export function loadPrefs() {
                     const res = await api.get_ui_prefs();
                     prefs = (res && res.prefs) || {};
                     defaultParent = (res && res.defaultParent) || null;
+                    fromApp = true;
                     return;
                 } catch (e) { /* the browser's storage, then */ }
             }

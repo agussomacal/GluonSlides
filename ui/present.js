@@ -21,6 +21,7 @@
 import { state, pyApi } from '../core/state.js';
 import { getExportHtmlString } from '../export/html.js';
 import { selectSlide } from '../editor/editor.js';
+import { matches } from '../core/shortcuts.js';
 
 let overlay = null;
 let mode = null;            // 'audience' | 'presenter'
@@ -183,9 +184,9 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 window.addEventListener('keydown', (e) => {
-    if (e.key !== 'F5' || overlay) return;
+    if (overlay || !(matches(e, 'presentStart') || matches(e, 'presentHere'))) return;
     const editor = document.getElementById('editor-view');
     if (!editor || !editor.classList.contains('active')) return;
     e.preventDefault();
-    startPresentation({ fromStart: !e.shiftKey });
+    startPresentation({ fromStart: matches(e, 'presentStart') });
 });

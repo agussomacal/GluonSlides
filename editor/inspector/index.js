@@ -428,6 +428,16 @@ export function openMacroDefinition(name) {
     }
 }
 
+/** Opens the inspector at the current slide / selection, or closes it (Ctrl+E, Help menu). */
+export function toggleGlInspector() {
+    if (isOpen) {
+        closeGlInspector();
+        return;
+    }
+    followSelection();
+    openGlInspector(currentTarget);
+}
+
 export function closeGlInspector() {
     clearTimeout(debounceTimer);
     settingsPopover.setOpen(false);
