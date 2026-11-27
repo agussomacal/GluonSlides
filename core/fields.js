@@ -148,6 +148,7 @@ const CITE_COMMANDS = [
     { name: 'citet', label: 'Citation as text: Smith (2020)', insert: 'citet{' },
     { name: 'fullcite', label: 'Full reference', insert: 'fullcite{' },
     { name: 'printbibliography', label: 'List of references' },
+    { name: 'var', label: 'A variable\'s value (Project settings → Variables, sliders)', insert: 'var{' },
 ];
 
 /** Text just before the cursor ending in a command being typed: group 1 = its letters. */

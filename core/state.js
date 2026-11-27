@@ -53,6 +53,10 @@ export const state = {
     defaults: {},
     styles: {},
     palette: null,
+    // Variables (core/variables.js): files of values ({ file, original,
+    // sync }) and values written in the project ({ name: value }).
+    varFiles: [],
+    vars: {},
     _loadedLibraries: {},   // file -> text as last loaded/saved
 
     rawTexMacros: DEFAULT_TEX_MACROS,
@@ -491,6 +495,8 @@ export function currentSnapshot() {
         defaults: state.defaults,
         styles: state.styles,
         palette: state.palette,
+        varFiles: state.varFiles,
+        vars: state.vars,
         author: state.author,
         date: state.date,
         equations: state.equations,
@@ -509,6 +515,8 @@ export function serializeProject() {
         defaults: state.defaults,
         styles: state.styles,
         palette: state.palette,
+        varFiles: state.varFiles,
+        vars: state.vars,
         slideWidth: state.slideWidth,
         slideHeight: state.slideHeight,
         gridSize: state.gridSize,
@@ -557,6 +565,8 @@ export function resetProjectState({ name = 'Untitled Project', path = null, fold
     state.defaults = {};
     state.styles = {};
     state.palette = null;
+    state.varFiles = [];
+    state.vars = {};
     state._loadedLibraries = {};
     state._libraryImports = {};
     applyProjectData({
@@ -604,6 +614,10 @@ export function applyProjectData(data, { resetSelection = true } = {}) {
     if (data.defaults !== undefined) state.defaults = structuredClone(data.defaults || {});
     if (data.styles !== undefined) state.styles = structuredClone(data.styles || {});
     if (data.palette !== undefined) state.palette = data.palette ? structuredClone(data.palette) : null;
+    if (data.varFiles !== undefined || data.vars !== undefined) {
+        state.varFiles = structuredClone(data.varFiles || []);
+        state.vars = structuredClone(data.vars || {});
+    }
     ensureIds();
 
     const lastIdx = Math.max(0, state.slides.length - 1);

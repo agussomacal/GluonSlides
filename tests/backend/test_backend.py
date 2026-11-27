@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -1433,6 +1434,51 @@ class ExtrasTest(TempDirTest):
         lock = (REPO / "uv.lock").read_text()
         for url, sha in extras.PYMUPDF_WHEELS.values():
             self.assertIn(f'{{ url = "{url}", hash = "sha256:{sha}"', lock)
+
+
+class VariablesTest(TempDirTest):
+    """Variable files (backend/variables.py): JSON and CSV, linked into data/ and followed."""
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_json_nested_and_types(self):
+        from backend.variables import read_vars_file
+        p = self.write("s.json", '{"err": 0.0123, "n": 12, "name": "NGD", "fit": {"a": 2.5, "b": [1, 2]}, "ok": true, "2nd": 3}')
+        res = read_vars_file(self.tmp, p)
+        self.assertTrue(res["success"], res)
+        self.assertEqual(res["values"], {"err": 0.0123, "n": 12, "name": "NGD", "fit.a": 2.5, "ok": 1, "_2nd": 3})
+
+    def test_csv_pairs_header_and_last_row(self):
+        from backend.variables import read_vars_file
+        pairs = self.write("p.csv", "name,value\nalpha,0.05\nmethod,Adam\n")
+        self.assertEqual(read_vars_file(self.tmp, pairs)["values"], {"alpha": 0.05, "method": "Adam"})
+        log = self.write("log.csv", "step;loss;acc\n1;0.9;0.5\n2;0.4;0.81\n")
+        self.assertEqual(read_vars_file(self.tmp, log)["values"], {"step": 2, "loss": 0.4, "acc": 0.81})
+
+    def test_bad_files_say_why(self):
+        from backend.variables import read_vars_file
+        self.assertFalse(read_vars_file(self.tmp, self.write("bad.json", "[1, 2]"))["success"])
+        self.assertFalse(read_vars_file(self.tmp, self.write("x.xlsx", ""))["success"])
+        self.assertFalse(read_vars_file(self.tmp, "missing.json")["success"])
+
+    def test_link_and_follow_the_original(self):
+        from backend.variables import link_vars_file, refresh_vars
+        project = os.path.join(self.tmp, "proj")
+        os.makedirs(project)
+        src = self.write("summary.json", '{"err": 1}')
+        res = link_vars_file(project, src)
+        self.assertTrue(res["success"], res)
+        self.assertEqual((res["relative_path"], res["values"]), ("data/summary.json", {"err": 1}))
+        item = {"src": res["relative_path"], "original": src, "mtime": res["mtime"]}
+        self.assertEqual(refresh_vars(project, [item])["updated"], [])  # nothing changed
+        self.write("summary.json", '{"err": 0.5, "n": 3}')
+        os.utime(src, (time.time() + 5, time.time() + 5))
+        up = refresh_vars(project, [item])["updated"]
+        self.assertEqual(up[0]["values"], {"err": 0.5, "n": 3})
 
 
 class TablesTest(TempDirTest):

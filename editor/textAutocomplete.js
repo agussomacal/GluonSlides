@@ -10,6 +10,7 @@
 // ============================================================
 
 import { citationCandidates, OPEN_CITE_RE } from '../core/citations.js';
+import { variableCandidates, OPEN_VAR_RE } from '../core/variables.js';
 import { commandCandidates, OPEN_COMMAND_RE } from '../core/fields.js';
 import { escapeHtml } from '../core/render.js';
 
@@ -73,8 +74,13 @@ function update(box) {
     const around = textAround(box);
     if (!around) { close(); return; }
     const cite = around.before.match(OPEN_CITE_RE);
-    const command = !cite && around.before.match(OPEN_COMMAND_RE);
-    if (cite) {
+    const variable = !cite && around.before.match(OPEN_VAR_RE);
+    const command = !cite && !variable && around.before.match(OPEN_COMMAND_RE);
+    if (variable) {
+        typed = variable[1];
+        items = variableCandidates(typed).filter(c => c.name !== typed).slice(0, MAX_ITEMS)
+            .map(c => ({ key: c.name, label: c.label, insert: c.name + (/^\s*\}/.test(around.after) ? '' : '}') }));
+    } else if (cite) {
         typed = cite[1];
         items = citationCandidates(typed).filter(c => c.key !== typed).slice(0, MAX_ITEMS)
             .map(c => ({ ...c, insert: c.key + (/^\s*[},]/.test(around.after) ? '' : '}') }));

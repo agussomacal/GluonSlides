@@ -7,6 +7,7 @@
 import { state, markDirty } from './state.js';
 import { resolveCitations } from './citations.js';
 import { resolveFields } from './fields.js';
+import { resolveVars } from './variables.js';
 import { ElementRegistry } from './registry.js';
 import { fontStack } from './fonts.js';
 import { forDrawing } from './defaults.js';
@@ -77,8 +78,8 @@ export function renderMarkdownAndKatex(element, rawText) {
     // keeps the raw \cite{...} markers for round-trip fidelity.
     let processed;
     try {
-        // Fields first (\slidenumber ...), then citations.
-        processed = resolveCitations(resolveFields(rawText));
+        // Fields first (\slidenumber ...), variables (\var{x}), then citations.
+        processed = resolveCitations(resolveVars(resolveFields(rawText)));
     } catch (e) {
         console.error('Citation resolution error:', e);
         processed = rawText;
@@ -114,6 +115,8 @@ export function renderMarkdownAndKatex(element, rawText) {
                 ],
                 macros: state.projectMacros,
                 ignoredClasses: ['gl-dollar'],
+                // \htmlData only: the markers of \var{…} values (core/variables.js)
+                trust: (ctx) => ctx.command === '\\htmlData',
                 throwOnError: false,
             });
         } catch (e) {

@@ -16,7 +16,7 @@ const PROJECT_PARAMS = ['version', 'width', 'height', 'grid', 'darkmode', 'cites
 export const PROJECT_TEXT_PARAMS = ['author', 'date'];
 /** Display equations follow the text's alignment (written only then; centred otherwise). */
 const EQUATIONS_PARAM = 'equations';
-const DIRECTIVE_RE = /^\.(project|section|master|slide|notes|element|import|define|macro|defaults|palette|style)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
+const DIRECTIVE_RE = /^\.(project|section|master|slide|notes|element|import|define|macro|defaults|palette|style|vars)(?:\.([a-zA-Z0-9_-]+))?(?=\s|$|\{)/;
 
 const DEFAULT_NUMERIC_PROPS = new Set(['x', 'y', 'width', 'height', 'fontSize', 'borderWidth']);
 const COMMON_ELEMENT_PROPS = [
@@ -213,6 +213,14 @@ export function serializeGl(project) {
     if (Array.isArray(project.palette) && project.palette.length) {
         lines.push(`.palette ${formatGlParams(Object.fromEntries(project.palette.map(p => [p.name, p.color])))}`);
     }
+    // Variables (core/variables.js): files, then values written here
+    (project.varFiles || []).forEach(f => {
+        const params = formatGlParams({ sync: f.sync === false ? 'no' : 'yes', original: f.original || '' });
+        lines.push(`.vars {${encodeBraceArg(f.file)}}${params ? ' ' + params : ''}`);
+    });
+    if (project.vars && Object.keys(project.vars).length) {
+        lines.push(`.vars ${formatGlParams(project.vars)}`);
+    }
     // Project-wide style defaults, e.g. .defaults.text fontFamily:"EB Garamond"
     Object.keys(project.defaults || {}).sort().forEach(type => {
         const params = formatGlParams(project.defaults[type] || {});
@@ -385,6 +393,20 @@ export function parseGl(text) {
             currentSlide = null;
             return null;
         }
+        if (kind === 'vars') {
+            if (braceArg.value) {
+                project.varFiles = project.varFiles || [];
+                project.varFiles.push({ file: braceArg.value, sync: params.sync !== 'no', original: params.original || '' });
+            } else {
+                project.vars = project.vars || {};
+                for (const [k, v] of Object.entries(params)) {
+                    const n = Number(v);
+                    project.vars[k] = v !== '' && Number.isFinite(n) ? n : v;
+                }
+            }
+            currentSlide = null;
+            return null;
+        }
         if (kind === 'palette') {
             project.palette = Object.entries(params).map(([name, color]) => ({ name, color }));
             currentSlide = null;
@@ -461,6 +483,8 @@ export function parseGl(text) {
     project.macros = finishDefines(library.defines);
     project.defaults = project.defaults || {};
     project.styles = project.styles || {};
+    project.varFiles = project.varFiles || [];
+    project.vars = project.vars || {};
     if (project.palette === undefined) project.palette = null; // project uses the starter palette
 
     if (project.slides.length === 0) {

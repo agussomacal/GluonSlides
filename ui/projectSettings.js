@@ -5,6 +5,7 @@
 //   Defaults  the project's style defaults per element type
 //   Styles    named styles (Title, Caption...) that elements can use
 //   Colors    the theme colors (palette) offered by every color field
+//   Variables values for \\var{…} and plots: files linked, values written
 //
 // Everything applies at once; every element that inherits a value
 // follows (cascade: element > style > project default > built-in).
@@ -23,6 +24,8 @@ import { escapeHtml } from '../core/render.js';
 import { renderEditor } from '../editor/editor.js';
 import { fontOptions, showFontLicense } from '../elements/text/text.js';
 import { colorField } from './colorPicker.js';
+import { fileValues, fileErrors, valuesOfFile, sliderValues, allVariables, linkVarFile, syncVarFiles } from '../core/variables.js';
+import { formatValue } from '../core/liveEngine.js';
 
 const MODAL_ID = 'project-settings-modal';
 const TYPES = [
@@ -190,6 +193,49 @@ function colorsTab() {
         <div class="prop-error">${escapeHtml(ui.message)}</div>`;
 }
 
+const VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Variables tab: files of values, values written here, and every variable with where it comes from. */
+function variablesTab() {
+    const fromFiles = fileValues();
+    const errors = fileErrors();
+    const sliders = sliderValues();
+    const files = (state.varFiles || []).map((f, i) => {
+        const values = valuesOfFile(f.file);
+        const n = values === null ? '<span class="prop-hint">not read yet</span>'
+            : `<span class="prop-hint">${Object.keys(values).length} value${Object.keys(values).length === 1 ? '' : 's'}: ${Object.keys(values).slice(0, 6).map(k => `<code>${escapeHtml(k)}</code>`).join(' ')}${Object.keys(values).length > 6 ? ' …' : ''}</span>`;
+        return `
+            <div class="var-file-row" data-var-file="${i}">
+                <code title="${escapeHtml(f.original || '')}">${escapeHtml(f.file)}</code>
+                <label class="prop-check" title="Copy the original again when it changes"><input type="checkbox" data-var-sync ${f.sync === false ? '' : 'checked'}> follow the original</label>
+                <button type="button" class="prop-reset" data-settings-action="var-reload" title="Read it again">↻</button>
+                <button type="button" class="prop-reset" data-settings-action="var-unlink" title="Stop using this file">✕</button>
+                ${errors[f.file] ? `<div class="prop-error">${escapeHtml(errors[f.file])}</div>` : n}
+            </div>`;
+    }).join('');
+    const written = Object.entries(state.vars || {}).map(([name, value]) => `
+        <div class="var-row" data-var-name="${escapeHtml(name)}">
+            <input type="text" class="prop-control" data-var-rename value="${escapeHtml(name)}" spellcheck="false">
+            <input type="text" class="prop-control" data-var-value value="${escapeHtml(String(value))}" spellcheck="false">
+            <button type="button" class="prop-reset" data-settings-action="var-remove" title="Remove">✕</button>
+        </div>`).join('');
+    const all = allVariables();
+    const origin = (name) => (name in sliders ? 'a slider' : name in fromFiles ? 'a file' : 'written here');
+    const table = Object.keys(all).sort().map(name => `<tr><td><code>${escapeHtml(name)}</code></td><td>${escapeHtml(formatValue(all[name]))}</td><td>${origin(name)}</td></tr>`).join('');
+    return `
+        <p class="prop-hint">Values that text shows with <code>\\var{name}</code> (or <code>\\var{name}[%.2f]</code>) and that plots compute with. A slider sets one too; a file's values win over values written here, a slider's over both.</p>
+        <div class="settings-section-title">From files</div>
+        <p class="prop-hint">A JSON object (<code>{"err": 0.012, "fit": {"a": 2}}</code> gives <code>err</code> and <code>fit.a</code>) or a CSV: <code>name,value</code> rows, or a header row of names and a row of values (the last row, for a log your script appends to). The file is copied into <code>data/</code> and follows the original when your script rewrites it.</p>
+        <div class="var-files">${files || '<p class="prop-hint"><em>No file yet.</em></p>'}</div>
+        <button class="btn btn-secondary" data-settings-action="var-link">＋ Link a JSON or CSV file…</button>
+        <div class="settings-section-title">Written here</div>
+        <div class="var-list">${written || '<p class="prop-hint"><em>None.</em></p>'}</div>
+        <button class="btn btn-secondary" data-settings-action="var-add">＋ Add a value</button>
+        <div class="prop-error">${escapeHtml(ui.message)}</div>
+        <div class="settings-section-title">All variables</div>
+        ${table ? `<table class="var-table"><thead><tr><th>Name</th><th>Value</th><th>From</th></tr></thead><tbody>${table}</tbody></table>` : '<p class="prop-hint"><em>No variables yet.</em></p>'}`;
+}
+
 function datePreview(date) {
     return date
         ? `Shows as: <strong>${escapeHtml(formatDate(date))}</strong>`
@@ -229,9 +275,9 @@ function presentationTab() {
 }
 
 function bodyHtml() {
-    const tabs = [['presentation', 'Presentation'], ['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors']].map(([id, label]) => `
+    const tabs = [['presentation', 'Presentation'], ['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors'], ['variables', 'Variables']].map(([id, label]) => `
         <button type="button" class="settings-tab${ui.tab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`).join('');
-    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab()
+    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab() : ui.tab === 'variables' ? variablesTab()
         : ui.tab === 'presentation' ? presentationTab() : defaultsTab();
     return `
         <h2>Project settings</h2>
@@ -344,6 +390,29 @@ function wire(m) {
             }
             return;
         }
+        // Variables tab
+        const varRow = e.target.closest('[data-var-name]');
+        if (varRow && e.type === 'change') {
+            const name = varRow.dataset.varName;
+            if (e.target.matches('[data-var-value]')) {
+                const raw = e.target.value.trim();
+                state.vars[name] = raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : raw;
+            } else if (e.target.matches('[data-var-rename]')) {
+                const next = e.target.value.trim();
+                if (next !== name) {
+                    if (!VAR_NAME_RE.test(next) || next in state.vars) ui.message = 'Variable names use letters, digits and _ (not starting with a digit), and must be unique.';
+                    else state.vars = Object.fromEntries(Object.entries(state.vars).map(([k, v]) => [k === name ? next : k, v]));
+                }
+            }
+            commit();
+            return;
+        }
+        const varFile = e.target.closest('[data-var-file]');
+        if (varFile && e.target.matches('[data-var-sync]') && e.type === 'change') {
+            state.varFiles[Number(varFile.dataset.varFile)].sync = e.target.checked;
+            commit();
+            return;
+        }
         if (e.target.matches('[data-rename-style]') && e.type === 'change') {
             const name = e.target.value.trim();
             if (name !== ui.style) {
@@ -443,6 +512,45 @@ function wire(m) {
             ui.style = null;
             commit();
             break;
+        case 'var-add': {
+            state.vars = state.vars || {};
+            let i = 1;
+            while (`v${i}` in state.vars) i++;
+            state.vars[`v${i}`] = 0;
+            commit();
+            break;
+        }
+        case 'var-remove': {
+            const name = action.closest('[data-var-name]').dataset.varName;
+            delete state.vars[name];
+            commit();
+            break;
+        }
+        case 'var-unlink': {
+            const i = Number(action.closest('[data-var-file]').dataset.varFile);
+            state.varFiles.splice(i, 1);
+            commit();
+            break;
+        }
+        case 'var-reload':
+            syncVarFiles({ force: true }).then(() => render());
+            break;
+        case 'var-link': {
+            const api = pyApi();
+            if (!api || typeof api.select_vars_file !== 'function') {
+                ui.message = 'Linking files needs the app (not a browser).';
+                render();
+                break;
+            }
+            api.select_vars_file().then(async (picked) => {
+                if (!picked || !picked.success) return;
+                const res = await linkVarFile(picked.path);
+                if (!res || !res.success) ui.message = (res && res.error) || 'Could not read the file.';
+                else flashSaveIndicator(`${Object.keys(res.values || {}).length} variables from ${res.relative_path} ✓`);
+                commit();
+            });
+            break;
+        }
         case 'add-color': {
             const entries = palette().map(p => ({ ...p }));
             let i = entries.length + 1;
@@ -462,7 +570,7 @@ function wire(m) {
     });
 }
 
-/** Opens the dialog, optionally on a tab ('presentation' | 'defaults' | 'styles' | 'colors'), and a style. */
+/** Opens the dialog, optionally on a tab ('presentation' | 'defaults' | 'styles' | 'colors' | 'variables'), and a style. */
 export function openProjectSettings(tab = null, { styleType = null, style = null } = {}) {
     if (typeof tab === 'string') ui.tab = tab;
     if (styleType) ui.styleType = styleType;

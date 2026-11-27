@@ -9,7 +9,7 @@ import webbrowser
 
 import webview
 
-from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, tables, updates, user_settings
+from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, tables, updates, user_settings, variables
 from .presentation import Presentation
 
 
@@ -21,6 +21,7 @@ PROJECT_FILE_TYPES = ("Slide Project Files (*.gl)", "Legacy Projects (*.ssproj;*
 FIGURE_FILE_TYPES = ("Figure Files (*.png;*.jpg;*.jpeg;*.svg;*.pdf;*.eps)", "All Files (*.*)")
 PDF_FILE_TYPES = ("PDF Files (*.pdf)", "All Files (*.*)")
 TABLE_FILE_TYPES = ("Tables (*.csv;*.tsv;*.txt)", "All Files (*.*)")
+VARS_FILE_TYPES = ("Variables (*.json;*.csv)", "All Files (*.*)")
 IMPORT_FILE_TYPES = ("Talks (*.tex;*.md;*.zip;*.pptx;*.pdf)", "All Files (*.*)")  # several: a split talk + its PDF
 FONT_FILE_TYPES = ("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "All Files (*.*)")
 
@@ -182,6 +183,25 @@ class Api:
     def take_dropped_paths(self):
         """Full paths of the files just dropped on the window (once)."""
         return {"success": True, "paths": self._dropped.take()}
+
+    # --- variables: JSON / CSV files (backend/variables.py) -------------------
+
+    def select_vars_file(self):
+        """Pick a JSON or CSV file of variables."""
+        path = dialogs.ask_open(VARS_FILE_TYPES)
+        return {"success": True, "path": path} if path else _cancelled()
+
+    def read_vars_file(self, project_folder, path):
+        """The variables of a file: {"success", "values": {name: value}, "mtime"}."""
+        return variables.read_vars_file(project_folder, path)
+
+    def link_vars_file(self, project_folder, source):
+        """Copy a variable file into <project>/data/; its variables."""
+        return variables.link_vars_file(project_folder, source)
+
+    def refresh_vars(self, project_folder, items):
+        """Re-copy variable files whose original changed; the values of those that changed."""
+        return variables.refresh_vars(project_folder, items)
 
     # --- tables: CSV files (backend/tables.py) --------------------------------
 
