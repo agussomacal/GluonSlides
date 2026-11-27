@@ -57,9 +57,13 @@ async function embedKatexFonts(css) {
  * inlined: the file works offline), with the variables' starting values.
  * Nothing when the presentation has none.
  */
-async function liveScript(needed) {
+async function liveScript(needed, needsMatplotlib = false) {
     if (!needed) return '';
-    const engine = (await fetchText('core/liveEngine.js', 'the plot engine')).replace(/^export /gm, '');
+    // the matplotlib reader after the engine: its imports are then names already there
+    const strip = (js) => js.replace(/^import [^;]*;\s*$/gm, '').replace(/^export /gm, '');
+    const engine = strip(await fetchText('core/liveEngine.js', 'the plot engine'))
+        // in a block of its own: its names can't collide with the engine's
+        + (needsMatplotlib ? `\n{\n${strip(await fetchText('core/mplEngine.js', 'the matplotlib reader'))}\n}` : '');
     const vars = JSON.stringify(startingVariables()).replace(/</g, '\\u003c');
     const run = `(function () {
 ${engine}
@@ -128,7 +132,7 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
     // Fields (\slidenumber ...) count the slides as presented.
     const slidesMarkup = pages.map((p, idx) => withSlideContext({ source: p.source, number: idx + 1, total: pages.length },
         () => slideMarkup(p.slide, idx, p.source))).join('');
-    const liveJs = await liveScript(/data-glslider|data-gl-plot/.test(slidesMarkup));
+    const liveJs = await liveScript(/data-glslider|data-gl-plot/.test(slidesMarkup), /&quot;lang&quot;:&quot;matplotlib&quot;/.test(slidesMarkup));
     // Speaker notes for the presenter view; "<" escaped so the JSON can't end the script.
     const notesJson = JSON.stringify(pages.map(p => (notes && p.slide.notes) || '')).replace(/</g, '\\u003c');
     const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));

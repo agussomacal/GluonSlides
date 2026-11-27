@@ -24,16 +24,29 @@ import { escapeHtml, renderMarkdownAndKatexToString } from '../../core/render.js
 import { fontStack } from '../../core/fonts.js';
 import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
-import { parseLayers, plotSvg, plotLayout, autoRanges, legendStyle, LANGUAGES, PALETTE } from '../../core/liveEngine.js';
+import { parseLayers, plotSvg, plotLayout, autoRanges, legendStyle, expandPlot, LANGUAGES, PALETTE } from '../../core/liveEngine.js';
+import '../../core/mplEngine.js'; // lang:matplotlib (registers itself)
 import { allVariables, startingVariables } from '../../core/variables.js';
 import { dataTable } from '../../core/plotData.js';
-import { layerCardsHtml, mountFormulaEditors, initLayerCards } from './layerCards.js';
+import { layerCardsHtml, scriptEditorHtml, mountFormulaEditors, initLayerCards } from './layerCards.js';
 import { redrawCanvas } from '../../editor/editor.js';
 
 const EXAMPLE = {
     python: '.curve color:@primary width:4 label:"$\\mathcal{N}(\\mu,\\sigma^2)$"\ny = exp(-(x - mu)**2 / (2*sigma**2)) / sqrt(2*pi*sigma**2)',
     latex: '.curve color:@primary width:4 label:"$\\mathcal{N}(\\mu,\\sigma^2)$"\n\\frac{1}{\\sqrt{2\\pi\\sigma^2}} e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}',
+    matplotlib: [
+        'import numpy as np',
+        'import matplotlib.pyplot as plt',
+        '',
+        'x = np.linspace(-5, 5, 400)',
+        "plt.plot(x, np.exp(-(x - mu)**2 / (2*sigma**2)) / np.sqrt(2*np.pi*sigma**2), lw=2, label=r'$\\mathcal{N}(\\mu,\\sigma^2)$')",
+        "plt.xlabel('$x$')",
+        'plt.legend()',
+    ].join('\n'),
 };
+/** How a plot can be written: layers with Python or LaTeX formulas, or a matplotlib script. */
+const PLOT_LANGS = [...LANGUAGES, 'matplotlib'];
+const LANG_LABELS = { python: 'Layers, Python formulas: x**2, exp(…)', latex: 'Layers, LaTeX formulas: x^2, e^{…}', matplotlib: 'A matplotlib script: plt.plot(…), np.…' };
 
 /** What ＋ Layer adds (Python formulas: a LaTeX plot's new layer says lang:python). */
 const TEMPLATES = {
@@ -58,8 +71,9 @@ const MAX_EMBEDDED_ROWS = 5000;
 
 /** What the engine draws: the element's settings, colours resolved, data attached, ranges found once. */
 export function plotSpec(el) {
-    const lang = LANGUAGES.includes(el.lang) ? el.lang : 'python';
-    const layers = parseLayers(el.code || '', lang).map((l, i) => {
+    const script = el.lang === 'matplotlib';
+    const lang = script ? 'matplotlib' : LANGUAGES.includes(el.lang) ? el.lang : 'python';
+    const layers = script ? [] : parseLayers(el.code || '', lang).map((l, i) => {
         const layer = { ...l, lang: LANGUAGES.includes(l.lang) ? l.lang : lang };
         if (l.color) layer.color = resolveColor(l.color) || l.color;
         else if (!['heatmap'].includes(l.kind)) layer.color = PALETTE[i % PALETTE.length];
@@ -83,13 +97,16 @@ export function plotSpec(el) {
         fontSize: Number(el.fontSize) || 24, fontFamily: fontStack(el.fontFamily), color: resolveColor(el.fontColor) || el.fontColor || '#0f172a',
         xlabel: el.xlabel || '', ylabel: el.ylabel || '',
     };
+    // a matplotlib script: read again with the values at every drawing (core/mplEngine.js)
+    if (script) spec.script = String(el.code || '');
     // ranges from the layers at the starting values: they stay put while sliders move
     spec.auto = autoRanges(spec, startingVariables());
     return spec;
 }
 
 /** Axis labels and the legend: HTML on top of the drawing (Markdown and math, like any text). */
-function overlays(el, spec) {
+function overlays(el, spec0) {
+    const spec = expandPlot(spec0, startingVariables());
     const L = plotLayout(spec);
     const fs = L.fs;
     const font = `font-size:${fs}px; font-family:${escapeHtml(spec.fontFamily)}; color:${escapeHtml(spec.color)};`;
@@ -102,7 +119,11 @@ function overlays(el, spec) {
         html += `<div class="gl-plot-label" style="position:absolute; left:${fs * 0.2}px; top:${L.top + L.h / 2}px; width:${L.h}px; transform:translate(-50%, -50%) rotate(-90deg) translateY(${fs * 0.7}px); transform-origin:center; text-align:center; ${font}">${md(spec.ylabel)}</div>`;
     }
     const labelled = spec.layers.filter(l => l.label && l.hidden !== 'yes' && !['vline', 'hline', 'point', 'text'].includes(l.kind));
-    if (labelled.length && el.legend !== 'no') {
+    if (spec.title) {
+        html += `<div class="gl-plot-title" style="position:absolute; left:${L.left}px; width:${L.w}px; top:${fs * 0.2}px; text-align:center; ${font} font-size:${fs * 1.1}px;">${md(spec.title)}</div>`;
+    }
+    // a script shows a legend when it calls legend(); layers unless the panel says no
+    if (labelled.length && (spec0.script !== undefined ? spec.legend === 'yes' : el.legend !== 'no')) {
         const rows = labelled.map(l => {
             const w = Number(l.width) || 3;
             const c = escapeHtml(l.color || spec.color);
@@ -131,7 +152,8 @@ const PlotElement = {
     category: 'interactive',
     // Choosing the formulas' language while the plot still has the example: the example in that language.
     propChanged(el, prop, before) {
-        if (prop === 'lang' && EXAMPLE[before] && String(el.code || '').trim() === EXAMPLE[before].trim() && EXAMPLE[el.lang]) {
+        const before0 = EXAMPLE[before] ? before : 'python';
+        if (prop === 'lang' && String(el.code || '').trim() === EXAMPLE[before0].trim() && EXAMPLE[el.lang]) {
             el.code = EXAMPLE[el.lang];
         }
     },
@@ -190,7 +212,7 @@ const PlotElement = {
     },
 
     properties(el) {
-        const lang = LANGUAGES.includes(el.lang) ? el.lang : 'python';
+        const lang = PLOT_LANGS.includes(el.lang) ? el.lang : 'python';
         const num = (key, label, placeholder = '') => `
             <div class="prop-group">
                 <label>${label}</label>
@@ -205,13 +227,13 @@ const PlotElement = {
         return `
             <div class="prop-divider"></div>
             <div class="prop-group">
-                <label>Formulas</label>
+                <label>Written as</label>
                 <select class="prop-control" data-prop="lang">
-                    ${LANGUAGES.map(l => `<option value="${l}" ${l === lang ? 'selected' : ''}>${l === 'python' ? 'Python: x**2, exp(…), np.sin(…)' : 'LaTeX: x^2, e^{…}, \\frac{…}{…}'}</option>`).join('')}
+                    ${PLOT_LANGS.map(l => `<option value="${l}" ${l === lang ? 'selected' : ''}>${LANG_LABELS[l]}</option>`).join('')}
                 </select>
             </div>
-            <div class="settings-section-title">Layers</div>
-            ${layerCardsHtml(el)}
+            ${lang === 'matplotlib' ? `<div class="settings-section-title">Script</div>${scriptEditorHtml(el)}`
+        : `<div class="settings-section-title">Layers</div>${layerCardsHtml(el)}`}
             <div class="settings-section-title">Axes</div>
             ${choice('axes', 'Axes', [['', 'box: axes, ticks and numbers'], ['zero', 'through the origin'], ['none', 'none: only the plot']])}
             <div class="prop-row">${num('xmin', 'x from', 'auto')}${num('xmax', 'x to', 'auto')}</div>

@@ -55,7 +55,7 @@ const results = await page.evaluate(async (blocks) => {
                 const vars = { ...(p.vars || {}) };
                 p.slides.forEach(sl => sl.elements.filter(e => e.type === 'slider').forEach(e => { vars[e.var] = Number(e.value ?? e.min ?? 0); }));
                 for (const el of plots) {
-                    const spec = { ...el, layers: E.parseLayers(el.code || '', el.lang || 'python') };
+                    const spec = el.lang === 'matplotlib' ? { ...el, script: el.code || '', layers: [] } : { ...el, layers: E.parseLayers(el.code || '', el.lang || 'python') };
                     const div = document.createElement('div');
                     div.innerHTML = E.plotSvg(spec, vars);
                     const shown = [...div.querySelectorAll('g[fill="#dc2626"] text')].map(t => t.textContent);

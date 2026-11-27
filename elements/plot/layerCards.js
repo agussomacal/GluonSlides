@@ -13,7 +13,8 @@ import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { LAYERS, unknownParams } from '../../core/plotSchema.js';
 import * as L from '../../core/plotLayers.js';
-import { PALETTE, LANGUAGES, plotErrors, formulaNames } from '../../core/liveEngine.js';
+import { PALETTE, LANGUAGES, plotErrors, formulaNames, expandPlot } from '../../core/liveEngine.js';
+import { matplotlibNames } from '../../core/mplEngine.js';
 import { allVariables } from '../../core/variables.js';
 import { dataTable, linkDataFile } from '../../core/plotData.js';
 
@@ -141,6 +142,110 @@ export function layerCardsHtml(el) {
         </div>`;
 }
 
+// ---------- a matplotlib script ----------
+
+/** The editor of a plot written as a matplotlib script. */
+export function scriptEditorHtml(el) {
+    void el;
+    return `
+        <div class="prop-group">
+            <div class="plot-formula plot-script" data-plot-script></div>
+            <p class="prop-error" data-script-error></p>
+            <p class="prop-hint">numpy and matplotlib as usual (<code>np.linspace</code>, <code>np.random.normal</code>, <code>plt.plot</code>, <code>plt.hist</code>, <code>ax.contour</code>…), with the project's variables by name; read by GluonSlides, not run as Python, so it also works in the exported HTML. Unsupported calls are said with their line.</p>
+        </div>`;
+}
+
+let scriptModeDefined = false;
+function defineScriptMode(CM) {
+    if (scriptModeDefined) return;
+    scriptModeDefined = true;
+    const KW = new Set(['for', 'in', 'if', 'elif', 'else', 'and', 'or', 'not', 'import', 'from', 'as', 'True', 'False', 'None', 'is', 'pass']);
+    CM.defineMode('gl-script', (config, opts) => ({
+        token(stream) {
+            if (stream.eatSpace()) return null;
+            if (stream.match(/^#.*/)) return 'gl-fcomment';
+            if (stream.match(/^[rRfFbB]{0,2}("[^"]*"?|'[^']*'?)/)) return 'gl-fstr';
+            if (stream.match(/^(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?/)) return 'gl-fnum';
+            const word = stream.match(/^[A-Za-z_][A-Za-z0-9_]*/);
+            if (word) {
+                const w = word[0];
+                if (KW.has(w)) return 'gl-fkw';
+                if (['np', 'plt', 'ax', 'fig', 'numpy', 'math'].includes(w)) return 'gl-fmod';
+                if (opts.vars.has(w)) return 'gl-fvar';
+                return null;
+            }
+            if (stream.match(/^(\*\*|\/\/|<=|>=|==|!=|[-+*/%=<>@&|~])/)) return 'gl-fop';
+            stream.next();
+            return null;
+        },
+    }));
+}
+
+function showScriptErrors(el, cm) {
+    let message = '';
+    try {
+        const spec = expandPlot(hooks.spec(el), allVariables());
+        message = spec.scriptError || plotErrors(hooks.spec(el), allVariables()).filter(Boolean).join(' · ');
+    } catch (e) { message = e.message; }
+    const p = document.querySelector('[data-script-error]');
+    if (p) p.textContent = message;
+    cm.eachLine(line => cm.removeLineClass(line, 'background', 'plot-formula-error'));
+    const m = message.match(/^line (\d+)/);
+    if (m && Number(m[1]) - 1 < cm.lineCount()) cm.addLineClass(Number(m[1]) - 1, 'background', 'plot-formula-error');
+}
+
+function scriptHint(ed) {
+    if (typeof ed.showHint !== 'function') return;
+    ed.showHint({
+        completeSingle: false,
+        hint: (cm) => {
+            const cur = cm.getCursor();
+            const line = cm.getLine(cur.line).slice(0, cur.ch);
+            const m = line.match(/(?:(np\.random|numpy\.random|np|numpy|plt|ax|math)\.)?([A-Za-z_][A-Za-z0-9_]*)?$/);
+            if (!m || (!m[1] && !m[2])) return null;
+            const typed = m[2] || '';
+            const names = matplotlibNames();
+            const vars = allVariables();
+            let list;
+            if (m[1] === 'np.random' || m[1] === 'numpy.random') list = names.random.map(n => ({ text: `${n}(`, displayText: `np.random.${n}(…)` }));
+            else if (m[1] === 'np' || m[1] === 'numpy' || m[1] === 'math') list = names.np.map(n => ({ text: n === 'random' ? 'random.' : ['pi', 'e', 'inf', 'nan'].includes(n) ? n : `${n}(`, displayText: `np.${n}` }));
+            else if (m[1] === 'plt' || m[1] === 'ax') list = names.plt.map(n => ({ text: `${n}(`, displayText: `${m[1]}.${n}(…)` }));
+            else {
+                list = [
+                    ...Object.keys(vars).sort().map(n => ({ text: n, displayText: `${n}  — ${vars[n]}` })),
+                    ...['np', 'plt'].map(n => ({ text: `${n}.`, displayText: n })),
+                    ...names.builtins.map(n => ({ text: `${n}(`, displayText: `${n}(…)` })),
+                ];
+            }
+            list = list.filter(it => it.text.toLowerCase().startsWith(typed.toLowerCase()) && it.text !== typed);
+            return list.length ? { list: list.slice(0, 60), from: { line: cur.line, ch: cur.ch - typed.length }, to: cur } : null;
+        },
+    });
+}
+
+function mountScriptEditor(el, host) {
+    const CM = window.CodeMirror;
+    defineScriptMode(CM);
+    const modeOf = () => ({ name: 'gl-script', vars: new Set(Object.keys(allVariables())) });
+    const cm = CM(host, { value: String(el.code || ''), mode: modeOf(), lineNumbers: true, lineWrapping: true, viewportMargin: Infinity, indentUnit: 4, extraKeys: { 'Ctrl-Space': scriptHint, Tab: (ed) => ed.replaceSelection('    ') } });
+    let timer = null;
+    cm.on('change', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            const plot = selectedPlot();
+            if (!plot || plot.id !== el.id) return;
+            plot.code = cm.getValue();
+            markDirty();
+            hooks.redraw();
+            showScriptErrors(plot, cm);
+        }, 300);
+    });
+    cm.on('inputRead', (ed, change) => {
+        if (change.origin === '+input' && /[A-Za-z_.]/.test(change.text[change.text.length - 1].slice(-1))) scriptHint(ed);
+    });
+    showScriptErrors(el, cm);
+}
+
 // ---------- the formula editors ----------
 
 let modeDefined = false;
@@ -220,6 +325,8 @@ export function mountFormulaEditors(el) {
     const CM = window.CodeMirror;
     editors.length = 0;
     if (!CM) return;
+    const scriptHost = document.querySelector('#properties-body [data-plot-script]');
+    if (scriptHost) { mountScriptEditor(el, scriptHost); return; }
     defineFormulaMode(CM);
     const list = L.blocks(el.code);
     document.querySelectorAll('#properties-body [data-layer-formula]').forEach(host => {

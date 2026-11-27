@@ -2198,3 +2198,7 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .cm-gl-fop { color: var(--text-muted); }
 .cm-gl-fcomment { color: var(--text-muted); font-style: italic; }
 .cm-gl-funknown { color: #f87171; text-decoration: underline wavy rgba(248, 113, 113, 0.6); }
+.cm-gl-fstr { color: #86efac; }
+.cm-gl-fkw { color: #f472b6; font-weight: 600; }
+.cm-gl-fmod { color: #93c5fd; font-weight: 600; }
+.plot-script .CodeMirror { max-height: 420px; }

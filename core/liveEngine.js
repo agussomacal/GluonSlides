@@ -65,7 +65,7 @@ function gamma(z) {
     return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
 }
 
-const FUNCTIONS = {
+export const FUNCTIONS = {
     exp: Math.exp, log: (x, b) => (b === undefined ? Math.log(x) : Math.log(x) / Math.log(b)),
     ln: Math.log, log10: Math.log10, log2: Math.log2, log1p: Math.log1p, expm1: Math.expm1,
     sqrt: Math.sqrt, cbrt: Math.cbrt, abs: Math.abs, fabs: Math.abs,
@@ -97,8 +97,13 @@ function mulberry32(seed) {
     };
 }
 let rng = mulberry32(1);
+/** np.random.seed(n): the generator starts again at n. */
+export function reseed(seed) {
+    rng = mulberry32(seed);
+}
+
 /** Runs `fn` with the random generator started at `seed`. */
-function seeded(seed, fn) {
+export function seeded(seed, fn) {
     const previous = rng;
     rng = mulberry32(seed);
     try {
@@ -694,7 +699,7 @@ export function plotLayout(spec) {
     const bare = spec.axes === 'none' || spec.axes === 'zero';
     const left = (bare ? fs * 0.5 : fs * 3.4) + (spec.ylabel ? fs * 1.6 : 0);
     const bottom = (bare ? fs * 0.5 : fs * 2) + (spec.xlabel ? fs * 1.6 : 0);
-    const top = fs * (bare ? 0.5 : 0.8);
+    const top = fs * (bare ? 0.5 : 0.8) + (spec.title ? fs * 1.8 : 0);
     const right = fs * (bare ? 0.5 : 1.2) + (bar ? fs * 4.4 : 0);
     const w = Math.max(10, num(spec.width, 800) - left - right);
     const h = Math.max(10, num(spec.height, 500) - top - bottom);
@@ -850,6 +855,16 @@ function evalFirst(layer, vars, ext, spec) {
             values.forEach(v => { if (v < lo) lo = v; if (v > hi) hi = v; });
             return { values, lo, hi };
         }
+        case 'heatmap':
+        case 'contour':
+        case 'quiver':
+            // computed by a script: their extent counts for the ranges
+            if (layer.gridData && layer.gridData.extent) {
+                const [x0, x1, y0, y1] = layer.gridData.extent;
+                grow(ext, 'x', x0); grow(ext, 'x', x1); grow(ext, 'y', y0); grow(ext, 'y', y1);
+            }
+            if (layer.arrowsData) layer.arrowsData.forEach(([x, y]) => { grow(ext, 'x', x); grow(ext, 'y', y); });
+            return {};
         case 'bar': {
             const table = tableOf(layer);
             const two = table.rows[0] && table.rows[0].length > 1;
@@ -868,6 +883,18 @@ function evalFirst(layer, vars, ext, spec) {
 /** Second pass: layers sampled over the x range (curves, fills, histogram bins). */
 function evalSecond(layer, first, vars, ext, xr, spec, frozen) {
     const n = Math.max(20, Math.min(4000, num(layer.samples, num(spec.samples, 400))));
+    if (layer.kind === 'fill' && layer.table) {
+        // computed by a script: rows of x, top, bottom
+        const top = [];
+        const bottom = [];
+        layer.table.rows.forEach(([x, y1, y2]) => {
+            top.push([Number(x), Number(y1)]);
+            bottom.push([Number(x), Number(y2 ?? 0)]);
+            grow(ext, 'y', Number(y1));
+            grow(ext, 'y', Number(y2 ?? 0));
+        });
+        return { pts: top, bottom };
+    }
     if (layer.kind === 'curve' || layer.kind === 'fill') {
         const f = formulaOf(layer, ['x'], vars);
         const a = layer.kind === 'fill' ? paramValue(layer, 'from', vars, xr[0]) : xr[0];
@@ -915,6 +942,20 @@ function evalSecond(layer, first, vars, ext, xr, spec, frozen) {
 
 /** Third pass: layers over the x × y area (heatmap, contour, quiver). */
 function evalGrid(layer, vars, xr, yr, L) {
+    // computed by a script: the values on a grid over `extent`, or the arrows
+    if (layer.arrowsData) {
+        const n = layer.arrowsData.length;
+        const nx = Math.max(2, Math.round(Math.sqrt(n * L.w / L.h)));
+        return { arrows: layer.arrowsData, nx, ny: Math.max(2, Math.round(n / nx)) };
+    }
+    if (layer.gridData) {
+        const g = layer.gridData;
+        let lo = Infinity;
+        let hi = -Infinity;
+        g.z.forEach(v => { if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } });
+        // a heatmap's values are cells; contour lines go through the points
+        return { z: g.z, cols: g.cols, rows: g.rows, nx: layer.kind === 'contour' ? g.cols - 1 : g.cols, ny: layer.kind === 'contour' ? g.rows - 1 : g.rows, lo, hi, extent: g.extent };
+    }
     const f = formulaOf(layer, ['x', 'y'], vars);
     const aspect = L.h / L.w;
     if (layer.kind === 'quiver') {
@@ -1049,12 +1090,37 @@ function evaluatePlot(spec, vars, frozen = null) {
 
 /** Each layer's error for these variables ('' when it draws): what the layer cards show. */
 export function plotErrors(spec, vars, frozen = null) {
-    return evaluatePlot(spec, vars || {}, frozen).results.map(r => (r && r.error) || '');
+    return evaluatePlot(expandPlot(spec, vars), vars || {}, frozen).results.map(r => (r && r.error) || '');
+}
+
+// ---------- plots written as scripts (lang:matplotlib, core/mplEngine.js) ----------
+
+const SCRIPT_LANGUAGES = {};
+
+/** A language whose plots are a script: `run(code, vars)` -> { layers, settings }. */
+export function registerScriptLanguage(name, run) {
+    SCRIPT_LANGUAGES[name] = run;
+}
+
+export function isScriptLanguage(name) {
+    return Boolean(SCRIPT_LANGUAGES[name]);
+}
+
+/** A plot written as a script, as layers and settings for these values (its error in scriptError). */
+export function expandPlot(spec, vars) {
+    if (!spec || spec.script === undefined || !SCRIPT_LANGUAGES[spec.lang]) return spec;
+    try {
+        const { layers, settings } = SCRIPT_LANGUAGES[spec.lang](spec.script, vars || {});
+        const set = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v !== undefined && v !== null));
+        return { ...spec, ...set, layers };
+    } catch (e) {
+        return { ...spec, layers: [], scriptError: e.line ? `line ${e.line}: ${e.message}` : e.message };
+    }
 }
 
 /** Ranges found at these values, to keep while sliders move: { x, y, z }. */
 export function autoRanges(spec, vars) {
-    const r = evaluatePlot(spec, vars, null);
+    const r = evaluatePlot(expandPlot(spec, vars), vars, null);
     return { x: r.xr, y: r.yr, z: r.z };
 }
 
@@ -1232,7 +1298,8 @@ const DASH = { dashed: (w) => `${w * 3} ${w * 2}`, dotted: (w) => `${w} ${w * 1.
  * layers: [{ kind, code, lang, color, width, dash, opacity, …, table }],
  * auto: { x, y, z } (ranges found once, kept while sliders move) }.
  */
-export function plotSvg(spec, vars) {
+export function plotSvg(spec0, vars) {
+    const spec = expandPlot(spec0, vars);
     const W = num(spec.width, 800);
     const H = num(spec.height, 500);
     const ev = evaluatePlot(spec, vars || {}, spec.auto || null);
@@ -1344,7 +1411,12 @@ export function plotSvg(spec, vars) {
             }
             case 'heatmap': {
                 const href = heatmapImage(r, layer.colormap);
-                if (href) body.push(`<image href="${href}" x="${L.left}" y="${L.top}" width="${L.w}" height="${L.h}" preserveAspectRatio="none" opacity="${num(layer.opacity, 1)}"/>`);
+                const [ix0, ix1, iy0, iy1] = r.extent || [xr[0], xr[1], yr[0], yr[1]];
+                const px0 = X(ix0);
+                const px1 = X(ix1);
+                const py0 = Y(iy1);
+                const py1 = Y(iy0);
+                if (href) body.push(`<image href="${href}" x="${Math.min(px0, px1).toFixed(1)}" y="${Math.min(py0, py1).toFixed(1)}" width="${Math.abs(px1 - px0).toFixed(1)}" height="${Math.abs(py1 - py0).toFixed(1)}" preserveAspectRatio="none" opacity="${num(layer.opacity, 1)}"/>`);
                 if (layer.colorbar !== 'no' && L.bar) {
                     const bx = L.left + L.w + L.fs * 0.9;
                     const bw = L.fs * 0.8;
@@ -1364,7 +1436,7 @@ export function plotSvg(spec, vars) {
                 // at:"0.5, 1, 2": those values; levels:N: N levels across the range
                 const levels = layer.at !== undefined && layer.at !== '' ? String(layer.at).split(/[,;\s]+/).map(v => paramValue({ v, lang: layer.lang }, 'v', vars, NaN)).filter(Number.isFinite)
                     : (() => { const n = Math.max(1, Math.round(Number(layer.levels) || 10)); return Array.from({ length: n }, (_, k) => r.zr[0] + (r.zr[1] - r.zr[0]) * (k + 0.5) / n); })();
-                contourSegments(r, xr, yr, levels).forEach(([level, segs]) => {
+                contourSegments(r, r.extent ? [r.extent[0], r.extent[1]] : xr, r.extent ? [r.extent[2], r.extent[3]] : yr, levels).forEach(([level, segs]) => {
                     if (!segs.length) return;
                     const lc = layer.colormap ? `rgb(${colormap(layer.colormap, (level - r.zr[0]) / (r.zr[1] - r.zr[0])).join(',')})` : c;
                     const d = chainSegments(segs).map(line => line.map(([x, y], k) => `${k ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(y).toFixed(1)}`).join('')).join('');
@@ -1451,6 +1523,7 @@ export function plotSvg(spec, vars) {
     }
     parts.push(`<g fill="${esc(colour)}" font-size="${fs.toFixed(1)}" font-family="${font}">${labels.join('')}</g>`);
     parts.push(over.join(''));
+    if (spec.scriptError) errors.unshift(spec.scriptError);
     if (ev.notes && ev.notes.length) {
         parts.push(`<g class="gl-plot-notes" font-size="${(fs * 0.85).toFixed(1)}" font-family="${font}" fill="${esc(colour)}" fill-opacity="0.6">${ev.notes.map((n, k) => `<text x="${L.left + L.w - fs * 0.5}" y="${L.top + L.h - fs * (0.6 + k * 1.2)}" text-anchor="end">${esc(n)}</text>`).join('')}</g>`);
     }
