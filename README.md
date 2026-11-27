@@ -24,13 +24,14 @@ The builds aren't signed yet, so the first start shows a warning; the release pa
 
 - 🖱️ **Visual slide editor**: drag, resize, turn, multi-select, snap-to-grid and smart guides, align and distribute, layers and locking, groups, cut/copy/paste and full undo/redo.
 - 📝 **Markdown + LaTeX in every text box**: `**bold**`, lists, inline and display math with KaTeX, your `macros.tex` macros, `\textcolor` and other LaTeX text commands, and a format bar over selected words.
+- 📚 **Bibliography and citations, as in LaTeX**: keep your BibTeX entries in the project's `bibliography.bib` (or drop in the one exported from Zotero or JabRef), cite with `\cite`, `\citet`, `\citep` (with autocomplete while typing), numeric or author–year style, and `\printbibliography` for the reference list: a long list continues on extra slides by itself. Missing keys are flagged before you present ([details](docs/user-guide.md#bibliography-bib)).
 - 📥 **Import your existing talks**: Beamer (`.tex` or the Overleaf `.zip`), Slidev, PowerPoint and PDF become editable projects. Give the compiled PDF too and it is used as the ground truth for the layout and to recover missing figures. Pictures of equations can be read back to LaTeX (an optional component that runs on your computer).
 - 📊 **Columns and tables**: text in columns; tables from a CSV, pasted cells or drawn, and tables **linked** to a results file that update when your script rewrites it, like linked figures.
 - ➡️ **Drawing**: shapes, lines, arrows, curves, freehand, and **connectors** that stay attached to shapes as they move.
 - ▶️ **Present from the app**: builds (objects that appear and disappear click by click), a presenter view with notes, next slide and timer, the audience on a second screen.
 - 📤 **Export to HTML and PDF**: an interactive HTML presentation, or a vector PDF; math, fonts and builds included.
 - 🗂️ **Several projects in tabs**, with copy and paste between them (figures, tables, macros and styles come along).
-- 🧩 **Reusable pieces**: master slides, fields (`\slidenumber`, `\sectiontitle`, a table of contents), named styles, theme colours, macros (components with per-instance overrides), a bibliography with `\cite`.
+- 🧩 **Reusable pieces**: master slides, fields (`\slidenumber`, `\sectiontitle`, a table of contents), named styles, theme colours, macros (components with per-instance overrides).
 - 🔤 **The Gluon format (`.gl`)**: the project is a readable text file, with a source view inside the app. Diff it, version it, generate it from a script.
 - ❓ **Help built in**: a quick tour, a tutorial presentation, and keyboard shortcuts you can change.
 
