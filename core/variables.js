@@ -16,7 +16,7 @@
 
 import { state, pyApi, forEachElementDeep } from './state.js';
 import { protectMath } from './render.js';
-import { formatValue } from './liveEngine.js';
+import { formatValue, compileFormula, parseTracks } from './liveEngine.js';
 
 const fileState = new Map();   // `${folder}\u0000${file}` -> { values, mtime, error }
 const live = {};               // slider positions moved in the editor (not saved)
@@ -55,11 +55,60 @@ export function sliderStart(el) {
     return Math.min(Math.max(v, Math.min(lo, hi)), Math.max(lo, hi));
 }
 
-/** Each slider's variable and its starting value, over the whole project. */
+/** The options of a choice ("Adam, SGD, NGD"). */
+export function choiceOptions(el) {
+    return String(el.options ?? '').split(',').map(o => o.trim()).filter(Boolean);
+}
+
+/** Where an input starts: a slider's number, a checkbox's true / false, a box's number or text, a choice's option(s). */
+export function inputStart(el) {
+    const num = (v, d) => (v === '' || v === undefined || v === null || !Number.isFinite(Number(v)) ? d : Number(v));
+    switch (el.type) {
+        case 'slider': return sliderStart(el);
+        case 'checkbox': return el.value === 'yes' || el.value === true;
+        case 'numberbox': {
+            let v = num(el.value, num(el.min, 0));
+            if (el.min !== undefined && el.min !== '') v = Math.max(v, num(el.min, v));
+            if (el.max !== undefined && el.max !== '') v = Math.min(v, num(el.max, v));
+            return v;
+        }
+        case 'textbox': return String(el.value ?? '');
+        case 'choice': {
+            const opts = choiceOptions(el);
+            const picked = String(el.value ?? '').split(',').map(o => o.trim()).filter(o => opts.includes(o));
+            return el.multiple === 'yes' ? picked : (picked[0] ?? opts[0] ?? '');
+        }
+        default: return undefined;
+    }
+}
+
+export const INPUT_TYPES = ['slider', 'checkbox', 'numberbox', 'textbox', 'choice'];
+
+/** Each input's variable and its starting value, over the whole project. */
 export function sliderValues() {
     const out = {};
     const visit = (els) => forEachElementDeep(els || [], el => {
-        if (el.type === 'slider' && el.var) out[el.var] = sliderStart(el);
+        if (INPUT_TYPES.includes(el.type) && el.var) out[el.var] = inputStart(el);
+    });
+    (state.slides || []).forEach(s => visit(s.elements));
+    (state.masters || []).forEach(m => visit(m.elements));
+    return out;
+}
+export const inputValues = sliderValues;
+
+/** Starting values of variables only animations set (their value at the start). */
+export function animationValues() {
+    const out = {};
+    const visit = (els) => forEachElementDeep(els || [], el => {
+        if (el.type !== 'animation') return;
+        parseTracks(el.tracks).forEach(t => {
+            if (t.name in out) return;
+            if (t.from !== undefined && Number.isFinite(Number(t.from))) out[t.name] = Number(t.from);
+            else if (t.formula !== undefined) {
+                const f = compileFormula(t.formula, 'python');
+                try { if (!f.error) out[t.name] = Number(f.exec(Object.assign(Object.create(null), { t: 0, p: 0 }))); } catch (e) { /* needs other variables */ }
+            }
+        });
     });
     (state.slides || []).forEach(s => visit(s.elements));
     (state.masters || []).forEach(m => visit(m.elements));
@@ -68,12 +117,12 @@ export function sliderValues() {
 
 /** Every variable now: written values, then files, then sliders (then where sliders were moved). */
 export function allVariables() {
-    return { ...(state.vars || {}), ...fileValues(), ...sliderValues(), ...live };
+    return { ...(state.vars || {}), ...fileValues(), ...animationValues(), ...sliderValues(), ...live };
 }
 
 /** Starting values (no slider moved): what an export starts with. */
 export function startingVariables() {
-    return { ...(state.vars || {}), ...fileValues(), ...sliderValues() };
+    return { ...(state.vars || {}), ...fileValues(), ...animationValues(), ...sliderValues() };
 }
 
 export function setLiveValue(name, value) {
@@ -86,11 +135,12 @@ export function resetLiveValues() {
 
 // ---------- \var{name} in text ----------
 
-const VAR_RE = /\\var\{([A-Za-z_][A-Za-z0-9_.]*)\}(?:\[(%?\.?\d*[fegd%])\])?/g;
+// \var{name}, \var{name}[%.2f] (a number format) or \var{name}[on|off] (words for true / false)
+const VAR_RE = /\\var\{([A-Za-z_][A-Za-z0-9_.]*)\}(?:\[([^\]\n]*)\])?/g;
 const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function mathValue(v, fmt) {
-    if (typeof v !== 'number') return `\\text{${String(v).replace(/[\\{}$%#&_^~]/g, ' ')}}`;
+    if (typeof v !== 'number') return `\\text{${formatValue(v, fmt).replace(/[\\{}$%#&_^~]/g, ' ')}}`;
     const s = formatValue(v, fmt).replace(/−/g, '-').replace(/%$/, '\\%').replace(/∞/g, '\\infty');
     const m = s.match(/^(-?[\d.]+)e([-+])(\d+)$/);
     return m ? `${m[1]}\\times 10^{${m[2] === '-' ? '-' : ''}${Number(m[3])}}` : s;

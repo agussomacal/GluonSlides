@@ -24,7 +24,7 @@ import { escapeHtml } from '../core/render.js';
 import { renderEditor } from '../editor/editor.js';
 import { fontOptions, showFontLicense } from '../elements/text/text.js';
 import { colorField } from './colorPicker.js';
-import { fileValues, fileErrors, valuesOfFile, sliderValues, allVariables, linkVarFile, syncVarFiles } from '../core/variables.js';
+import { fileValues, fileErrors, valuesOfFile, sliderValues, animationValues, allVariables, linkVarFile, syncVarFiles } from '../core/variables.js';
 import { formatValue } from '../core/liveEngine.js';
 
 const MODAL_ID = 'project-settings-modal';
@@ -220,10 +220,11 @@ function variablesTab() {
             <button type="button" class="prop-reset" data-settings-action="var-remove" title="Remove">✕</button>
         </div>`).join('');
     const all = allVariables();
-    const origin = (name) => (name in sliders ? 'a slider' : name in fromFiles ? 'a file' : 'written here');
-    const table = Object.keys(all).sort().map(name => `<tr><td><code>${escapeHtml(name)}</code></td><td>${escapeHtml(formatValue(all[name]))}</td><td>${name in sliders ? `<button type="button" class="link-btn" data-settings-action="var-goto" data-var="${escapeHtml(name)}" title="Show the slider">a slider</button>` : origin(name)}</td></tr>`).join('');
+    const animated = animationValues();
+    const origin = (name) => (name in sliders ? 'an input' : name in animated ? 'an animation' : name in fromFiles ? 'a file' : 'written here');
+    const table = Object.keys(all).sort().map(name => `<tr><td><code>${escapeHtml(name)}</code></td><td>${escapeHtml(formatValue(all[name]))}</td><td>${name in sliders || name in animated ? `<button type="button" class="link-btn" data-settings-action="var-goto" data-var="${escapeHtml(name)}" title="Show it">${origin(name)}</button>` : origin(name)}</td></tr>`).join('');
     return `
-        <p class="prop-hint">Values that text shows with <code>\\var{name}</code> (or <code>\\var{name}[%.2f]</code>) and that plots compute with. A slider sets one too; a file's values win over values written here, a slider's over both.</p>
+        <p class="prop-hint">Values that text shows with <code>\\var{name}</code> (or <code>\\var{name}[%.2f]</code>) and that plots compute with. An input (a slider, a checkbox, a box, a choice) or an animation sets one too; a file's values win over values written here, an input's over all.</p>
         <div class="settings-section-title">From files</div>
         <p class="prop-hint">A JSON object (<code>{"err": 0.012, "fit": {"a": 2}}</code> gives <code>err</code> and <code>fit.a</code>) or a CSV: <code>name,value</code> rows, or a header row of names and a row of values (the last row, for a log your script appends to). The file is copied into <code>data/</code> and follows the original when your script rewrites it.</p>
         <div class="var-files">${files || '<p class="prop-hint"><em>No file yet.</em></p>'}</div>

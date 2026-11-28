@@ -69,13 +69,70 @@ async function liveScript(needed, needsMatplotlib = false) {
     const run = `(function () {
 ${engine}
 const vars = ${vars};
+const startVars = Object.assign({}, vars);
 const root = document.body;
-// A slider moved here: redraw, and tell the other windows (presenter view, audience: viewer.js).
-const moved = () => { liveUpdate(root, vars); window.dispatchEvent(new CustomEvent('gluon-vars-out', { detail: Object.assign({}, vars) })); };
+// Animations (elements/animation): played on their slide, from their step; the variables keep their values.
+const player = animationPlayer(vars, () => liveUpdate(root, vars));
+const specOf = (node) => { try { return JSON.parse(node.getAttribute('data-glanim')); } catch (e) { return null; } };
+const stepsOf = (node) => { const host = node.closest('.el') || node; return [Number(host.dataset.step) || 1, host.dataset.until !== undefined ? Number(host.dataset.until) : Infinity]; };
+let playing = {};
+function syncAnimations() {
+    const viewer = window.GluonViewer;
+    if (!viewer) return;
+    const pos = viewer.position();
+    const slide = document.getElementById('slide-' + pos.slide);
+    const active = {};
+    if (slide) slide.querySelectorAll('[data-glanim]').forEach((node, i) => {
+        const [from, until] = stepsOf(node);
+        const spec = specOf(node);
+        if (!spec || from > pos.step || pos.step > until) return;
+        const key = pos.slide + ':' + i;
+        active[key] = spec;
+        if (!playing[key]) player.start(key, spec);
+    });
+    Object.keys(playing).forEach(key => {
+        if (active[key]) return;
+        player.stop(key);
+        // afterwards:reset: its variables back to where they started
+        if (playing[key].afterwards === 'reset') { parseTracks(playing[key].tracks).forEach(t => { if (t.name in startVars) vars[t.name] = startVars[t.name]; }); liveUpdate(root, vars); }
+    });
+    playing = active;
+}
+// A control moved here: redraw, and tell the other windows (presenter view, audience: viewer.js);
+// an animation driving that variable stops.
+const moved = (name) => { player.touch(name); liveUpdate(root, vars); window.dispatchEvent(new CustomEvent('gluon-vars-out', { detail: Object.assign({}, vars) })); };
 bindSliders(root, vars, moved);
 window.addEventListener('gluon-vars-in', (e) => { Object.assign(vars, e.detail || {}); liveUpdate(root, vars); });
-// The presenter view redraws its copies of the slides: their sliders work too.
-window.addEventListener('gluon-rendered', () => { bindSliders(root, vars, moved); liveUpdate(root, vars); });
+// The presenter view redraws its copies of the slides: their inputs work too; a new slide or step: its animations.
+window.addEventListener('gluon-rendered', () => { bindSliders(root, vars, moved); liveUpdate(root, vars); syncAnimations(); });
+syncAnimations();
+// Printed (the PDF): each page shows the values where the animations end at that step,
+// after those of the slides before it.
+(function printValues() {
+    const pages = document.querySelectorAll('.print-page');
+    if (!pages.length) return;
+    let carried = Object.assign({}, vars);
+    let slideOf = -1;
+    let slideEnd = null;
+    pages.forEach(page => {
+        const index = Number(page.dataset.printSlide);
+        const step = Number(page.dataset.printStep) || 1;
+        const original = document.getElementById('slide-' + index);
+        if (index !== slideOf) { if (slideEnd) carried = slideEnd; slideOf = index; slideEnd = null; }
+        const pageVars = Object.assign({}, carried);
+        const all = Object.assign({}, carried);
+        if (original) original.querySelectorAll('[data-glanim]').forEach(node => {
+            const spec = specOf(node);
+            if (!spec) return;
+            const [from] = stepsOf(node);
+            const end = animationEnd(spec, all);
+            Object.assign(all, end);
+            if (from <= step) Object.assign(pageVars, end);
+        });
+        slideEnd = all;
+        liveUpdate(page, pageVars);
+    });
+})();
 })();`;
     return `<script>${run.replace(/<\/script/gi, '<\\/script')}<\/script>`;
 }
@@ -136,7 +193,7 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
     const slidesMarkup = pages.map((p, idx) => withSlideContext({ source: p.source, number: idx + 1, total: pages.length },
         () => slideMarkup(p.slide, idx, p.source))).join('');
     applyFormulas(); // back to the values the editor shows
-    const liveJs = await liveScript(/data-glslider|data-gl-plot|data-glbind/.test(slidesMarkup), /&quot;lang&quot;:&quot;matplotlib&quot;/.test(slidesMarkup));
+    const liveJs = await liveScript(/data-glslider|data-glinput|data-gl-plot|data-glbind|data-glanim/.test(slidesMarkup), /&quot;lang&quot;:&quot;matplotlib&quot;/.test(slidesMarkup));
     // Speaker notes for the presenter view; "<" escaped so the JSON can't end the script.
     const notesJson = JSON.stringify(pages.map(p => (notes && p.slide.notes) || '')).replace(/</g, '\\u003c');
     const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));

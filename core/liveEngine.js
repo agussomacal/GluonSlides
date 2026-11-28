@@ -21,6 +21,12 @@
 
 /** A value as text: a printf-style format (%.2f %.3e %.4g %d %.1%), else a short number. */
 export function formatValue(v, fmt) {
+    // true / false (a checkbox): its words, "on|off", else true / false
+    if (typeof v === 'boolean') {
+        const words = String(fmt || '').includes('|') ? String(fmt).split('|') : ['true', 'false'];
+        return (v ? words[0] : words[1] ?? '').trim();
+    }
+    if (Array.isArray(v)) return v.map(x => formatValue(x)).join(', '); // several choices
     if (typeof v !== 'number') return String(v ?? '');
     if (!Number.isFinite(v)) return Number.isNaN(v) ? 'NaN' : (v > 0 ? '∞' : '−∞');
     const m = String(fmt || '').match(/^%?(\.(\d+))?([fegd%])$/);
@@ -156,8 +162,16 @@ const BINARY = {
     '+': (a, b) => a + b, '-': (a, b) => a - b, '*': (a, b) => a * b, '/': (a, b) => a / b,
     '//': (a, b) => Math.floor(a / b), '%': (a, b) => ((a % b) + b) % b, '**': Math.pow,
     '<': (a, b) => (a < b ? 1 : 0), '<=': (a, b) => (a <= b ? 1 : 0), '>': (a, b) => (a > b ? 1 : 0),
-    '>=': (a, b) => (a >= b ? 1 : 0), '==': (a, b) => (a === b ? 1 : 0), '!=': (a, b) => (a !== b ? 1 : 0),
+    '>=': (a, b) => (a >= b ? 1 : 0), '==': (a, b) => (same(a, b) ? 1 : 0), '!=': (a, b) => (same(a, b) ? 0 : 1),
+    // 'Adam' in opts (a choice of several), 'da' in name (a text)
+    in: (a, b) => (Array.isArray(b) ? (b.some(x => same(x, a)) ? 1 : 0) : typeof b === 'string' ? (b.includes(String(a)) ? 1 : 0) : 0),
 };
+
+/** Equal as Python would say: true == 1, '2' isn't 2. */
+function same(a, b) {
+    const n = (v) => (typeof v === 'boolean' ? (v ? 1 : 0) : v);
+    return n(a) === n(b);
+}
 
 /** A function (env -> number) for a node. */
 function compileNode(node) {
@@ -205,7 +219,7 @@ function namesIn(node, out = new Set()) {
 
 // ---------- lang:python ----------
 
-const PY_TOKEN = /\s*(?:(\d+(?:_\d+)*(?:\.\d*)?(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(\*\*|\/\/|<=|>=|==|!=|[-+*/%()<>,=]))/y;
+const PY_TOKEN = /\s*(?:(\d+(?:_\d+)*(?:\.\d*)?(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(\*\*|\/\/|<=|>=|==|!=|[-+*/%()<>,=])|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"))/y;
 const PY_MODULES = /^(?:(?:np|numpy)\.random\.|random\.|math\.|np\.|numpy\.|scipy\.special\.|special\.|sp\.|cmath\.)/;
 
 function tokenizePython(src, line) {
@@ -220,8 +234,9 @@ function tokenizePython(src, line) {
         if (m[1] !== undefined) out.push({ k: 'num', v: Number(m[1].replace(/_/g, '')) });
         else if (m[2] !== undefined) {
             const word = m[2].replace(PY_MODULES, '');
-            out.push(['and', 'or', 'not', 'if', 'else'].includes(word) ? { k: 'op', v: word } : { k: 'name', v: word });
-        } else out.push({ k: 'op', v: m[3] });
+            out.push(['and', 'or', 'not', 'if', 'else', 'in'].includes(word) ? { k: 'op', v: word } : { k: 'name', v: word });
+        } else if (m[4] !== undefined) out.push({ k: 'str', v: m[4].slice(1, -1).replace(/\\(.)/g, '$1') });
+        else out.push({ k: 'op', v: m[3] });
         i = PY_TOKEN.lastIndex;
     }
     return out;
@@ -262,11 +277,18 @@ function parsePythonExpr(tokens, line) {
     };
     const compare = () => {
         let a = sum();
-        while (peek() && peek().k === 'op' && ['<', '<=', '>', '>=', '==', '!='].includes(peek().v)) {
-            const op = tokens[p++].v;
-            a = { t: 'op', op, a, b: sum() };
+        for (;;) {
+            if (peek() && peek().k === 'op' && ['<', '<=', '>', '>=', '==', '!='].includes(peek().v)) {
+                const op = tokens[p++].v;
+                a = { t: 'op', op, a, b: sum() };
+            } else if (isOp('in')) {
+                p++;
+                a = { t: 'op', op: 'in', a, b: sum() };
+            } else if (isOp('not') && tokens[p + 1] && tokens[p + 1].k === 'op' && tokens[p + 1].v === 'in') {
+                p += 2;
+                a = { t: 'not', a: { t: 'op', op: 'in', a, b: sum() } };
+            } else return a;
         }
-        return a;
     };
     const sum = () => {
         let a = product();
@@ -292,6 +314,7 @@ function parsePythonExpr(tokens, line) {
         const tok = tokens[p];
         if (!tok) throw new FormulaError('the formula ends too early', line);
         if (tok.k === 'num') { p++; return { t: 'num', v: tok.v }; }
+        if (tok.k === 'str') { p++; return { t: 'num', v: tok.v }; } // a text value (compared with ==, in)
         if (tok.k === 'name') {
             p++;
             if (isOp('(')) {
@@ -1544,7 +1567,7 @@ export function legendStyle(kind) {
 
 /** Objects whose settings are formulas (data-glbind, core/bindings.js): moved, sized, turned, shown for these values. */
 function liveBindings(root, vars) {
-    root.querySelectorAll('[data-glbind]').forEach(node => {
+    within(root, '[data-glbind]').forEach(node => {
         let formulas;
         try { formulas = JSON.parse(node.getAttribute('data-glbind')); } catch (e) { return; }
         const value = (code) => {
@@ -1591,11 +1614,18 @@ function liveBindings(root, vars) {
     });
 }
 
+/** Nodes of `root` matching `selector`, but not inside the print pages (unless `root` is one). */
+function within(root, selector) {
+    const inPrint = root.classList && root.classList.contains('print-page');
+    return [...root.querySelectorAll(selector)].filter(n => inPrint || !n.closest('.print-pages'));
+}
+
 /** Shows the variables' current values in `root` and redraws its plots. */
 export function liveUpdate(root, vars) {
     if (!root) return;
     liveBindings(root, vars);
-    root.querySelectorAll('[data-glvar]').forEach(node => {
+    liveInputs(root, vars);
+    within(root, '[data-glvar]').forEach(node => {
         if (node.tagName === 'INPUT') return;
         const name = node.getAttribute('data-glvar');
         if (!(name in vars)) return;
@@ -1603,11 +1633,11 @@ export function liveUpdate(root, vars) {
         if (node.classList.contains('gl-var')) node.textContent = text;
         else node.innerHTML = `<span class="mord">${esc(text)}</span>`; // inside KaTeX math
     });
-    root.querySelectorAll('input[data-glslider]').forEach(input => {
+    within(root, 'input[data-glslider]').forEach(input => {
         const name = input.getAttribute('data-glslider');
         if (name in vars && input !== document.activeElement && Number(input.value) !== Number(vars[name])) input.value = vars[name];
     });
-    root.querySelectorAll('[data-gl-plot]').forEach(box => {
+    within(root, '[data-gl-plot]').forEach(box => {
         let spec;
         try {
             spec = JSON.parse(box.getAttribute('data-gl-plot'));
@@ -1631,25 +1661,165 @@ export function liveUpdate(root, vars) {
 export function bindSliders(root, vars, onChange) {
     if (!root || root._glSliders) return;
     root._glSliders = true;
-    const slider = (e) => (e.target && e.target.matches && e.target.matches('input[data-glslider]') ? e.target : null);
+    // sliders, and the other inputs (checkbox, number box, text box, choice)
+    const control = (e) => (e.target && e.target.closest ? e.target.closest('input[data-glslider], [data-glinput]') : null);
     ['pointerdown', 'mousedown', 'click', 'dblclick', 'keydown', 'wheel', 'touchstart'].forEach(t => root.addEventListener(t, (e) => {
-        if (slider(e)) e.stopPropagation();
+        if (control(e)) e.stopPropagation();
     }));
     root.addEventListener('input', (e) => {
-        const input = slider(e);
-        if (!input) return;
-        const name = input.getAttribute('data-glslider');
-        vars[name] = Number(input.value);
-        onChange(name, vars[name]);
+        const node = control(e);
+        if (!node) return;
+        let name;
+        let value;
+        if (node.hasAttribute('data-glslider')) { name = node.getAttribute('data-glslider'); value = Number(node.value); }
+        else { name = node.getAttribute('data-glinput'); value = readControl(node); }
+        if (value === undefined) return;
+        vars[name] = value;
+        onChange(name, value);
     });
-    // A clicked slider keeps the arrow keys until Esc or Enter (or a click
+    // A clicked input keeps the keys until Esc or Enter (or a click
     // elsewhere): they let go of it, without ending the slide show. (In
     // full screen the browser keeps Esc for leaving full screen: Enter then.)
     root.addEventListener('keydown', (e) => {
-        const input = slider(e);
-        if (input && (e.key === 'Escape' || e.key === 'Enter')) {
+        const node = control(e);
+        if (node && (e.key === 'Escape' || e.key === 'Enter')) {
             e.preventDefault();
-            input.blur();
+            node.blur();
         }
     });
+}
+
+// ---------- inputs: checkbox, number box, text box, choice ----------
+// <input / select data-glinput="name" data-gltype="bool | number | text | choice | choices">
+
+/** The value a control holds (undefined when it isn't one yet: a number box half typed). */
+function readControl(node) {
+    const type = node.getAttribute('data-gltype');
+    if (type === 'bool') return node.checked;
+    if (type === 'number') {
+        const v = Number(node.value);
+        if (node.value === '' || !Number.isFinite(v)) return undefined;
+        const lo = node.min !== '' ? Number(node.min) : -Infinity;
+        const hi = node.max !== '' ? Number(node.max) : Infinity;
+        return Math.min(Math.max(v, lo), hi);
+    }
+    if (type === 'choices') return [...node.selectedOptions].map(o => o.value);
+    return node.value;
+}
+
+/** Shows the variables' values in the controls of `root` (not the one being typed in). */
+function liveInputs(root, vars) {
+    within(root, '[data-glinput]').forEach(node => {
+        const name = node.getAttribute('data-glinput');
+        if (!(name in vars) || node === document.activeElement) return;
+        const v = vars[name];
+        const type = node.getAttribute('data-gltype');
+        if (type === 'bool') node.checked = Boolean(v);
+        else if (type === 'choices') [...node.options].forEach(o => { o.selected = Array.isArray(v) && v.includes(o.value); });
+        else if (String(node.value) !== String(v)) node.value = v;
+    });
+}
+
+// ---------- animations (elements/animation) ----------
+//   mu: -2 -> 2          from one value to another (numbers or formulas)
+//   phase = 2*pi*t/4     a formula of t (seconds) and p (the eased progress, 0 to 1)
+
+/** An animation's lines: [{ name, from, to } | { name, formula } | { error }]. */
+export function parseTracks(text) {
+    const out = [];
+    String(text || '').split('\n').forEach(raw => {
+        const line = raw.replace(/#.*$/, '').trim();
+        if (!line) return;
+        let m = line.match(/^([A-Za-z_]\w*)\s*:\s*(.+?)\s*(?:->|→)\s*(.+)$/);
+        if (m) { out.push({ name: m[1], from: m[2], to: m[3] }); return; }
+        m = line.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
+        if (m) out.push({ name: m[1], formula: m[2] });
+        else out.push({ error: `can't read “${line}” (name: from -> to, or name = formula of t)` });
+    });
+    return out;
+}
+
+const EASE = { linear: (p) => p, in: (p) => p * p, out: (p) => 1 - (1 - p) ** 2, inout: (p) => (p < 0.5 ? 2 * p * p : 1 - 2 * (1 - p) ** 2) };
+export const EASINGS = Object.keys(EASE);
+
+/** Where an animation is at t seconds: { p (0 to 1), done }. */
+export function animationProgress(spec, t) {
+    const d = Number(spec.duration);
+    if (!(d > 0)) return { p: 0, done: false };
+    const x = Math.max(0, t) / d;
+    if (spec.repeat === 'loop') return { p: x % 1, done: false };
+    if (spec.repeat === 'bounce') { const q = x % 2; return { p: q <= 1 ? q : 2 - q, done: false }; }
+    return { p: Math.min(1, x), done: x >= 1 };
+}
+
+function trackValue(code, env) {
+    if (isSet(code)) return Number(code);
+    const f = compileFormula(String(code), 'python');
+    if (f.error) throw new FormulaError(f.error);
+    return Number(f.exec(Object.assign(Object.create(null), env)));
+}
+
+/** The values an animation gives at t seconds: { values: { name: value }, done }. */
+export function animationAt(spec, t, vars) {
+    const { p, done } = animationProgress(spec, t);
+    const e = (EASE[spec.easing] || EASE.linear)(p);
+    const env = { ...(vars || {}), t: Math.max(0, t), p: e };
+    const values = {};
+    parseTracks(spec.tracks).forEach(tr => {
+        if (tr.error) return;
+        try {
+            if (tr.formula !== undefined) values[tr.name] = trackValue(tr.formula, { ...env, ...values });
+            else {
+                const a = trackValue(tr.from, env);
+                const b = trackValue(tr.to, env);
+                values[tr.name] = a + (b - a) * e;
+            }
+        } catch (err) { /* a track that can't be computed is left alone */ }
+    });
+    return { values, done };
+}
+
+/** Where an animation ends (once: at its end; a loop, a bounce or no duration: its start). */
+export function animationEnd(spec, vars) {
+    const d = Number(spec.duration);
+    const once = !spec.repeat || spec.repeat === 'once';
+    return animationAt(spec, d > 0 && once ? d : 0, vars).values;
+}
+
+/**
+ * Plays animations: start(key, spec) / stop(key); each frame (about 30 a
+ * second) their values go into `vars` and `redraw()` runs. touch(name):
+ * someone moved that variable by hand, the animations driving it stop.
+ */
+export function animationPlayer(vars, redraw, fps = 30) {
+    const running = new Map();
+    let frame = null;
+    let last = 0;
+    const tick = (now) => {
+        frame = null;
+        if (now - last >= 1000 / fps) {
+            last = now;
+            for (const [key, a] of running) {
+                const { values, done } = animationAt(a.spec, (now - a.t0) / 1000, vars);
+                Object.assign(vars, values);
+                if (done) running.delete(key);
+            }
+            redraw();
+        }
+        if (running.size) frame = requestAnimationFrame(tick);
+    };
+    return {
+        start(key, spec) {
+            if (running.has(key)) return;
+            running.set(key, { spec, t0: performance.now() });
+            if (!frame) frame = requestAnimationFrame(tick);
+        },
+        stop(key) { running.delete(key); },
+        stopAll() { running.clear(); },
+        keys: () => [...running.keys()],
+        touch(name) {
+            for (const [key, a] of running) if (parseTracks(a.spec.tracks).some(tr => tr.name === name)) running.delete(key);
+        },
+        isRunning: () => running.size > 0,
+    };
 }

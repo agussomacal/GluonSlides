@@ -8,19 +8,23 @@
 // ============================================================
 
 import { state, forEachElementDeep, flashSaveIndicator } from '../core/state.js';
-import { valuesOfFile } from '../core/variables.js';
+import { valuesOfFile, INPUT_TYPES } from '../core/variables.js';
+import { parseTracks } from '../core/liveEngine.js';
 import { revealElement } from '../editor/navigate.js';
 import { openProjectSettings } from './projectSettings.js';
 
-/** Where variable `name` is defined: { kind: 'slider', id } | { kind: 'file', file } | { kind: 'written' } | null. */
+/** Where variable `name` is defined: { kind: 'slider', id, type } (an input or an animation) | { kind: 'file', file } | { kind: 'written' } | null. */
 export function variableSource(name) {
-    let slider = null;
+    let input = null;
+    let animation = null;
     const visit = (els) => forEachElementDeep(els || [], el => {
-        if (!slider && el.type === 'slider' && el.var === name) slider = el;
+        if (!input && INPUT_TYPES.includes(el.type) && el.var === name) input = el;
+        if (!animation && el.type === 'animation' && parseTracks(el.tracks).some(t => t.name === name)) animation = el;
     });
     (state.slides || []).forEach(s => visit(s.elements));
     (state.masters || []).forEach(m => visit(m.elements));
-    if (slider) return { kind: 'slider', id: slider.id };
+    if (input) return { kind: 'slider', id: input.id, type: input.type };
+    if (animation) return { kind: 'slider', id: animation.id, type: 'animation' };
     const file = [...(state.varFiles || [])].reverse().find(f => { const v = valuesOfFile(f.file); return v && name in v; });
     if (file) return { kind: 'file', file: file.file };
     if (state.vars && name in state.vars) return { kind: 'written' };
@@ -33,7 +37,7 @@ export function goToVariable(name) {
     if (!src) return false;
     if (src.kind === 'slider') {
         revealElement(src.id);
-        flashSaveIndicator(`${name}: set by this slider`);
+        flashSaveIndicator(`${name}: set by this ${{ slider: 'slider', checkbox: 'checkbox', numberbox: 'number box', textbox: 'text box', choice: 'choice', animation: 'animation' }[src.type] || 'input'}`);
         return true;
     }
     openProjectSettings('variables');

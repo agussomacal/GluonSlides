@@ -1152,7 +1152,7 @@ function renderInteractiveElements(container, elements) {
             if (domEl.classList.contains('editing-mode')) return;
             if (e.button !== 0) return;
             // A slider's knob (elements/slider): it moves the value, not the element.
-            if (e.target.closest && e.target.closest('input[data-glslider]')) return;
+            if (e.target.closest && e.target.closest('input[data-glslider], [data-glinput], .gl-checkbox')) return;
             // Locked: no dragging. The press goes on to the canvas, so a drag
             // selects with a rectangle; a click selects it (see the click handler).
             if (locked) return;

@@ -2226,3 +2226,21 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .formula-menu div { padding: 4px 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
 .formula-menu div.active, .formula-menu div:hover { background: rgba(59, 130, 246, 0.25); }
 .formula-menu span { color: var(--text-muted); }
+
+/* Follow a variable (ui/followVariable.js) */
+.follow-box { position: fixed; z-index: 2500; width: 300px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,0.4); padding: 10px; }
+.follow-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main); }
+.follow-title span { font-weight: 400; color: var(--text-muted); }
+.follow-list { max-height: 260px; overflow-y: auto; margin-top: 6px; }
+.follow-item { display: flex; justify-content: space-between; gap: 10px; padding: 4px 6px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+.follow-item.active, .follow-item:hover { background: rgba(59, 130, 246, 0.25); }
+.follow-now { color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.follow-none { font-size: 12px; color: var(--text-muted); padding: 4px 6px; }
+.follow-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.follow-banner { position: fixed; top: 96px; left: 50%; transform: translateX(-50%); z-index: 2500; background: #7c3aed; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: 0 8px 20px rgba(0,0,0,0.35); }
+.follow-banner code { background: rgba(255,255,255,0.2); padding: 0 4px; border-radius: 3px; }
+body.picking-follower #slide-canvas .canvas-element { cursor: crosshair; }
+body.picking-follower #slide-canvas .canvas-element:hover { outline: 2px solid #7c3aed; }
+.anim-row { display: grid; grid-template-columns: 1fr 1.2fr 0.8fr 0.8fr auto; gap: 4px; margin-bottom: 4px; align-items: center; }
+.anim-row .anim-wide { grid-column: span 2; }
+.element-checkbox input, .element-numberbox input, .element-textbox input, .element-choice select { pointer-events: auto; }

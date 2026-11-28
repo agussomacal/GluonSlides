@@ -9,6 +9,9 @@
 
 import { state, currentSlide, findElementPath } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
+import { openFollow, pickFollower } from '../../ui/followVariable.js';
+
+const FOLLOWED = new Set(['slider', 'checkbox', 'numberbox', 'textbox', 'choice', 'animation']);
 import { parseIdValue } from './glNavigation.js';
 
 const MENU_ID = 'gl-context-menu';
@@ -47,10 +50,14 @@ function targetElement(target) {
     return container.find(el => el.id === target.elementId) || null;
 }
 
-/** The element type's own entries that apply to `el`. */
+/** The element type's own entries that apply to `el`, then those every object has. */
 function elementItems(el) {
-    const def = el ? ElementRegistry.get(el.type) : null;
-    return ((def && def.contextMenu) || []).filter(item => !item.when || item.when(el));
+    if (!el) return [];
+    const def = ElementRegistry.get(el.type);
+    const own = ((def && def.contextMenu) || []).filter(item => !item.when || item.when(el));
+    const all = [{ icon: 'ƒ', label: 'Follow a variable…', run: (e, at) => openFollow(e, at) }];
+    if (FOLLOWED.has(el.type)) all.push({ icon: '🎯', label: 'Make something follow this…', run: (e) => pickFollower(e) });
+    return [...own, ...all];
 }
 
 /** Installs the menu; `onGoTo(target)` opens the inspector at a target. */
@@ -80,7 +87,8 @@ export function initContextMenu({ onGoTo }) {
         e.preventDefault();
         menu.replaceChildren(button('📄', 'Go to Gluon file', () => onGoTo(target)));
         const el = targetElement(target);
-        elementItems(el).forEach(item => menu.appendChild(button(item.icon || '', item.label, () => item.run(el))));
+        const at = { x: e.clientX, y: e.clientY };
+        elementItems(el).forEach(item => menu.appendChild(button(item.icon || '', item.label, () => item.run(el, at))));
         menu.classList.add('open');
         const h = menu.offsetHeight || 60;
         menu.style.left = `${Math.min(e.clientX, window.innerWidth - 205)}px`;

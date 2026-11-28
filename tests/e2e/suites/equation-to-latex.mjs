@@ -66,7 +66,7 @@ const S = () => app(async () => JSON.parse(JSON.stringify((await import('/core/s
 
 check('a PNG picture: "Convert to LaTeX" in the menu', (await menuItems(5)).some(t => t.includes('Convert to LaTeX')));
 check('a PDF picture: not offered', !(await menuItems(6)).some(t => t.includes('Convert to LaTeX')));
-check('a shape: only "Go to Gluon file"', JSON.stringify(await menuItems(7)) === JSON.stringify(['📄Go to Gluon file']), JSON.stringify(await menuItems(7)));
+check('a shape: Go to Gluon file and Follow a variable, no Convert to LaTeX', JSON.stringify(await menuItems(7)) === JSON.stringify(['📄Go to Gluon file', 'ƒFollow a variable…']), JSON.stringify(await menuItems(7)));
 
 // Without the component: asks; Cancel leaves the picture.
 const clickConvert = async () => {

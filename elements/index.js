@@ -15,6 +15,8 @@ import './path/path.js';
 import './macro/macro.js';
 import './plot/plot.js';
 import './slider/slider.js';
+import './inputs/inputs.js';
+import './animation/animation.js';
 
 // Future elements: add the import here. If you forget, the app
 // throws at startup telling you the type is missing — loud, not silent.

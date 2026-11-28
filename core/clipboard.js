@@ -51,6 +51,7 @@ function isTypingTarget(activeEl) {
         activeEl.contentEditable === 'true'
         || activeEl.tagName === 'INPUT'
         || activeEl.tagName === 'TEXTAREA'
+        || activeEl.tagName === 'SELECT'
     );
 }
 

@@ -149,7 +149,17 @@ const PlotElement = {
     label: 'Add Plot',  // its panel chooses how formulas are written (lang)
     icon: '📈',
     className: 'element-plot',
-    category: 'interactive',
+    category: 'plots',
+    // Plots ▾: a plot already holding one kind of layer (more come from its panel's ＋ Layer)
+    variants: [
+        ...['curve', 'fill', 'parametric', 'points', 'line', 'hist', 'bar', 'heatmap', 'contour', 'quiver'].map(k => ({
+            id: k, label: { curve: 'Curve  y = f(x)', fill: 'Area under a curve', parametric: 'Parametric curve', points: 'Points (data)', line: 'Line (data)', hist: 'Histogram', bar: 'Bars', heatmap: 'Heatmap  z = f(x, y)', contour: 'Contour lines', quiver: 'Arrows (vector field)' }[k],
+            icon: { curve: '〰️', fill: '◭', parametric: '➰', points: '⁘', line: '📈', hist: '📊', bar: '▮', heatmap: '▦', contour: '◎', quiver: '↗️' }[k],
+            preset: () => ({ code: TEMPLATES[k][1], ...(['points', 'line', 'bar'].includes(k) ? { xmin: '', xmax: '' } : {}), ...(k === 'heatmap' || k === 'contour' || k === 'quiver' ? { ymin: -3, ymax: 3 } : {}) }),
+        })),
+        { id: 'empty', label: 'Empty plot', icon: '▫️', preset: () => ({ code: '' }) },
+        { id: 'matplotlib', label: 'Matplotlib script', icon: '🐍', preset: () => ({ lang: 'matplotlib', code: EXAMPLE.matplotlib }) },
+    ],
     // Choosing the formulas' language while the plot still has the example: the example in that language.
     propChanged(el, prop, before) {
         const before0 = EXAMPLE[before] ? before : 'python';

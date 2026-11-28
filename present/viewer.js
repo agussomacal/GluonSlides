@@ -74,13 +74,16 @@
     (function buildPrintPages() {
         const container = document.createElement('div');
         container.className = 'print-pages';
-        slides.forEach((slide) => {
+        slides.forEach((slide, index) => {
             const steps = Math.max(1, Number(slide.dataset.steps) || 1);
             for (let k = 1; k <= steps; k++) {
                 const page = slide.cloneNode(true);
                 page.removeAttribute('id');
                 page.classList.remove('active');
                 page.classList.add('print-page');
+                // which slide and step: animations end there on this page (core/liveEngine.js)
+                page.dataset.printSlide = String(index);
+                page.dataset.printStep = String(k);
                 page.querySelectorAll('[data-step], [data-until]').forEach(el => {
                     if (!shownAt(el, k)) el.remove();
                 });

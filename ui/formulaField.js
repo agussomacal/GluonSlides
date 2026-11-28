@@ -70,6 +70,8 @@ function openMenu(field, { all = false } = {}) {
         ...functions.map(n => ({ insert: `${n}(`, label: `${n}(…)`, note: '' })),
         ...constants.map(n => ({ insert: n, label: n, note: '' })),
     ].filter(it => it.insert.toLowerCase().startsWith(typed.toLowerCase()) && it.insert !== typed).slice(0, 60);
+    // a whole name typed (n, mu): no list, so Enter keeps the formula instead of taking a longer name
+    if (typed && (typed in vars || constants.includes(typed))) { closeMenu(); return; }
     if (!menuItems.length) { closeMenu(); return; }
     if (!menu) {
         menu = document.createElement('div');
@@ -102,6 +104,51 @@ function accept(i) {
     field.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/**
+ * A field that takes a formula: its value now (or what is wrong) under it
+ * (a .formula-result next to it), the names suggested, Ctrl+click on a
+ * variable goes to its definition. Used by the panel and by Follow a
+ * variable… (ui/followVariable.js).
+ */
+export function attachFormulaInput(field) {
+    field.title = field.title || 'A number, or "=" and a formula of the variables (e.g. =100 + 50*mu)';
+    if (!field.parentElement.querySelector('.formula-result')) field.insertAdjacentHTML('afterend', '<div class="formula-result"></div>');
+    showResult(field);
+    field.addEventListener('input', () => { setTimeout(() => showResult(field), 0); openMenu(field); });
+    // leaving the field: its own list closes (not one another field has opened since)
+    field.addEventListener('blur', () => setTimeout(() => { if (menuField === field) closeMenu(); }, 100));
+    // a field holding just "=" (or a condition being started): the names right away
+    field.addEventListener('focus', () => { if (/^=?\s*$/.test(field.value) && (field.value.trim() === '=' || field.hasAttribute('data-formula-only'))) openMenu(field, { all: true }); });
+    field.addEventListener('keydown', (e) => {
+        // Ctrl+Space: every name, whatever is typed
+        if (e.key === ' ' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openMenu(field, { all: true }); return; }
+        if (!menu || menuField !== field) return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            menuIndex = (menuIndex + (e.key === 'ArrowDown' ? 1 : -1) + menuItems.length) % menuItems.length;
+            menu.querySelectorAll('[data-i]').forEach((row, i) => row.classList.toggle('active', i === menuIndex));
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            accept(menuIndex);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeMenu();
+        }
+    });
+    // Ctrl+click on a variable's name in the formula: its definition
+    field.addEventListener('mousedown', (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        setTimeout(() => {
+            const at = field.selectionStart ?? 0;
+            const left = field.value.slice(0, at).match(/[A-Za-z_]\w*$/);
+            const right = field.value.slice(at).match(/^\w*/);
+            const word = `${left ? left[0] : ''}${right ? right[0] : ''}`;
+            if (word && word in allVariables()) import('./goToVariable.js').then(m => m.goToVariable(word));
+        }, 0);
+    });
+
+}
+
 /** Makes the panel's number fields take formulas (called after the panel is drawn). */
 export function enhanceFormulaFields(panel, el) {
     if (!panel || !el) return;
@@ -120,40 +167,6 @@ export function enhanceFormulaFields(panel, el) {
             const label = field.closest('.prop-group')?.querySelector('label');
             if (label && !label.querySelector('.formula-badge')) label.insertAdjacentHTML('beforeend', '<span class="formula-badge" title="Given by a formula of the variables">ƒ</span>');
         }
-        field.title = field.title || 'A number, or "=" and a formula of the variables (e.g. =100 + 50*mu)';
-        if (!field.parentElement.querySelector('.formula-result')) field.insertAdjacentHTML('afterend', '<div class="formula-result"></div>');
-        showResult(field);
-        field.addEventListener('input', () => { setTimeout(() => showResult(field), 0); openMenu(field); });
-        // leaving the field: its own list closes (not one another field has opened since)
-        field.addEventListener('blur', () => setTimeout(() => { if (menuField === field) closeMenu(); }, 100));
-        // a field holding just "=" (or a condition being started): the names right away
-        field.addEventListener('focus', () => { if (/^=?\s*$/.test(field.value) && (field.value.trim() === '=' || field.hasAttribute('data-formula-only'))) openMenu(field, { all: true }); });
-        field.addEventListener('keydown', (e) => {
-            // Ctrl+Space: every name, whatever is typed
-            if (e.key === ' ' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openMenu(field, { all: true }); return; }
-            if (!menu || menuField !== field) return;
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                e.preventDefault();
-                menuIndex = (menuIndex + (e.key === 'ArrowDown' ? 1 : -1) + menuItems.length) % menuItems.length;
-                menu.querySelectorAll('[data-i]').forEach((row, i) => row.classList.toggle('active', i === menuIndex));
-            } else if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
-                accept(menuIndex);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closeMenu();
-            }
-        });
-        // Ctrl+click on a variable's name in the formula: its definition
-        field.addEventListener('mousedown', (e) => {
-            if (!(e.ctrlKey || e.metaKey)) return;
-            setTimeout(() => {
-                const at = field.selectionStart ?? 0;
-                const left = field.value.slice(0, at).match(/[A-Za-z_]\w*$/);
-                const right = field.value.slice(at).match(/^\w*/);
-                const word = `${left ? left[0] : ''}${right ? right[0] : ''}`;
-                if (word && word in allVariables()) import('./goToVariable.js').then(m => m.goToVariable(word));
-            }, 0);
-        });
+        attachFormulaInput(field);
     });
 }
