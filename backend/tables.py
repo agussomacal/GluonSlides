@@ -7,6 +7,7 @@ script); the table shows the copy's cells.
 """
 
 import csv
+import filecmp
 import io
 import json
 import os
@@ -115,7 +116,8 @@ def copy_into_data(project_folder, source):
     base, ext = os.path.splitext(os.path.basename(source))
     dest = os.path.join(data_dir, base + ext)
     n = 1
-    while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(source):
+    # the same file linked again: its copy is used (not data/run_1.csv, run_2.csv…)
+    while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(source) and not filecmp.cmp(dest, source, shallow=False):
         dest = os.path.join(data_dir, f"{base}_{n}{ext}")
         n += 1
     if os.path.abspath(dest) != os.path.abspath(source):

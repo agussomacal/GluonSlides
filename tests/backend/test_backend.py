@@ -1521,6 +1521,8 @@ class PlotDataTest(TempDirTest):
         os.utime(src, (time.time() + 5, time.time() + 5))
         self.assertEqual(refresh_plot_data(project, [item])["updated"][0]["rows"], [["1", "0.9"], ["2", "0.5"]])
         self.assertFalse(refresh_plot_data(project, [{"src": "data/none.csv", "mtime": 0}])["updated"][0]["success"])
+        # linked again: the same copy, not data/run_1.csv
+        self.assertEqual(link_plot_data(project, src)["relative_path"], res["relative_path"])
 
 
 class TablesTest(TempDirTest):

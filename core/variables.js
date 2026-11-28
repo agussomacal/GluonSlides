@@ -82,8 +82,12 @@ export function fileOptions(el) {
         return { options: [], error: `${el.source}: “${m[1] || 'the file'}” is not an object or a list` };
     }
     if (use === 'header') {
-        if (!t.header || !t.header.length) return { options: [], error: `${el.source}: no header row (its first row is numbers)` };
-        return { options: t.header.map(String) };
+        if (t.header && t.header.length) return { options: t.header.map(String) };
+        // a file of names only: on one row ("Input;Output"), or one per line
+        const rows = (t.rows || []).map(r => r.map(c => String(c ?? '').trim()).filter(Boolean)).filter(r => r.length);
+        if (rows.length === 1) return { options: rows[0] };
+        if (rows.length && rows.every(r => r.length === 1)) return { options: rows.map(r => r[0]) };
+        return { options: [], error: `${el.source}: no header row (its first row is numbers)` };
     }
     const c = use.match(/^column:(.+)$/);
     if (!c) return { options: [], error: `use:${use}: a CSV file takes header or column:<name>` };

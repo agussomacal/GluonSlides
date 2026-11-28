@@ -20,6 +20,9 @@ await page.addInitScript(() => {
         read_plot_data: (folder, path) => {
             if (path === 'data/runs.csv') return ok(RUNS);
             if (path === 'data/results.json') return ok(RESULTS);
+            // names only (no data): one per line, or one row
+            if (path === 'data/names.csv') return ok({ header: null, rows: [['Input'], ['Output']], total: 2, mtime: 1 });
+            if (path === 'data/namesrow.csv') return ok({ header: null, rows: [['Input', 'Output']], total: 1, mtime: 1 });
             return Promise.resolve({ success: false, error: `${path}: no such file` });
         },
         refresh_plot_data: () => ok({ updated: [] }),
@@ -76,6 +79,9 @@ check('a JSON\'s keys as options', JSON.stringify(await opts(4)) === '["adam","s
 const uses = await app(async () => {
     const V = await import('/core/variables.js');
     const o = (el) => { const r = V.fileOptions(el); return r.error || r.options.join(','); };
+    // read the names-only files first
+    V.fileOptions({ source: 'data/names.csv' }); V.fileOptions({ source: 'data/namesrow.csv' });
+    await new Promise(r => setTimeout(r, 150));
     return {
         column: o({ source: 'data/runs.csv', use: 'column:optimizer' }),
         byNumber: o({ source: 'data/runs.csv', use: 'column:1' }),
@@ -83,12 +89,15 @@ const uses = await app(async () => {
         noColumn: o({ source: 'data/runs.csv', use: 'column:nope' }),
         noPath: o({ source: 'data/results.json', use: 'keys:nope' }),
         missing: V.choiceOptions({ source: 'data/none.csv', options: 'kept, these' }).join(','),
+        namesLines: o({ source: 'data/names.csv' }),
+        namesRow: o({ source: 'data/namesrow.csv' }),
     };
 });
 check('use:column:optimizer: its values, each once', uses.column === 'adam,sgd', uses.column);
 check('use:column:1: by number', uses.byNumber === '1,2,3', uses.byNumber);
 check('use:keys:meta.runs: a list inside', uses.nested === 'r1,r2', uses.nested);
 check('a column or a key not there: said', /no column “nope”/.test(uses.noColumn) && /no “nope”/.test(uses.noPath), [uses.noColumn, uses.noPath]);
+check('a file of names only (one per line, or one row): those names', uses.namesLines === 'Input,Output' && uses.namesRow === 'Input,Output', [uses.namesLines, uses.namesRow]);
 check('a file that can\'t be read: the written options are kept', uses.missing === 'kept,these', uses.missing);
 const kept = await app(async () => (await import('/core/state.js')).state.slides[0].elements[0].options);
 check('the options a file gave are kept written too', kept === 'step, loss_adam, loss_sgd, optimizer', kept);
