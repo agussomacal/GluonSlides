@@ -10,6 +10,7 @@
 // startFigureSync). Pasted images (Ctrl+V) are saved into figures/.
 // ============================================================
 
+import { linkedCopies } from '../../core/projectLinks.js';
 import { state, pyApi, markDirty, activeElements, forEachElementDeep } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml, setImageResolver } from '../../core/render.js';
@@ -29,7 +30,7 @@ function notifyThumbnailOnly() {
 async function processAndAssignFigure(elIndex, filePath) {
     const api = pyApi();
     if (api && state.projectFolder) {
-        const res = await busy(`Importing ${fileName(filePath)}…`, api.import_figure(state.projectFolder, filePath));
+        const res = await busy(`Importing ${fileName(filePath)}…`, api.import_figure(state.projectFolder, filePath, linkedCopies()));
         if (res && res.success) {
             assignFigureSource(elIndex, res.data_uri, filePath, res.relative_path);
             // Copied from elsewhere: follow the original by default.
@@ -275,7 +276,7 @@ export async function addImagePath(path, insert, at = null) {
         throw new Error('Save the project first: figures are copied into its folder');
     }
     // A box on the slide while it is copied (and converted: PDF, EPS...).
-    const res = await placeholder(at, `Importing ${fileName(path)}…`, api.import_figure(state.projectFolder, path));
+    const res = await placeholder(at, `Importing ${fileName(path)}…`, api.import_figure(state.projectFolder, path, linkedCopies()));
     if (!res || !res.success) throw new Error((res && res.error) || `Could not import ${path}`);
     figureSources.set(res.relative_path, res.data_uri);
     const linked = res.relative_path !== path && res.path !== path;

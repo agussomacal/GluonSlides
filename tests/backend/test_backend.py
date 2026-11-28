@@ -52,7 +52,7 @@ class TempDirTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
-class ProjectFilesTest(TempDirTest):
+class CopyIntoProjectTest(TempDirTest):
     """Saving/loading project and side files (macros.tex, .bib, macros.gl...)."""
 
     def test_project_round_trip(self):
@@ -79,10 +79,73 @@ class ProjectFilesTest(TempDirTest):
         self.assertFalse(project_io.load_text_file(self.tmp, "bibliography.bib")["success"])
 
 
+class ProjectFilesTest(TempDirTest):
+    """Copying into the project only when needed (backend/projectfiles.py), and cleaning up."""
+
+    def setUp(self):
+        super().setUp()
+        self.project = os.path.join(self.tmp, "project")
+        os.makedirs(self.project)
+
+    def write(self, rel, text):
+        path = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Path(path).write_text(text)
+        return path
+
+    def test_the_rules(self):
+        from backend.projectfiles import copy_into
+        a = self.write("exp_a/results.csv", "x,y\n1,2\n")
+        b = self.write("exp_b/results.csv", "x,y\n1,2\n")      # the same content, another original
+        c = self.write("elsewhere/renamed.csv", "x,y\n1,2\n")  # the same content, no link
+        first = copy_into(self.project, a, "data")
+        self.assertEqual(first, "data/results.csv")
+        # the same original again: its copy
+        self.assertEqual(copy_into(self.project, a, "data"), first)
+        # the same content under another name, nothing linking it elsewhere: that file
+        self.assertEqual(copy_into(self.project, c, "data"), first)
+        # the same content but data/results.csv follows exp_a: exp_b gets its own copy
+        linked = [{"copy": first, "original": a}]
+        self.assertEqual(copy_into(self.project, b, "data", linked), "data/results_1.csv")
+        # exp_a linked, its copy not refreshed yet (the original changed): still its copy
+        Path(a).write_text("x,y\n1,3\n")
+        self.assertEqual(copy_into(self.project, a, "data", linked), first)
+        # a file already in the project: used where it is
+        inside = os.path.join(self.project, "results", "fit.csv")
+        os.makedirs(os.path.dirname(inside))
+        Path(inside).write_text("1,2\n")
+        self.assertEqual(copy_into(self.project, inside, "data"), "results/fit.csv")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.project, "data"))), ["results.csv", "results_1.csv"])
+
+    def test_tables_variables_and_plot_data_share_it(self):
+        from backend import tables, variables
+        src = self.write("exp/run.csv", "step,loss\n1,0.9\n")
+        rels = {tables.link_table_file(self.project, src)["relative_path"],
+                tables.link_plot_data(self.project, src)["relative_path"],
+                variables.link_vars_file(self.project, src)["relative_path"]}
+        self.assertEqual(rels, {"data/run.csv"})
+
+    def test_unused_files_and_deleting(self):
+        from backend.projectfiles import unused_files, delete_files
+        os.makedirs(os.path.join(self.project, "data"))
+        os.makedirs(os.path.join(self.project, "figures"))
+        for rel in ("data/used.csv", "data/old_1.csv", "figures/old.png"):
+            Path(os.path.join(self.project, rel)).write_text("x")
+        unused = [f["path"] for f in unused_files(self.project, ["data/used.csv"])]
+        self.assertEqual(unused, ["data/old_1.csv", "figures/old.png"])
+        # named in the project's text (a picture in a text box): used
+        unused = [f["path"] for f in unused_files(self.project, None, 'see ![](figures/old.png) and {data/used.csv}')]
+        self.assertEqual(unused, ["data/old_1.csv"])
+        res = delete_files(self.project, ["data/old_1.csv", "../outside.txt", "Gluon.gl"])
+        self.assertEqual(res["deleted"], ["data/old_1.csv"])
+        self.assertEqual(len(res["errors"]), 2)
+        self.assertFalse(os.path.exists(os.path.join(self.project, "data", "old_1.csv")))
+
+
 class FiguresTest(TempDirTest):
     """Importing figures into <project>/figures/ and loading them as data URIs."""
 
-    def test_import_copies_with_unique_names(self):
+    def test_import_copies_once_and_names_others_uniquely(self):
         src_dir = os.path.join(self.tmp, "outside")
         os.makedirs(src_dir)
         src = os.path.join(src_dir, "plot.png")
@@ -93,9 +156,16 @@ class FiguresTest(TempDirTest):
         first = figures.import_figure(project, src)
         second = figures.import_figure(project, src)
         self.assertTrue(first["success"] and second["success"])
-        self.assertEqual(first["relative_path"], os.path.join("figures", "plot.png"))
-        self.assertEqual(second["relative_path"], os.path.join("figures", "plot_1.png"))
+        self.assertEqual(first["relative_path"], "figures/plot.png")
+        self.assertEqual(second["relative_path"], "figures/plot.png")  # the same file: its copy
         self.assertTrue(first["data_uri"].startswith("data:image/png;base64,"))
+        # another picture of the same name: a copy of its own
+        other_dir = os.path.join(self.tmp, "other")
+        os.makedirs(other_dir)
+        other = os.path.join(other_dir, "plot.png")
+        Path(other).write_bytes(png_bytes(color="green"))
+        self.assertEqual(figures.import_figure(project, other)["relative_path"], "figures/plot_1.png")
+        self.assertEqual(sorted(os.listdir(os.path.join(project, "figures"))), ["plot.png", "plot_1.png"])
 
     def test_reimporting_a_file_already_in_figures(self):
         project = self.tmp

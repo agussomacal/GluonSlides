@@ -17,7 +17,7 @@ import json
 import os
 import re
 
-from . import tables
+from . import projectfiles, tables
 
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 HEADER_WORDS = {"name", "names", "key", "keys", "variable", "variables", "var", "parameter", "parameters"}
@@ -102,25 +102,14 @@ def read_vars_file(project_folder, path):
         return {"success": False, "error": f"{os.path.basename(str(path))}: {e}"}
 
 
-def link_vars_file(project_folder, source):
-    """Copies `source` into <project>/data/ (a unique name): its variables, and where it went."""
-    import shutil
+def link_vars_file(project_folder, source, linked=None):
+    """Copies `source` into <project>/data/ (only when needed: backend/projectfiles.py): its variables, and where it went."""
     try:
         if not project_folder or not os.path.isdir(project_folder):
             return {"success": False, "error": "Save the project first: the file is copied into its folder."}
         if os.path.splitext(source)[1].lower() not in (".json", ".csv", ".tsv", ".txt"):
             return {"success": False, "error": "Variables come from a .json or .csv file."}
-        data_dir = os.path.join(project_folder, "data")
-        os.makedirs(data_dir, exist_ok=True)
-        base, ext = os.path.splitext(os.path.basename(source))
-        dest = os.path.join(data_dir, base + ext)
-        n = 1
-        while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(source):
-            dest = os.path.join(data_dir, f"{base}_{n}{ext}")
-            n += 1
-        if os.path.abspath(dest) != os.path.abspath(source):
-            shutil.copy2(source, dest)
-        rel = os.path.relpath(dest, project_folder).replace("\\", "/")
+        rel = projectfiles.copy_into(project_folder, source, "data", linked)
     except Exception as e:
         return {"success": False, "error": str(e)}
     got = read_vars_file(project_folder, rel)

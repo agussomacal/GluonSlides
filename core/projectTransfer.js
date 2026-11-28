@@ -12,6 +12,7 @@
 // The clipboard notes where it was copied (clipboardSource) when copying.
 // ============================================================
 
+import { linkedCopies } from './projectLinks.js';
 import { state, pyApi, forEachElementDeep } from './state.js';
 import { palette, setPalette } from './colors.js';
 import { rememberFigureSource } from '../elements/figure/figure.js';
@@ -52,7 +53,7 @@ export async function bringAlong(elements, source) {
     async function figure(rel) {
         if (!isRelative(rel) || !canCopy) return rel;
         if (copiedFigures.has(rel)) return copiedFigures.get(rel);
-        const res = await api.import_figure(state.projectFolder, joinPath(source.folder, rel));
+        const res = await api.import_figure(state.projectFolder, joinPath(source.folder, rel), linkedCopies());
         if (!res || !res.success) {
             problems.push(rel);
             copiedFigures.set(rel, rel);
@@ -85,7 +86,7 @@ export async function bringAlong(elements, source) {
             if (el.filePath !== before && !el.originalPath && canCopy) el.originalPath = joinPath(source.folder, before);
         }
         if (el.type === 'table' && el.data && isRelative(el.data.src) && canCopy) {
-            const res = await api.link_table_file(state.projectFolder, joinPath(source.folder, el.data.src), el.data.rows || null);
+            const res = await api.link_table_file(state.projectFolder, joinPath(source.folder, el.data.src), el.data.rows || null, linkedCopies());
             if (res && res.success) {
                 el.data.src = res.relative_path;
                 el.data.original = el.data.original || res.original;

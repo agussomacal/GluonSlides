@@ -27,7 +27,7 @@ await page.addInitScript(() => {
         },
         refresh_plot_data: () => ok({ updated: [] }),
         select_vars_file: () => ok({ path: '/home/me/exp/results.json' }),
-        link_plot_data: (folder, src) => ok({ relative_path: 'data/results.json', original: src, ...RESULTS }),
+        link_plot_data: (folder, src, linked) => { window.__linked = linked; return ok({ relative_path: 'data/results.json', original: src, ...RESULTS }); },
         get_recent_projects: () => ok({ projects: [] }),
         get_inspector_settings: () => ok({ settings: null }),
         save_inspector_settings: () => ok(),
@@ -46,7 +46,7 @@ await app(async () => {
     state.gridSize = 0;
     state.vars = { 'results.adam.acc': 0.91, 'results.sgd.acc': 0.85 };
     state.slides = [{ id: 1, title: 'P', elements: [
-        { type: 'choice', id: 2, x: 100, y: 950, width: 500, height: 70, var: 'run', source: 'data/runs.csv', use: 'header', options: '', value: 'loss_adam' },
+        { type: 'choice', id: 2, x: 100, y: 950, width: 500, height: 70, var: 'run', source: 'data/runs.csv', use: 'header', options: '', value: 'loss_adam', original: '/home/me/exp/runs.csv' },
         { type: 'choice', id: 4, x: 700, y: 950, width: 500, height: 70, var: 'opt', source: 'data/results.json', options: 'adam, sgd', value: 'adam' },
         { type: 'plot', id: 3, x: 100, y: 100, width: 1200, height: 700, lang: 'python', code: '.line data:{data/runs.csv} x:step y:"=run"' },
         { type: 'text', id: 5, x: 100, y: 820, width: 1200, height: 100, content: 'Accuracy: \\var{results[opt].acc}[%.2f]' },
@@ -151,6 +151,8 @@ const panel = await app(async () => {
         info: document.querySelector('#properties-body .prop-hint')?.textContent,
     };
 });
+const sentLinks = await app(() => window.__linked);
+check('…what the project links is sent along (a file linked again reuses its copy)', Array.isArray(sentLinks) && sentLinks.some(l => l.copy === 'data/runs.csv' && l.original === '/home/me/exp/runs.csv'), sentLinks);
 check('📄 Options from a file…: copied into data/, followed', panel.source === 'data/results.json' && panel.original === '/home/me/exp/results.json', panel);
 check('…Take: its keys, or the keys / items of what is inside', JSON.stringify(panel.take) === '["its keys","the keys of adam","the keys of sgd","the keys of meta","the items of meta.runs"]', panel.take);
 await page.selectOption('#properties-body select[data-prop="use"]', 'keys:meta.runs');

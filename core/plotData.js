@@ -7,6 +7,7 @@
 // an exported HTML has them.
 // ============================================================
 
+import { linkedCopies } from './projectLinks.js';
 import { state, pyApi, forEachElementDeep } from './state.js';
 
 const cache = new Map();     // `${folder}\u0000${file}` -> { header, rows, total, mtime, error } | 'loading'
@@ -46,7 +47,7 @@ async function load(file) {
 export async function linkDataFile(path) {
     const api = pyApi();
     if (!api || !state.projectFolder) return { success: false, error: 'Save the project first: the file is copied into its folder.' };
-    const res = await api.link_plot_data(state.projectFolder, path);
+    const res = await api.link_plot_data(state.projectFolder, path, linkedCopies());
     if (res && res.success) cache.set(keyOf(res.relative_path), kept(res));
     return res;
 }

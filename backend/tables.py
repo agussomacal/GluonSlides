@@ -7,11 +7,12 @@ script); the table shows the copy's cells.
 """
 
 import csv
-import filecmp
 import io
 import json
 import os
 import shutil
+
+from . import projectfiles
 
 MAX_CELLS = 20000      # what a slide table may hold
 DEFAULT_ROWS = 20      # a big file shows its first rows (header included) until asked for more
@@ -56,22 +57,10 @@ def read_table_file(project_folder, path, max_rows=None):
         return {"success": False, "error": str(e)}
 
 
-def link_table_file(project_folder, source, max_rows=None):
-    """Copies `source` into <project>/data/ (unique name): the table's data."""
+def link_table_file(project_folder, source, max_rows=None, linked=None):
+    """Copies `source` into <project>/data/ (only when needed: backend/projectfiles.py): the table's data."""
     try:
-        if not project_folder or not os.path.isdir(project_folder):
-            return {"success": False, "error": "Save the project first: the data is copied into its folder."}
-        data_dir = os.path.join(project_folder, "data")
-        os.makedirs(data_dir, exist_ok=True)
-        base, ext = os.path.splitext(os.path.basename(source))
-        dest = os.path.join(data_dir, base + ext)
-        n = 1
-        while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(source):
-            dest = os.path.join(data_dir, f"{base}_{n}{ext}")
-            n += 1
-        if os.path.abspath(dest) != os.path.abspath(source):
-            shutil.copy2(source, dest)
-        rel = os.path.relpath(dest, project_folder).replace("\\", "/")
+        rel = projectfiles.copy_into(project_folder, source, "data", linked)
         res = read_table_file(project_folder, rel, max_rows)
         if not res.get("success"):
             return res
@@ -107,22 +96,9 @@ def refresh_tables(project_folder, items):
 MAX_PLOT_ROWS = 20000   # a plot draws at most this many rows of a file (evenly thinned, the last kept)
 
 
-def copy_into_data(project_folder, source):
-    """Copies `source` into <project>/data/ (a unique name); its path relative to the project."""
-    if not project_folder or not os.path.isdir(project_folder):
-        raise ValueError("Save the project first: the file is copied into its folder.")
-    data_dir = os.path.join(project_folder, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    base, ext = os.path.splitext(os.path.basename(source))
-    dest = os.path.join(data_dir, base + ext)
-    n = 1
-    # the same file linked again: its copy is used (not data/run_1.csv, run_2.csv…)
-    while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(source) and not filecmp.cmp(dest, source, shallow=False):
-        dest = os.path.join(data_dir, f"{base}_{n}{ext}")
-        n += 1
-    if os.path.abspath(dest) != os.path.abspath(source):
-        shutil.copy2(source, dest)
-    return os.path.relpath(dest, project_folder).replace("\\", "/")
+def copy_into_data(project_folder, source, linked=None):
+    """`source` inside <project>/data/ (copied only when needed: backend/projectfiles.py); its path relative to the project."""
+    return projectfiles.copy_into(project_folder, source, "data", linked)
 
 
 def read_plot_data(project_folder, path):
@@ -162,10 +138,10 @@ def read_plot_data(project_folder, path):
         return {"success": False, "error": f"{os.path.basename(str(path))}: {e}"}
 
 
-def link_plot_data(project_folder, source):
-    """Copies a data file into <project>/data/; its rows and where it went."""
+def link_plot_data(project_folder, source, linked=None):
+    """Copies a data file into <project>/data/ (when needed); its rows and where it went."""
     try:
-        rel = copy_into_data(project_folder, source)
+        rel = copy_into_data(project_folder, source, linked)
     except Exception as e:
         return {"success": False, "error": str(e)}
     res = read_plot_data(project_folder, rel)

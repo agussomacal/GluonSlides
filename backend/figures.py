@@ -7,6 +7,8 @@ import shutil
 
 from PIL import Image
 
+from . import projectfiles
+
 _MIME_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml"}
 
 
@@ -62,27 +64,13 @@ def load_figure_data_uri(project_folder, file_path):
         return {"success": False, "error": str(e)}
 
 
-def import_figure(project_folder, source_path):
-    """Copy an external figure into <project>/figures/ (unique name) and load it."""
+def import_figure(project_folder, source_path, linked=None):
+    """Copy an external figure into <project>/figures/ (only when needed: backend/projectfiles.py) and load it."""
     try:
         if not project_folder or not os.path.exists(project_folder):
             return {"success": False, "error": "No project folder set."}
-
-        fig_dir = os.path.join(project_folder, "figures")
-        os.makedirs(fig_dir, exist_ok=True)
-
-        filename = os.path.basename(source_path)
-        base, ext = os.path.splitext(filename)
-        dest_path = os.path.join(fig_dir, filename)
-        counter = 1
-        while os.path.exists(dest_path) and os.path.abspath(dest_path) != os.path.abspath(source_path):
-            dest_path = os.path.join(fig_dir, f"{base}_{counter}{ext}")
-            counter += 1
-
-        # Re-importing a file that already lives in figures/ is a no-op.
-        if os.path.abspath(dest_path) != os.path.abspath(source_path):
-            shutil.copy2(source_path, dest_path)
-        rel_path = os.path.relpath(dest_path, project_folder)
+        rel_path = projectfiles.copy_into(project_folder, source_path, "figures", linked)
+        dest_path = os.path.join(project_folder, rel_path)
 
         loaded = load_figure_data_uri(project_folder, rel_path)
         if not loaded.get("success"):

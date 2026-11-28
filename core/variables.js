@@ -14,6 +14,7 @@
 // exported HTML (core/liveEngine.js liveUpdate).
 // ============================================================
 
+import { linkedCopies } from './projectLinks.js';
 import { state, pyApi, forEachElementDeep } from './state.js';
 import { protectMath } from './render.js';
 import { formatValue, compileFormula, parseTracks, variableValue } from './liveEngine.js';
@@ -260,7 +261,7 @@ export async function syncVarFiles({ force = false } = {}) {
 export async function linkVarFile(path) {
     const api = pyApi();
     if (!api || !state.projectFolder) return { success: false, error: 'Save the project first: the file is copied into its folder.' };
-    const res = await api.link_vars_file(state.projectFolder, path);
+    const res = await api.link_vars_file(state.projectFolder, path, linkedCopies());
     if (!res || !res.success) return res || { success: false, error: 'Could not read the file' };
     state.varFiles = (state.varFiles || []).filter(f => f.file !== res.relative_path);
     state.varFiles.push({ file: res.relative_path, original: res.original, sync: true });

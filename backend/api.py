@@ -9,7 +9,7 @@ import webbrowser
 
 import webview
 
-from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, tables, updates, user_settings, variables
+from . import __version__, desktop, dialogs, figures, fonts, pdf_export, project_io, projectfiles, tables, updates, user_settings, variables
 from .presentation import Presentation
 
 
@@ -142,9 +142,9 @@ class Api:
         """Load a figure image from disk into a data URI."""
         return figures.load_figure_data_uri(project_folder, file_path)
 
-    def import_figure(self, project_folder, source_path):
-        """Copy an external figure into the project's figures/ folder."""
-        return figures.import_figure(project_folder, source_path)
+    def import_figure(self, project_folder, source_path, linked=None):
+        """Copy an external figure into the project's figures/ folder (not again if it is there)."""
+        return figures.import_figure(project_folder, source_path, linked)
 
     def save_figure_data(self, project_folder, data_uri, name_hint=""):
         """Save a pasted image into <project>/figures/."""
@@ -195,9 +195,9 @@ class Api:
         """The variables of a file: {"success", "values": {name: value}, "mtime"}."""
         return variables.read_vars_file(project_folder, path)
 
-    def link_vars_file(self, project_folder, source):
-        """Copy a variable file into <project>/data/; its variables."""
-        return variables.link_vars_file(project_folder, source)
+    def link_vars_file(self, project_folder, source, linked=None):
+        """Copy a variable file into <project>/data/ (not again if it is there); its variables."""
+        return variables.link_vars_file(project_folder, source, linked)
 
     def refresh_vars(self, project_folder, items):
         """Re-copy variable files whose original changed; the values of those that changed."""
@@ -209,9 +209,20 @@ class Api:
         """A CSV's rows for a plot (header apart, thinned when huge)."""
         return tables.read_plot_data(project_folder, path)
 
-    def link_plot_data(self, project_folder, source):
-        """Copy a CSV into <project>/data/ for a plot; its rows."""
-        return tables.link_plot_data(project_folder, source)
+    def link_plot_data(self, project_folder, source, linked=None):
+        """Copy a CSV into <project>/data/ for a plot (not again if it is there); its rows."""
+        return tables.link_plot_data(project_folder, source, linked)
+
+    def unused_project_files(self, project_folder, text=""):
+        """Files of data/ and figures/ the project's text doesn't name: {"success", "files": [{"path", "size"}]}."""
+        try:
+            return {"success": True, "files": projectfiles.unused_files(project_folder, None, text)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_project_files(self, project_folder, paths):
+        """Deletes files of data/ and figures/ (Project settings → Files, clean up)."""
+        return {"success": True, **projectfiles.delete_files(project_folder, paths)}
 
     def refresh_plot_data(self, project_folder, items):
         """Re-copy plot data files whose original changed; the rows of those that changed."""
@@ -228,10 +239,10 @@ class Api:
         """The first `max_rows` rows of a CSV (all when None) and how many it has."""
         return tables.read_table_file(project_folder, path, max_rows)
 
-    def link_table_file(self, project_folder, source, max_rows=None):
+    def link_table_file(self, project_folder, source, max_rows=None, linked=None):
         """Copy a CSV into <project>/data/ and return its first rows (a linked table)."""
         desktop.debug(f"[table] linking {source} into {project_folder}")
-        res = tables.link_table_file(project_folder, source, max_rows)
+        res = tables.link_table_file(project_folder, source, max_rows, linked)
         desktop.debug(f"[table] linked: {res.get('success')} {res.get('error', '')} {len(res.get('rows') or [])} rows")
         return res
 

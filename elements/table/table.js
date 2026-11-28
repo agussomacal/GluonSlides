@@ -23,6 +23,7 @@
 // column widths. Pasting cells copied from a spreadsheet makes a table.
 // ============================================================
 
+import { linkedCopies } from '../../core/projectLinks.js';
 import { state, markDirty, pyApi, flashSaveIndicator, forEachElementDeep } from '../../core/state.js';
 import { clickedWord, selectWord } from '../../editor/clickedWord.js';
 import { fontStack } from '../../core/fonts.js';
@@ -445,7 +446,7 @@ export async function tablePropsFromCsv(path) {
     const api = pyApi();
     if (!api || !path) return null;
     if (state.projectFolder && typeof api.link_table_file === 'function') {
-        const res = await busy(`Reading ${path.split(/[/\\]/).pop()}…`, api.link_table_file(state.projectFolder, path, DEFAULT_CSV_ROWS));
+        const res = await busy(`Reading ${path.split(/[/\\]/).pop()}…`, api.link_table_file(state.projectFolder, path, DEFAULT_CSV_ROWS, linkedCopies()));
         if (res && res.success) {
             const partial = res.total > res.rows.length;
             flashSaveIndicator(partial ? `Linked to ${res.relative_path}: its first ${res.rows.length} of ${res.total} rows (more in the panel)` : `Linked to ${res.relative_path} ✓`);
@@ -801,7 +802,7 @@ const TableElement = {
         async linkCsv(elIndex, arg, el) {
             const path = await chooseCsv();
             if (!path) return;
-            const res = await busy('Reading the file…', pyApi().link_table_file(state.projectFolder || '', path, DEFAULT_CSV_ROWS));
+            const res = await busy('Reading the file…', pyApi().link_table_file(state.projectFolder || '', path, DEFAULT_CSV_ROWS, linkedCopies()));
             if (!res || !res.success) { flashSaveIndicator(res && res.error ? res.error : 'Could not link the file'); return; }
             el.rows = res.rows;
             el.data = { src: res.relative_path, sync: 'yes', original: res.original, ...(res.total > res.rows.length ? { rows: res.rows.length } : {}) };
