@@ -285,6 +285,18 @@ export function glHints(cm) {
     // Parameter key or value in a directive / override line.
     const ctx = lineContext(cm, cur.line, lineText.trim());
     if (!ctx) return null;
+    // a setting written as a formula (x:"=860 + 300*mu"): the variables and functions
+    const formula = before.match(/[A-Za-z]\w*:"?=[^"]*?([A-Za-z_]\w*)$/);
+    if (formula) {
+        const typed = formula[1];
+        const vars = allVariables();
+        const { functions } = formulaNames();
+        const list = [
+            ...Object.keys(vars).sort().map(n => ({ text: n, displayText: `${n}  —  ${vars[n]}` })),
+            ...functions.map(n => ({ text: `${n}(`, displayText: `${n}(…)` })),
+        ].filter(c => c.text.startsWith(typed) && c.text !== typed);
+        return result(list, cur.ch - typed.length);
+    }
     const word = before.match(/[^\s]*$/)[0];
     if (/^[A-Za-z]\w*:/.test(word)) {
         const key = word.slice(0, word.indexOf(':'));

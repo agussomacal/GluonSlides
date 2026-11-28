@@ -15,6 +15,7 @@ import { expandSlides } from '../core/bibPages.js';
 import { masterFor } from '../core/masters.js';
 import { withSlideContext, invalidateNumbering } from '../core/fields.js';
 import { startingVariables } from '../core/variables.js';
+import { applyFormulas } from '../core/bindings.js';
 
 const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/';
 
@@ -126,13 +127,16 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
         console.warn('Could not embed fonts for export:', e);
     }
 
+    // Formula-driven settings at the starting values (sliders move them from there).
+    applyFormulas(startingVariables());
     // Slides as presented: long reference lists continue on extra pages.
     invalidateNumbering();
     const pages = expandSlides();
     // Fields (\slidenumber ...) count the slides as presented.
     const slidesMarkup = pages.map((p, idx) => withSlideContext({ source: p.source, number: idx + 1, total: pages.length },
         () => slideMarkup(p.slide, idx, p.source))).join('');
-    const liveJs = await liveScript(/data-glslider|data-gl-plot/.test(slidesMarkup), /&quot;lang&quot;:&quot;matplotlib&quot;/.test(slidesMarkup));
+    applyFormulas(); // back to the values the editor shows
+    const liveJs = await liveScript(/data-glslider|data-gl-plot|data-glbind/.test(slidesMarkup), /&quot;lang&quot;:&quot;matplotlib&quot;/.test(slidesMarkup));
     // Speaker notes for the presenter view; "<" escaped so the JSON can't end the script.
     const notesJson = JSON.stringify(pages.map(p => (notes && p.slide.notes) || '')).replace(/</g, '\\u003c');
     const wanted = startAt !== null ? Number(startAt) : pages.findIndex(p => p.source === (Number(startSlide) || 0));
@@ -149,6 +153,7 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
             .slide.active { display: block; }
             [data-step], [data-until] { transition: opacity 0.25s ease; }
             .step-hidden { opacity: 0; visibility: hidden; }
+            .gl-off { display: none !important; } /* hidden by its condition (visible:"=…") */
             .gluon-blank { position: fixed; inset: 0; z-index: 2000; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
             .gluon-blank.black { background: #000000; opacity: 1; }
             .gluon-blank.white { background: #ffffff; opacity: 1; }

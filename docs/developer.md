@@ -30,6 +30,8 @@ core/               the model and what works on it (no editor UI)
   mplEngine.js      lang:matplotlib: reads a matplotlib / numpy script (a part of Python,
                     numpy-style arrays) into plot layers; no imports but liveEngine's
                     (inlined after it into exports that need it)
+  bindings.js       settings given by formulas of the variables ("=…"): values, the
+                    constant moved by a drag, live updates while a slider moves
   plotSchema.js     each plot layer's settings (types, defaults, help): read by the
                     layer cards, the source view's suggestions and the checks
   plotLayers.js     a plot's body edited one layer at a time (rewrites only what changed)

@@ -323,11 +323,17 @@ function serializeElementDirective(el) {
     // Locked in the editor (can't be dragged); no effect on the slides.
     if (el.locked === 'yes') head.push('locked:yes');
     // Turned about its centre, in degrees (clockwise).
-    if (Number(el.rotate)) head.push(`rotate:${Math.round(Number(el.rotate) * 10) / 10}`);
+    const formula = (key) => (el.formulas && el.formulas[key] ? `${key}:${encodeParamValue(`=${el.formulas[key]}`)}` : null);
+    if (formula('rotate')) head.push(formula('rotate'));
+    else if (Number(el.rotate)) head.push(`rotate:${Math.round(Number(el.rotate) * 10) / 10}`);
+    // Opacity (0 to 1; 1 is not written) and a visibility condition (core/bindings.js).
+    if (formula('opacity')) head.push(formula('opacity'));
+    else if (el.opacity !== undefined && Number(el.opacity) < 1) head.push(`opacity:${Math.round(Number(el.opacity) * 100) / 100}`);
+    if (formula('visible')) head.push(formula('visible'));
 
     if (!spec.registered) {
         const raw = Object.keys(el)
-            .filter(k => !['type', 'id', 'name', 'style', 'step', 'until', 'locked', 'rotate'].includes(k) && el[k] !== undefined && el[k] !== null)
+            .filter(k => !['type', 'id', 'name', 'style', 'step', 'until', 'locked', 'rotate', 'opacity', 'formulas'].includes(k) && !k.startsWith('_') && el[k] !== undefined && el[k] !== null)
             .filter(k => !(typeof el[k] === 'string' && el[k].startsWith('data:')))
             .map(k => `${k}:${encodeParamValue(typeof el[k] === 'object' ? JSON.stringify(el[k]) : el[k])}`);
         return `.element.${el.type} ${[...head, ...raw].join(' ')}`.trimEnd();
@@ -335,6 +341,8 @@ function serializeElementDirective(el) {
 
     const parts = head;
     spec.props.forEach(key => {
+        // a formula of the variables is written as it was typed (core/bindings.js)
+        if (formula(key)) { parts.push(formula(key)); return; }
         const v = el[key];
         if (v === undefined || v === null || v === '') return;
         if (typeof v === 'string' && v.startsWith('data:')) return;
@@ -711,15 +719,27 @@ function buildElement(type, params) {
     const until = Math.round(Number(params.until));
     if (until >= Math.max(1, step || 1)) el.until = until;
     if (params.locked === 'yes') el.locked = 'yes';
-    const rotate = Number(params.rotate);
-    if (rotate && Number.isFinite(rotate)) el.rotate = rotate;
+    // "=…": a formula of the variables (core/bindings.js); its value comes when drawing
+    const isFormula = (v) => typeof v === 'string' && v.trim().startsWith('=');
+    const keepFormula = (key, raw) => { el.formulas = { ...(el.formulas || {}), [key]: raw.trim().slice(1).trim() }; };
+    if (isFormula(params.rotate)) keepFormula('rotate', params.rotate);
+    else {
+        const rotate = Number(params.rotate);
+        if (rotate && Number.isFinite(rotate)) el.rotate = rotate;
+    }
+    if (isFormula(params.opacity)) keepFormula('opacity', params.opacity);
+    else if (params.opacity !== undefined && Number.isFinite(Number(params.opacity))) el.opacity = Math.max(0, Math.min(1, Number(params.opacity)));
+    if (isFormula(params.visible)) keepFormula('visible', params.visible);
     const spec = getElementGlSpec(type);
 
-    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step', 'until', 'locked', 'rotate'].includes(k));
+    const keysToRead = spec.registered ? spec.props : Object.keys(params).filter(k => !['id', 'name', 'style', 'step', 'until', 'locked', 'rotate', 'opacity', 'visible'].includes(k));
     keysToRead.forEach(key => {
         if (params[key] === undefined) return;
         const raw = params[key];
-        if (spec.numericProps.has(key)) {
+        if (spec.numericProps.has(key) && isFormula(raw)) {
+            keepFormula(key, raw);
+            el[key] = 0;
+        } else if (spec.numericProps.has(key)) {
             const num = Number(raw);
             el[key] = Number.isFinite(num) ? num : 0;
         } else {

@@ -1542,9 +1542,39 @@ export function legendStyle(kind) {
 
 // ---------- live values in a page ----------
 
+/** Objects whose settings are formulas (data-glbind, core/bindings.js): moved, sized, turned, shown for these values. */
+function liveBindings(root, vars) {
+    root.querySelectorAll('[data-glbind]').forEach(node => {
+        let formulas;
+        try { formulas = JSON.parse(node.getAttribute('data-glbind')); } catch (e) { return; }
+        Object.entries(formulas).forEach(([key, code]) => {
+            const f = compileFormula(String(code), 'python');
+            if (f.error || f.names.some(n => !(n in vars))) return;
+            let v;
+            try { v = f.exec(Object.assign(Object.create(null), vars)); } catch (e) { return; }
+            v = typeof v === 'boolean' ? (v ? 1 : 0) : Number(v);
+            if (!Number.isFinite(v)) return;
+            const px = `${Math.round(v * 1000) / 1000}px`;
+            switch (key) {
+                case 'x': node.style.left = px; break;
+                case 'y': node.style.top = px; break;
+                case 'width': node.style.width = px; break;
+                case 'height': node.style.height = px; break;
+                case 'rotate': node.style.transform = v ? `rotate(${v}deg)` : ''; break;
+                case 'opacity': node.style.opacity = String(Math.max(0, Math.min(1, v))); break;
+                case 'visible': node.classList.toggle('gl-off', !v); break;
+                case 'fontSize': node.style.fontSize = px; break;
+                case 'borderWidth': node.style.borderWidth = px; break;
+                default: break; // other settings: their starting value (they need the whole object redrawn)
+            }
+        });
+    });
+}
+
 /** Shows the variables' current values in `root` and redraws its plots. */
 export function liveUpdate(root, vars) {
     if (!root) return;
+    liveBindings(root, vars);
     root.querySelectorAll('[data-glvar]').forEach(node => {
         if (node.tagName === 'INPUT') return;
         const name = node.getAttribute('data-glvar');

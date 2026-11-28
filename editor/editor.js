@@ -28,6 +28,8 @@ import {
     createMaster, renameMaster, deleteMaster, setSlideMaster,
 } from '../core/masters.js';
 import { ElementRegistry } from '../core/registry.js';
+import { applyFormulas, setFormula } from '../core/bindings.js';
+import { enhanceFormulaFields } from '../ui/formulaField.js';
 import {
     applyCommonBoxStyles,
     getGridSvgDataUri,
@@ -132,6 +134,26 @@ function updateProp(propName, value) {
     const elements = activeElements();
     const indices = getSelectedElementIndices();
     if (indices.length === 0) return;
+
+    // "=…": a formula of the variables (core/bindings.js); "visible" is always a condition.
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text.startsWith('=') || propName === 'visible') {
+        indices.forEach(idx => { if (elements[idx]) setFormula(elements[idx], propName, text.replace(/^=\s*/, '') || null); });
+        markDirty();
+        renderCanvas();
+        updateThumbnailLive();
+        return;
+    }
+    // a plain value typed where a formula was: the formula goes
+    indices.forEach(idx => { const e = elements[idx]; if (e && e.formulas && e.formulas[propName]) setFormula(e, propName, null); });
+    if (propName === 'opacity') {
+        const o = Math.max(0, Math.min(1, Number(value)));
+        indices.forEach(idx => { const e = elements[idx]; if (!e) return; if (value === '' || !(o < 1)) delete e.opacity; else e.opacity = o; });
+        markDirty();
+        renderCanvas();
+        updateThumbnailLive();
+        return;
+    }
 
     // Numeric if any selected element's type declares it numeric (its
     // .gl spec), or it is one of the common geometry/border props.
@@ -728,6 +750,7 @@ export function redrawCanvas() {
 }
 
 function renderCanvas() {
+    applyFormulas(); // formula-driven settings (core/bindings.js) for the variables now
     updateAllConnectors(); // a moved / turned shape: its lines follow
     watchSizes();
     updateStepPreview();
@@ -1470,7 +1493,15 @@ function renderPropertiesPanel() {
                 <label title="Turn it about its centre (drag the round handle above it; Shift: 15° steps)">Rotation (°)</label>
                 <input type="number" class="prop-control" step="1" value="${Math.round((Number(el.rotate) || 0) * 10) / 10}" data-prop="rotate">
             </div>
+            <div class="prop-group">
+                <label title="0 (invisible) to 1 (solid)">Opacity</label>
+                <input type="number" class="prop-control" min="0" max="1" step="0.05" value="${el.opacity !== undefined ? el.opacity : 1}" data-prop="opacity">
+            </div>
         </div>`}
+        <div class="prop-group">
+            <label title="A condition on the variables, e.g. mu > 0 (empty: always shown)">Visible when</label>
+            <input type="text" class="prop-control" value="${escapeHtml((rawEl.formulas && rawEl.formulas.visible) || '')}" placeholder="always (e.g. mu > 0)" spellcheck="false" data-prop="visible" data-formula-only>
+        </div>
     `;
 
     html += arrangeSection([activeIdx]);
@@ -1508,6 +1539,7 @@ function renderPropertiesPanel() {
 
     panelBody.innerHTML = html + makeMacroSection();
     markInheritedFields(panelBody, rawEl);
+    enhanceFormulaFields(panelBody, rawEl); // "=…" in number fields: formulas of the variables
 }
 
 // ---------- Groups ----------

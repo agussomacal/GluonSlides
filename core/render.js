@@ -195,6 +195,15 @@ export function applyCommonBoxStyles(domEl, el) {
     domEl.style.borderStyle = el.borderStyle;
     // Turned about its centre (rotate:30).
     domEl.style.transform = Number(el.rotate) ? `rotate(${Number(el.rotate)}deg)` : '';
+    domEl.style.opacity = el.opacity !== undefined && Number(el.opacity) < 1 ? String(Math.max(0, Number(el.opacity))) : '';
+    // hidden by its condition (visible:"=…"): faint and dashed in the editor, so it can still be edited
+    domEl.classList.toggle('formula-hidden', Boolean(el._hidden));
+}
+
+/** The formulas an exported object carries, so sliders move it (core/liveEngine.js liveUpdate). */
+function bindAttr(el) {
+    if (!el.formulas || !Object.keys(el.formulas).length) return '';
+    return ` data-glbind="${escapeHtml(JSON.stringify(el.formulas))}"`;
 }
 
 // ---------- Element DOM / export markup (shared) ----------
@@ -225,16 +234,21 @@ export function exportElementMarkup(raw) {
         + `border: ${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
         + `box-sizing: border-box;`
         + (Number(el.rotate) ? `transform:rotate(${Number(el.rotate)}deg);` : '')
+        + (raw.opacity !== undefined && Number(raw.opacity) < 1 ? `opacity:${Math.max(0, Number(raw.opacity))};` : '')
         + (def && typeof def.exportStyle === 'function' ? def.exportStyle(el) : '');
+    const bind = bindAttr(raw);
+    // hidden by its condition (a class: the element's own display stays for when it shows)
+    const off = raw._hidden ? ' gl-off' : '';
+    const hide = '';
 
-    if (!def) return `<div class="el" style="${geo}"></div>`;
+    if (!def) return `<div class="el${off}"${bind} style="${geo}${hide}"></div>`;
     if (el.type === 'text') {
-        return `<div class="el ${def.className} align-${el.textAlign || 'center'}" style="${geo} ${textElementSharedStyle(el)}">${def.exportInner(el)}</div>`;
+        return `<div class="el ${def.className} align-${el.textAlign || 'center'}${off}"${bind} style="${geo} ${textElementSharedStyle(el)}${hide}">${def.exportInner(el)}</div>`;
     }
     // Columns, tables...: their text takes the element's font, size and
     // colour (on the canvas renderDom sets these on the box).
     const font = el.fontSize ? `font-size:${el.fontSize}px;font-family:${fontStack(el.fontFamily).replace(/"/g, "'")};color:${el.fontColor || 'inherit'};` : '';
-    return `<div class="el ${def.className}" style="${geo}${font}">${def.exportInner(el)}</div>`;
+    return `<div class="el ${def.className}${off}"${bind} style="${geo}${font}${hide}">${def.exportInner(el)}</div>`;
 }
 
 // ---------- Grid + dimensions ----------

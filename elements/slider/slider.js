@@ -17,6 +17,12 @@ import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { formatValue, bindSliders, liveUpdate } from '../../core/liveEngine.js';
 import { allVariables, setLiveValue } from '../../core/variables.js';
+import { hasFormulas, liveApplyToCanvas } from '../../core/bindings.js';
+
+/** The canvas redrawn (through editor.js, loaded later: no import cycle at load). */
+function redrawCanvasLater() {
+    import('../../editor/editor.js').then(m => m.redrawCanvas());
+}
 
 const num = (v, d) => (v === '' || v === undefined || v === null || !Number.isFinite(Number(v)) ? d : Number(v));
 
@@ -87,7 +93,14 @@ const SliderElement = {
         // On the canvas the slider works: plots and values follow (not saved).
         bindSliders(domEl, {}, (name, v) => {
             setLiveValue(name, v);
-            liveUpdate(document.getElementById('slide-canvas'), allVariables());
+            const canvas = document.getElementById('slide-canvas');
+            liveUpdate(canvas, allVariables());
+            if (hasFormulas()) liveApplyToCanvas(canvas, allVariables());
+        });
+        // let go: objects driven by formulas drawn again in full (handles, thumbnails…)
+        domEl.querySelector('input').addEventListener('change', () => {
+            if (hasFormulas()) document.dispatchEvent(new CustomEvent('slide-thumbnail-changed'));
+            if (hasFormulas()) requestAnimationFrame(() => redrawCanvasLater());
         });
     },
 

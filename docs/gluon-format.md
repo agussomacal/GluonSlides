@@ -282,8 +282,12 @@ These come first on an element's line, before the type's own parameters. Only `x
 | `borderCol` | colour | border colour |
 | `borderWidth` | pixels | border width |
 | `borderStyle` | `solid` / `dashed` / `dotted` / `none` | border style |
+| `opacity` | 0 to 1 | how opaque (1, not written, is solid) |
+| `visible` | a formula | a condition on the variables: the element is shown only while it is true (`visible:"=mu > 0"`) |
 
 `bg` and the border parameters are not used by `path`, `group` and macro instances, which don't write them.
+
+**Formulas.** Any number of an element (`x`, `y`, `width`, `height`, `rotate`, `opacity`, `fontSize`, `borderWidth`, and the element's own numbers) can be a formula of the [variables](#vars), written with `=` first: `x:"=860 + 300*mu"`, `rotate:=30*mu`, `width:"=200 + 50*sigma"`. Formulas use Python's syntax and functions, as in plots. The element is drawn with the formula's value; when a slider moves, it moves, turns, grows, fades or shows with it, on the canvas, while presenting and in the exported HTML (where position, size, rotation, opacity, visibility, font size and border width follow; other numbers keep their starting value). Dragging or resizing it in the editor changes the formula's constant (`860 + 300*mu` dragged 40 to the right becomes `900 + 300*mu`).
 
 `step` and `until` count only for a slide's own elements: elements inside a group or a macro appear with it.
 

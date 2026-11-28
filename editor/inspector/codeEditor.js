@@ -28,6 +28,8 @@ function defineGluonMode(CodeMirror) {
                 if (/^\S/.test(stream.string)) st.plot = /^\.element\.plot\b/.test(stream.string);
                 const vars = typeof opts.variables === 'function' ? opts.variables() : null;
                 st.queue = markVariables(scanned.tokens.filter(t => t.value !== ''), vars, st.plot && /^\s/.test(stream.string));
+                // settings given by formulas (x:"=860 + 300*mu"): their variables too
+                st.queue = markFormulaParams(st.queue, vars);
             }
             const tok = st.queue.shift();
             if (!tok) {
@@ -72,6 +74,24 @@ function markVariables(tokens, vars, inPlot) {
             if (m[0].startsWith('\\var{')) {
                 out.push({ type: tok.type, value: '\\var{' }, { type: 'var', value: name }, { type: tok.type, value: '}' });
             } else out.push({ type: 'var', value: m[0] });
+            last = m.index + m[0].length;
+        }
+        if (last < tok.value.length) out.push({ type: tok.type, value: tok.value.slice(last) });
+    });
+    return out;
+}
+
+/** The variables in settings written as formulas (a value starting with "="). */
+function markFormulaParams(tokens, vars) {
+    if (!vars) return tokens;
+    const out = [];
+    tokens.forEach(tok => {
+        if (!(tok.type === 'param-str' || tok.type === 'param-val') || !/^"?=/.test(tok.value)) { out.push(tok); return; }
+        let last = 0;
+        for (const m of tok.value.matchAll(/(?<![\w.])[A-Za-z_][A-Za-z0-9_]*/g)) {
+            if (!vars.has(m[0])) continue;
+            if (m.index > last) out.push({ type: tok.type, value: tok.value.slice(last, m.index) });
+            out.push({ type: 'var', value: m[0] });
             last = m.index + m[0].length;
         }
         if (last < tok.value.length) out.push({ type: tok.type, value: tok.value.slice(last) });

@@ -466,8 +466,11 @@ export function resetMacros() {
 
 // ---------- Dirty tracking / autosave ----------
 
+import { reconcileFormulas } from './bindings.js';
+
 export function markDirty() {
     state.isDirty = true;
+    reconcileFormulas(); // a moved formula-driven object: its formula's constant follows
     syncOpenSessions(); // canvas edits inside a macro -> overrides / definition
     recordUndoCheckpoint();
     scheduleAutosave();
