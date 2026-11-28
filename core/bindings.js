@@ -15,6 +15,7 @@
 // ============================================================
 
 import { state, forEachElementDeep } from './state.js';
+import { ElementRegistry } from './registry.js';
 import { compileFormula } from './liveEngine.js';
 import { allVariables } from './variables.js';
 
@@ -40,6 +41,19 @@ function everyElement(fn) {
     (state.slides || []).forEach(s => visit(s.elements));
     (state.masters || []).forEach(m => visit(m.elements));
     Object.values(state.macros || {}).forEach(m => visit(m.children));
+}
+
+function everyElementAtAll(fn) {
+    const visit = (els) => forEachElementDeep(els || [], fn);
+    (state.slides || []).forEach(s => visit(s.elements));
+    (state.masters || []).forEach(m => visit(m.elements));
+    Object.values(state.macros || {}).forEach(m => visit(m.children));
+}
+
+/** Elements with two descriptions of their geometry kept in step (a circle: centre and radius, and its box). */
+export function syncDerived(el = null) {
+    const one = (e) => { const def = ElementRegistry.get(e.type); if (def && typeof def.syncGeometry === 'function') def.syncGeometry(e); };
+    if (el) one(el); else everyElementAtAll(one);
 }
 
 /** Whether the project has any formula-driven setting. */
@@ -70,6 +84,7 @@ export function applyElementFormulas(el, vars = allVariables()) {
 /** Recomputes every formula-driven value of the project. */
 export function applyFormulas(vars = allVariables()) {
     everyElement(el => applyElementFormulas(el, vars));
+    syncDerived(); // e.g. a circle's box from a radius given by a formula
 }
 
 const round = (v) => Math.round(v * 100) / 100;
@@ -101,6 +116,7 @@ export function shiftConstant(formula, delta) {
  * difference (whatever the variables are now).
  */
 export function reconcileFormulas() {
+    syncDerived(); // a moved circle: its centre and radius first
     everyElement(el => {
         Object.keys(el.formulas).forEach(key => {
             if (key === 'visible' || !el._formulaValues || !(key in el._formulaValues)) return;
@@ -128,6 +144,7 @@ export function setFormula(el, key, formula) {
     }
     el.formulas = { ...(el.formulas || {}), [key]: String(formula).trim().replace(/^=\s*/, '') };
     applyElementFormulas(el);
+    syncDerived(el);
 }
 
 /**
@@ -138,6 +155,7 @@ export function liveApplyToCanvas(root, vars = allVariables()) {
     if (!root) return;
     everyElement(el => {
         applyElementFormulas(el, vars);
+        syncDerived(el);
         const node = root.querySelector(`[data-element-id="${CSS.escape(String(el.id))}"]`);
         if (!node) return;
         node.style.left = `${el.x}px`;

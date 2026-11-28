@@ -16,7 +16,7 @@ import { ElementRegistry } from '../../core/registry.js';
 
 /** CSS border-radius for a shape. */
 function borderRadius(el) {
-    if (el.kind === 'ellipse') return '50%';
+    if (el.kind === 'ellipse' || el.kind === 'circle') return '50%';
     const r = Number(el.radius) || 0;
     return r > 0 ? `${r}px` : '';
 }
@@ -28,6 +28,45 @@ function fillStyle(el) {
         + `background-color:${el.bg};`
         + `border:${el.borderWidth}px ${el.borderStyle} ${el.borderCol};`
         + (r ? `border-radius:${r};` : '');
+}
+
+// ---------- circles: centre and radius ----------
+
+const CIRCLE_BOX = new Set(['x', 'y', 'width', 'height', 'lockAspect', 'radius']);
+const NOT_CIRCLE = new Set(['cx', 'cy', 'r']);
+const r2 = (v) => Math.round(v * 100) / 100;
+
+/** The box from the centre and radius. */
+function deriveBox(el) {
+    const r = Math.max(0, Number(el.r) || 0);
+    el.x = r2(Number(el.cx) - r);
+    el.y = r2(Number(el.cy) - r);
+    el.width = el.height = r2(2 * r);
+    el._derived = { x: el.x, y: el.y, width: el.width, height: el.height };
+}
+
+/** The centre and radius from the box (moved or resized), then the box squared. */
+function fromBox(el) {
+    const w = Number(el.width) || 0;
+    const h = Number(el.height) || 0;
+    el.cx = r2(Number(el.x) + w / 2);
+    el.cy = r2(Number(el.y) + h / 2);
+    el.r = r2(Math.min(w, h) / 2);
+    deriveBox(el);
+}
+
+/**
+ * A circle's two descriptions in step: a box moved or resized since it was
+ * last set moves the centre and radius; otherwise (the radius or the
+ * centre typed, or given by a formula) the box follows them.
+ */
+function syncCircle(el) {
+    if (el.kind !== 'circle') return;
+    const known = [el.cx, el.cy, el.r].every(v => v !== undefined && v !== '' && Number.isFinite(Number(v)));
+    const d = el._derived;
+    const boxMoved = d && (Math.abs(el.x - d.x) > 0.005 || Math.abs(el.y - d.y) > 0.005 || Math.abs(el.width - d.width) > 0.005 || Math.abs(el.height - d.height) > 0.005);
+    if (!known || boxMoved) fromBox(el);
+    else deriveBox(el);
 }
 
 const ShapeElement = {
@@ -44,7 +83,7 @@ const ShapeElement = {
         { id: 'ellipse', label: 'Ellipse', icon: '⬭', preset: () => ({ kind: 'ellipse' }) },
         {
             id: 'circle', label: 'Circle', icon: '⚪',
-            preset: (s) => ({ kind: 'ellipse', lockAspect: 'yes', width: Math.round(300 * s), height: Math.round(300 * s) }),
+            preset: (s) => ({ kind: 'circle', lockAspect: 'yes', width: Math.round(300 * s), height: Math.round(300 * s) }),
         },
         {
             // A dot is a small, filled, borderless circle.
@@ -58,9 +97,36 @@ const ShapeElement = {
     ],
 
     gl: {
-        props: ['x', 'y', 'width', 'height', 'kind', 'radius', 'lockAspect', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
-        numericProps: ['x', 'y', 'width', 'height', 'radius', 'borderWidth'],
+        props: ['x', 'y', 'width', 'height', 'kind', 'cx', 'cy', 'r', 'radius', 'lockAspect', 'bg', 'borderCol', 'borderWidth', 'borderStyle'],
+        numericProps: ['x', 'y', 'width', 'height', 'cx', 'cy', 'r', 'radius', 'borderWidth'],
         body: null,
+        // A circle is written by its centre and radius; its box comes from them.
+        omit: (el) => (el.kind === 'circle' ? CIRCLE_BOX : NOT_CIRCLE),
+        afterParse(el) {
+            if (el.kind !== 'circle') return;
+            el.lockAspect = 'yes';
+            if ([el.cx, el.cy, el.r].every(v => Number.isFinite(Number(v)))) deriveBox(el);
+        },
+    },
+
+    /** Keeps a circle's centre and radius and its box in step (core/bindings.js syncDerived). */
+    syncGeometry: syncCircle,
+
+    // Switching to or from a circle.
+    propChanged(el, prop, before) {
+        if (prop !== 'kind' || el.kind === before) return;
+        if (el.kind === 'circle') {
+            const d = Math.min(Number(el.width) || 0, Number(el.height) || 0);
+            el.x += (el.width - d) / 2;
+            el.y += (el.height - d) / 2;
+            el.width = el.height = d;
+            el.lockAspect = 'yes';
+            delete el.cx; delete el.cy; delete el.r; delete el._derived;
+            syncCircle(el);
+        } else if (before === 'circle') {
+            delete el.cx; delete el.cy; delete el.r; delete el._derived;
+            if (el.formulas) ['cx', 'cy', 'r'].forEach(k => delete el.formulas[k]);
+        }
     },
 
     defaults(ctx) {
@@ -99,7 +165,22 @@ const ShapeElement = {
     },
 
     properties(el) {
-        const kind = el.kind === 'ellipse' ? 'ellipse' : 'rect';
+        const kind = el.kind === 'ellipse' || el.kind === 'circle' ? el.kind : 'rect';
+        if (kind === 'circle') {
+            const num = (key, label) => `<div class="prop-group"><label>${label}</label><input type="number" class="prop-control" step="any" value="${Number(el[key]) || 0}" data-prop="${key}"></div>`;
+            return `
+            <div class="prop-divider"></div>
+            <div class="prop-group">
+                <label>Shape</label>
+                <select class="prop-control" data-prop="kind">
+                    <option value="rect">Rectangle</option>
+                    <option value="ellipse">Ellipse</option>
+                    <option value="circle" selected>Circle</option>
+                </select>
+            </div>
+            <div class="prop-row">${num('r', 'Radius')}${num('cx', 'Centre x')}</div>
+            <div class="prop-row"><div class="prop-group"></div>${num('cy', 'Centre y')}</div>`;
+        }
         return `
             <div class="prop-divider"></div>
             <div class="prop-row">
@@ -108,6 +189,7 @@ const ShapeElement = {
                     <select class="prop-control" data-prop="kind">
                         <option value="rect" ${kind === 'rect' ? 'selected' : ''}>Rectangle</option>
                         <option value="ellipse" ${kind === 'ellipse' ? 'selected' : ''}>Ellipse</option>
+                        <option value="circle">Circle</option>
                     </select>
                 </div>
                 <div class="prop-group">

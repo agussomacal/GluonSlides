@@ -335,14 +335,16 @@ Rectangles, rounded rectangles, ellipses, circles and dots. No body.
 .project {Deck}
 .slide {One} id:1
 .element.shape id:2 x:100 y:300 width:400 height:300 radius:24 bg:#e0f2fe borderCol:#0369a1 borderWidth:2
-.element.shape id:3 x:600 y:300 width:300 height:300 kind:ellipse lockAspect:yes bg:@accent
+.element.shape id:3 x:600 y:300 width:300 height:200 kind:ellipse bg:@accent
+.element.shape id:4 kind:circle cx:1300 cy:450 r:150 bg:#fca5a5
 ```
 
 | Parameter | Values | Built-in | Meaning |
 |---|---|---|---|
-| `kind` | `rect` / `ellipse` | `rect` | the shape |
+| `kind` | `rect` / `ellipse` / `circle` | `rect` | the shape |
+| `cx`, `cy`, `r` | pixels | | a circle's centre and radius: a circle is written with these instead of `x`, `y`, `width`, `height` (its box is found from them). A formula for `r` (`r:"=40*s"`) makes it grow about its centre |
 | `radius` | pixels | `0` | corner radius (rectangles) |
-| `lockAspect` | `yes` | | keeps its proportions when resized (circles, dots) |
+| `lockAspect` | `yes` | | keeps its proportions when resized (dots; circles always do) |
 | `bg` | colour | `#cbd5e1` | fill |
 | `borderCol`, `borderWidth`, `borderStyle` | | `#475569`, `2`, `solid` | outline |
 

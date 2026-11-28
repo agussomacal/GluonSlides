@@ -46,11 +46,20 @@ export function fileErrors() {
     return out;
 }
 
+/** Where a slider starts: its value, kept inside its range (a value outside it can't be shown). */
+export function sliderStart(el) {
+    const num = (v, d) => (v === '' || v === undefined || v === null || !Number.isFinite(Number(v)) ? d : Number(v));
+    const lo = num(el.min, 0);
+    const hi = num(el.max, 1);
+    const v = num(el.value, lo);
+    return Math.min(Math.max(v, Math.min(lo, hi)), Math.max(lo, hi));
+}
+
 /** Each slider's variable and its starting value, over the whole project. */
 export function sliderValues() {
     const out = {};
     const visit = (els) => forEachElementDeep(els || [], el => {
-        if (el.type === 'slider' && el.var) out[el.var] = Number(el.value ?? el.min ?? 0);
+        if (el.type === 'slider' && el.var) out[el.var] = sliderStart(el);
     });
     (state.slides || []).forEach(s => visit(s.elements));
     (state.masters || []).forEach(m => visit(m.elements));

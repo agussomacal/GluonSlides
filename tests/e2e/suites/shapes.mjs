@@ -44,7 +44,7 @@ check('border-radius per kind', JSON.stringify(radii) === JSON.stringify(['', '3
 const lines = st.gl.split('\n').filter(l => l.startsWith('.element.shape'));
 check('plain rect writes no new props', !/kind:|radius:|lockAspect:/.test(lines[0]), lines[0]);
 check('rounded writes radius', /radius:32/.test(lines[1]));
-check('circle writes kind+lockAspect', /kind:ellipse lockAspect:yes/.test(lines[3]), lines[3]);
+check('circle writes kind:circle, its centre and radius (no box)', /kind:circle cx:[\d.]+ cy:[\d.]+ r:150/.test(lines[3]) && !/width:/.test(lines[3]), lines[3]);
 check('thumbnail rounded too', (await page.$$eval('.thumb-element .shape-fill', ns => ns.map(n => n.style.borderRadius))).includes('50%'));
 
 // Canvas helpers

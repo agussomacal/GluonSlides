@@ -37,6 +37,10 @@ function getElementGlSpec(type) {
         parseBody: typeof gl?.parseBody === 'function' ? gl.parseBody : null,
         // Optional directive name, e.g. 'macro.card' (default 'element.<type>').
         directive: typeof gl?.directive === 'function' ? gl.directive : null,
+        // Optional: settings an element doesn't write (e.g. a circle's box: it writes cx, cy, r).
+        omit: typeof gl?.omit === 'function' ? gl.omit : null,
+        // Optional: completes an element just read (e.g. a circle's box from cx, cy, r).
+        afterParse: typeof gl?.afterParse === 'function' ? gl.afterParse : null,
     };
 }
 
@@ -340,7 +344,9 @@ function serializeElementDirective(el) {
     }
 
     const parts = head;
+    const omitted = spec.omit ? spec.omit(el) : null;
     spec.props.forEach(key => {
+        if (omitted && omitted.has(key) && !(el.formulas && el.formulas[key])) return;
         // a formula of the variables is written as it was typed (core/bindings.js)
         if (formula(key)) { parts.push(formula(key)); return; }
         const v = el[key];
@@ -746,6 +752,7 @@ function buildElement(type, params) {
             el[key] = raw;
         }
     });
+    if (spec.afterParse) spec.afterParse(el);
     return el;
 }
 

@@ -1547,7 +1547,27 @@ function liveBindings(root, vars) {
     root.querySelectorAll('[data-glbind]').forEach(node => {
         let formulas;
         try { formulas = JSON.parse(node.getAttribute('data-glbind')); } catch (e) { return; }
+        const value = (code) => {
+            const f = compileFormula(String(code), 'python');
+            if (f.error || f.names.some(n => !(n in vars))) return NaN;
+            try { const v = f.exec(Object.assign(Object.create(null), vars)); return typeof v === 'boolean' ? (v ? 1 : 0) : Number(v); } catch (e) { return NaN; }
+        };
+        // a circle: its box from the centre and radius (formulas or their values)
+        if (formulas.__circle) {
+            const base = formulas.__circle;
+            const pick = (k) => (formulas[k] !== undefined ? value(formulas[k]) : Number(base[k]));
+            const cx = pick('cx');
+            const cy = pick('cy');
+            const r = Math.max(0, pick('r'));
+            if ([cx, cy, r].every(Number.isFinite)) {
+                node.style.left = `${cx - r}px`;
+                node.style.top = `${cy - r}px`;
+                node.style.width = `${2 * r}px`;
+                node.style.height = `${2 * r}px`;
+            }
+        }
         Object.entries(formulas).forEach(([key, code]) => {
+            if (key.startsWith('__')) return;
             const f = compileFormula(String(code), 'python');
             if (f.error || f.names.some(n => !(n in vars))) return;
             let v;

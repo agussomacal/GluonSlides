@@ -203,7 +203,9 @@ export function applyCommonBoxStyles(domEl, el) {
 /** The formulas an exported object carries, so sliders move it (core/liveEngine.js liveUpdate). */
 function bindAttr(el) {
     if (!el.formulas || !Object.keys(el.formulas).length) return '';
-    return ` data-glbind="${escapeHtml(JSON.stringify(el.formulas))}"`;
+    // a circle: its centre and radius, for those not given by a formula
+    const data = el.kind === 'circle' ? { ...el.formulas, __circle: { cx: el.cx, cy: el.cy, r: el.r } } : el.formulas;
+    return ` data-glbind="${escapeHtml(JSON.stringify(data))}"`;
 }
 
 // ---------- Element DOM / export markup (shared) ----------

@@ -253,7 +253,7 @@ An unknown name shows as a red `[? name]`. In the file: `.vars alpha:0.05` and `
 
 ### Interactive plots and sliders
 
-**Interactive ▾** in the toolbar adds a **plot** and a **slider**. A slider sets a variable (*Variable* in its panel, `mu` say); plots that use it are redrawn as it moves, and text showing it with `\var{mu}` changes too. It works on the canvas (drag the knob: the slider itself stays put), while presenting, in the presenter view (the audience's screen follows), and in the exported HTML, which needs nothing installed. The PDF export shows the starting values.
+**Interactive ▾** in the toolbar adds a **plot** and a **slider**. A slider sets a variable, starting at its *Starts at* value (kept inside its range: changing *From* or *To* moves it in if needed) (*Variable* in its panel, `mu` say); plots that use it are redrawn as it moves, and text showing it with `\var{mu}` changes too. It works on the canvas (drag the knob: the slider itself stays put), while presenting, in the presenter view (the audience's screen follows), and in the exported HTML, which needs nothing installed. The PDF export shows the starting values.
 
 A plot is made of **layers** on the same axes: a histogram of samples, the density curve over it, a shaded region, a line at the mean… In its panel each layer is a **card** showing its kind, colour and name, with buttons to hide it (👁: kept in the file, not drawn, also when presenting), draw it earlier or later (↑ ↓: later layers are on top), duplicate it (⧉) or delete it (✕). Click a card to open its settings: colour, width and line style, ranges that can be numbers or variables (`mu - sigma`), bins, sample count and seed, colour map, the data file (*Choose…* copies a CSV into `data/` and follows it; its columns are then offered in menus)… and its **formula**, in a small editor that colours functions, variables and the layer's own coordinate (`x`, `t`…), suggests names as you type (Ctrl+Space too), and marks in red the line of a mistake (an unknown name is underlined). **＋ Layer** adds a new one, already open:
 
@@ -284,7 +284,9 @@ Formulas are read by GluonSlides' own small calculator, never run as code, so a 
 
 ### Shapes
 
-The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; circles and dots use it). Holding **Shift** while resizing keeps any element's proportions.
+The **Shapes ▾** menu adds a rectangle, rounded rectangle, ellipse, circle or dot (and the drawn closed shapes described below). The first five are all `.element.shape`, with optional parameters that are only written when set: `kind:ellipse`, `radius:24` (corner radius), and `lockAspect:yes` (keep proportions; dots use it). Holding **Shift** while resizing keeps any element's proportions.
+
+A **circle** is described by its centre and radius: its panel has *Radius*, *Centre x* and *Centre y* (and the file says `kind:circle cx:960 cy:500 r:150`). Dragging it moves its centre, resizing it changes its radius, and a radius given by a formula of a slider (`=40*s`) makes it grow and shrink about its centre. *Shape* in the panel turns a rectangle or an ellipse into a circle (about the same centre) and back.
 
 ### Lines & curves
 

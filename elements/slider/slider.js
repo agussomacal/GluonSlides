@@ -16,7 +16,7 @@ import { fontStack } from '../../core/fonts.js';
 import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { formatValue, bindSliders, liveUpdate } from '../../core/liveEngine.js';
-import { allVariables, setLiveValue } from '../../core/variables.js';
+import { allVariables, setLiveValue, sliderStart } from '../../core/variables.js';
 import { hasFormulas, liveApplyToCanvas } from '../../core/bindings.js';
 
 /** The canvas redrawn (through editor.js, loaded later: no import cycle at load). */
@@ -47,6 +47,14 @@ const SliderElement = {
     icon: '🎚️',
     className: 'element-slider',
     category: 'interactive',
+
+    // A new range: the start moved inside it.
+    propChanged(el, prop) {
+        if (prop === 'min' || prop === 'max' || prop === 'value') {
+            const start = sliderStart(el);
+            if (Number(el.value) !== start) el.value = start;
+        }
+    },
 
     gl: {
         props: ['x', 'y', 'width', 'height', 'var', 'min', 'max', 'step', 'value', 'label', 'format', 'showValue', 'accent',
@@ -82,7 +90,7 @@ const SliderElement = {
         domEl.style.fontFamily = fontStack(el.fontFamily);
         domEl.style.color = el.fontColor;
         const vars = allVariables();
-        const value = num(vars[el.var], num(el.value, 0));
+        const value = num(vars[el.var], sliderStart(el));
         domEl.innerHTML = markup(el, value);
         const input = domEl.querySelector('input');
         if (ctx.context !== 'canvas') {
@@ -109,7 +117,7 @@ const SliderElement = {
     },
 
     exportInner(el) {
-        return markup(el, num(el.value, 0));
+        return markup(el, sliderStart(el));
     },
 
     properties(el) {

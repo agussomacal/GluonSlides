@@ -2192,7 +2192,7 @@ button.shortcut-keys:hover { border-color: var(--border-color); }
 .plot-formula .CodeMirror-cursor { border-left-color: var(--text-main); }
 .plot-formula .plot-formula-error { background: rgba(220, 38, 38, 0.18); }
 .cm-gl-ffn { color: #60a5fa; }
-.cm-gl-fvar { color: #f59e0b; }
+.cm-gl-fvar { color: #f59e0b; border-bottom: 1px dotted rgba(245, 158, 11, 0.7); }
 .cm-gl-fcoord { color: #34d399; font-weight: 600; }
 .cm-gl-fnum { color: #c084fc; }
 .cm-gl-fop { color: var(--text-muted); }
