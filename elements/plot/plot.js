@@ -67,7 +67,78 @@ const TEMPLATES = {
 };
 
 const DATA_KINDS = new Set(['points', 'line', 'hist', 'bar']);
-const MAX_EMBEDDED_ROWS = 5000;
+const MAX_EMBEDDED_ROWS = 20000; // histograms and bars (their own columns only); lines and points are thinned per pixel
+
+/** A column's index in a table (a header name or a number from 1), or -1. */
+function colIndex(table, which, fallback) {
+    if (which === undefined || which === '') return fallback;
+    const s = String(which).trim();
+    if (/^\d+$/.test(s)) return Number(s) - 1;
+    return (table.header || []).findIndex(h => String(h).trim() === s);
+}
+
+/**
+ * The rows a plot keeps of a data file: as few as draw the same picture.
+ * A line: in each pixel column (across `pixels`), its first, lowest,
+ * highest and last point, in order. Points: one per pixel cell. Every
+ * layer: only the columns it uses (all of them when one is picked by a
+ * variable). Long-format files (group:) keep their groups apart.
+ */
+export function thinTable(layer, t, pixels) {
+    let rows = t.rows || [];
+    let header = t.header;
+    const picked = ['x', 'y', 'yerr', 'column'].some(k => String(layer[k] ?? '').trim().startsWith('='));
+    const used = [layer.x, layer.y, layer.yerr, layer.column, layer.group].filter(v => v !== undefined && v !== '' && !String(v).trim().startsWith('='));
+    // only the columns used (named ones; with defaults, the first few): smaller files, same drawing
+    // (only when every column it uses is named in the header: numbers, or defaults, would shift)
+    const named = (v) => v !== undefined && v !== '' && !/^\d+$/.test(String(v).trim()) && colIndex(t, v, -1) >= 0;
+    const given = layer.kind === 'hist' ? named(layer.column) : named(layer.x) && named(layer.y);
+    if (!picked && header && given && used.every(named)) {
+        const keep = [...new Set(used.map(u => colIndex(t, u, -1)))].sort((a, b) => a - b);
+        rows = rows.map(r => keep.map(k => r[k]));
+        header = keep.map(k => header[k]);
+    }
+    const table = { header, rows };
+    if ((layer.kind === 'line' || layer.kind === 'points') && rows.length > 4 * pixels && !picked) {
+        const xi = colIndex(table, layer.x, 0);
+        const yi = colIndex(table, layer.y, rows[0] && rows[0].length > 1 ? 1 : 0);
+        const gi = layer.group ? colIndex(table, layer.group, -1) : -1;
+        const nums = (k) => rows.map(r => Number(r[k]));
+        const xs = rows[0] && rows[0].length > 1 ? nums(xi) : rows.map((_, i) => i + 1);
+        const ys = nums(yi);
+        const range = (v) => { let lo = Infinity, hi = -Infinity; v.forEach(a => { if (Number.isFinite(a)) { if (a < lo) lo = a; if (a > hi) hi = a; } }); return [lo, hi === lo ? lo + 1 : hi]; };
+        const [x0, x1] = range(xs);
+        const [y0, y1] = range(ys);
+        const keep = new Set();
+        const buckets = new Map();
+        rows.forEach((r, i) => {
+            if (!Number.isFinite(xs[i]) || !Number.isFinite(ys[i])) return;
+            const cell = (v, lo, hi) => Math.min(pixels - 1, Math.floor((v - lo) / (hi - lo) * pixels));
+            const bx = cell(xs[i], x0, x1);
+            const g = gi >= 0 ? String(r[gi]) : '';
+            if (layer.kind === 'points') {
+                const key = `${g}|${bx}|${cell(ys[i], y0, y1)}`;
+                if (!buckets.has(key)) { buckets.set(key, i); keep.add(i); }
+                return;
+            }
+            const key = `${g}|${bx}`;
+            const b = buckets.get(key);
+            if (!b) buckets.set(key, { first: i, last: i, lo: i, hi: i });
+            else {
+                b.last = i;
+                if (ys[i] < ys[b.lo]) b.lo = i;
+                if (ys[i] > ys[b.hi]) b.hi = i;
+            }
+        });
+        if (layer.kind === 'line') buckets.forEach(b => { keep.add(b.first); keep.add(b.lo); keep.add(b.hi); keep.add(b.last); });
+        table.rows = rows.filter((_, i) => keep.has(i));
+        table.thinned = rows.length;
+    } else if (rows.length > MAX_EMBEDDED_ROWS) {
+        const step = rows.length / MAX_EMBEDDED_ROWS;
+        table.rows = Array.from({ length: MAX_EMBEDDED_ROWS }, (_, k) => rows[Math.floor(k * step)]);
+    }
+    return table;
+}
 
 /** What the engine draws: the element's settings, colours resolved, data attached, ranges found once. */
 export function plotSpec(el) {
@@ -81,9 +152,8 @@ export function plotSpec(el) {
             const t = dataTable(l.data);
             if (t && t.error) layer.tableError = t.error;
             else if (t) {
-                let rows = t.rows || [];
-                if (rows.length > MAX_EMBEDDED_ROWS) { const step = rows.length / MAX_EMBEDDED_ROWS; rows = Array.from({ length: MAX_EMBEDDED_ROWS }, (_, k) => rows[Math.floor(k * step)]); }
-                layer.table = { header: t.header, rows };
+                const thin = thinTable(layer, t, Math.max(200, Math.round(Number(el.width) || 1000)));
+                layer.table = { header: thin.header, rows: thin.rows };
             }
         }
         return layer;

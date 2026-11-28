@@ -259,6 +259,31 @@ check('export: the heatmap follows the slider', moved);
 check('export: no script errors', !expErrors.length, expErrors.join(' | '));
 await exp.close();
 
+// ---------- big files: thinned to what draws the same ----------
+const thin = await app(async () => {
+    const { thinTable } = await import('/elements/plot/plot.js');
+    const N = 100000;
+    const rows = Array.from({ length: N }, (_, i) => [String(i), String(Math.sin(i / 500) + (i === 54321 ? 5 : 0)), String(i % 7), 'extra']);
+    const t = { header: ['step', 'loss', 'k', 'note'], rows };
+    const line = thinTable({ kind: 'line', x: 'step', y: 'loss' }, t, 1000);
+    const pts = thinTable({ kind: 'points', x: 'step', y: 'k' }, t, 1000);
+    const hist = thinTable({ kind: 'hist', column: 'loss' }, t, 1000);
+    const numbered = thinTable({ kind: 'hist', column: '2' }, t, 1000);
+    const picked = thinTable({ kind: 'line', x: 'step', y: '=run' }, t, 1000);
+    const ys = line.rows.map(r => Number(r[1]));
+    return {
+        lineRows: line.rows.length, lineCols: line.header, peak: Math.max(...ys), low: Math.min(...ys), first: line.rows[0][0], last: line.rows[line.rows.length - 1][0],
+        ordered: line.rows.every((r, i) => i === 0 || Number(r[0]) > Number(line.rows[i - 1][0])),
+        ptsRows: pts.rows.length, histRows: hist.rows.length, histCols: hist.header, numberedCols: numbered.header.length, pickedCols: picked.header.length, pickedRows: picked.rows.length,
+    };
+});
+check('a line of 100 000 rows: at most 4 per pixel column, in order, first and last kept', thin.lineRows <= 4000 && thin.ordered && thin.first === '0' && thin.last === '99999', thin);
+check('…its peaks kept (a single spike of +5, the lowest point)', thin.peak > 5.9 && thin.low < -0.99, [thin.peak, thin.low]);
+check('…and only its columns', JSON.stringify(thin.lineCols) === '["step","loss"]', thin.lineCols);
+check('points: one per pixel cell (7 values of k: at most 7 per column)', thin.ptsRows <= 7000, thin.ptsRows);
+check('a histogram: its column only, at most 20 000 rows', thin.histRows === 20000 && JSON.stringify(thin.histCols) === '["loss"]', thin);
+check('a column given by number, or picked by a variable: every column kept (the latter: 20 000 rows, evenly)', thin.numberedCols === 4 && thin.pickedCols === 4 && thin.pickedRows === 20000, JSON.stringify(thin));
+
 console.log(out.join('\n'));
 console.log('--- errors ---\n' + (errors.join('\n') || '(none)'));
 await browser.close();
