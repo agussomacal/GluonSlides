@@ -5,6 +5,7 @@
 // ============================================================
 
 import { prepareTabFor, projectLoaded, setTabHooks, renderTabs } from './tabs.js';
+import { resetLiveValues } from '../core/variables.js';
 import { clearBibPages } from '../core/bibPages.js';
 import {
     state, pyApi, whenApiReady, parseTexMacros, markDirty, flushPendingSave,
@@ -164,6 +165,8 @@ function enterEditor() {
     state.isDirty = false;
     resetHistory();
     syncProjectChrome();
+    // values moved in the previous project (sliders, inputs, animations) don't carry over
+    resetLiveValues();
     showView('editor-view');
     renderEditor();
     projectLoaded();

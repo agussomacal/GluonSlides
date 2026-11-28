@@ -245,6 +245,20 @@ const sent = await pres.evaluate(async () => {
 check('presenter view: its slider works and is sent to the audience', sent.out && sent.out.mu === -1 && sent.moved, JSON.stringify(sent));
 await pres.close();
 
+// ---------- a project's variables stay in it ----------
+const leak = await app(async () => {
+    const V = await import('/core/variables.js');
+    const P = await import('/ui/project.js');
+    const { state } = await import('/core/state.js');
+    state.vars = { written_here: 1 };
+    V.setLiveValue('moved_here', 2);
+    const before = Object.keys(V.allVariables());
+    await P.openTutorialProject();
+    const after = Object.keys(V.allVariables());
+    return { before: before.includes('moved_here') && before.includes('written_here'), after: after.filter(n => ['moved_here', 'written_here'].includes(n)) };
+});
+check('another project opened: the previous one\'s variables are gone (moved and written)', leak.before && leak.after.length === 0, JSON.stringify(leak));
+
 console.log(out.join('\n'));
 console.log('--- errors ---\n' + (errors.join('\n') || '(none)'));
 await browser.close();
