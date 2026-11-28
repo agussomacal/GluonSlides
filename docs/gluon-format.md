@@ -557,6 +557,8 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 
 Text before any layer line is a first `.curve` (comments there belong to the first layer). Rows are separated by commas, semicolons or tabs (or spaces); a first row of names only is a header, and `#` starts a comment.
 
+**Long format**: a data layer (`.points`, `.line`, `.bar`, `.hist`) with `group:<column>` becomes one layer per value of that column, in the order they come: `.line data:{data/runs.csv} x:step y:loss group:run` draws a line per run, each its own colour, its value as its legend label (after the layer's `label`, if any). x and y (a histogram's `column`) default to the other columns. `show` picks which are drawn: written (`show:"adam, sgd"`) or a formula (`show:"=pick"`, a choice; with several at once, the ones ticked); the legend follows, and the axes fit every group so they don't jump.
+
 **Data files**: `data:{data/run.csv}` reads a CSV of the project folder (the panel's *＋ Data file…* copies one into `data/` and writes `original:"…"`, so the copy follows the file your script rewrites, like a linked table). Columns are chosen by their header's name (`x:step y:loss`, quoted if they have spaces) or by number, or by a variable naming one: `y:"=run"`, with a choice whose options are the file's header, draws the column chosen (the axes then fit each column instead of staying as at the start). A file with very many rows is drawn from 20 000 of them, evenly spread (5 000 in an exported HTML), the last one always kept.
 
 **Histograms of a formula**: with `samples:N`, the formula is drawn N times: random functions give the samples (`y = normal(mu, sigma)`). The draws are seeded (`seed`), so moving a slider moves the same draws instead of making new noise; `i` is the draw's number (0 to N−1).
@@ -657,7 +659,7 @@ All take `var`, `label` (Markdown and math), `accent` (a colour), `fontSize`, `f
 | `keys` (a JSON's default) | the keys of the object (a list: its items) |
 | `keys:<path>` | the keys (or items) of what is at `a.b` inside it |
 
-The file is copied into `data/` (`original` is followed when your script rewrites it, like a linked table). The options it gave are also kept in `options`, which an export or an unreadable file falls back to.
+A file of names only (one per line, or one row) gives those names. `skip:"step"` leaves some options out. The file is copied into `data/` (`original` is followed when your script rewrites it, like a linked table). The options it gave are also kept in `options`, which an export or an unreadable file falls back to.
 
 **Picking by a variable.** In formulas and in `\var{…}`, `name[key]` makes a name from another variable's value: with `results.json` = `{"adam": {"acc": 0.91}, "sgd": {"acc": 0.85}}` (variables `results.adam.acc`, `results.sgd.acc`) and a choice `opt`, `results[opt].acc` is the chosen one's (`\var{results[opt].acc}[%.2f]` in text; `results['adam'].acc` with a written key). On a list, `opts[0]` is an element (`opts[-1]` the last). Only Python formulas take it.
 

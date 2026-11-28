@@ -11,7 +11,7 @@
 // follows (cascade: element > style > project default > built-in).
 // ============================================================
 
-import { state, pyApi, markDirty, flashSaveIndicator } from '../core/state.js';
+import { state, pyApi, markDirty, flashSaveIndicator, serializeProject } from '../core/state.js';
 import { formatDate } from '../core/fields.js';
 import {
     defaultValue, projectStyle, setProjectDefault, adoptDefaults,
@@ -34,7 +34,7 @@ const TYPES = [
     { type: 'path', label: 'Lines & curves' },
 ];
 
-const ui = { tab: 'defaults', styleType: 'text', style: null, message: '' };
+const ui = { tab: 'defaults', styleType: 'text', style: null, message: '', files: null, ticked: new Set(), confirm: false };
 
 const opt = (value, current, label) => `<option value="${value}" ${String(current) === value ? 'selected' : ''}>${label}</option>`;
 
@@ -196,6 +196,46 @@ function colorsTab() {
 const VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** Variables tab: files of values, values written here, and every variable with where it comes from. */
+// ---------- Files: what data/ and figures/ hold that nothing uses ----------
+
+function projectText() {
+    let text = '';
+    try { text += serializeProject(); } catch (e) { /* the rest still tells */ }
+    try { text += JSON.stringify(state.macros || {}) + JSON.stringify(state.varFiles || []); } catch (e) { /* idem */ }
+    return text;
+}
+
+function loadUnusedFiles() {
+    const api = pyApi();
+    if (!api || typeof api.unused_project_files !== 'function') { ui.files = { error: 'Needs the app (not a browser).' }; return; }
+    if (!state.projectFolder) { ui.files = { error: 'Save the project first: it has no folder yet.' }; return; }
+    ui.files = { loading: true };
+    api.unused_project_files(state.projectFolder, projectText()).then(res => {
+        ui.files = res && res.success ? { list: res.files || [] } : { error: (res && res.error) || 'Could not look.' };
+        ui.ticked = new Set((ui.files.list || []).map(f => f.path));
+        ui.confirm = false;
+        if (ui.tab === 'files') render();
+    });
+}
+
+const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+
+function filesTab() {
+    if (!ui.files) loadUnusedFiles();
+    const f = ui.files || { loading: true };
+    const head = '<p class="prop-hint">Files in the project\'s <code>data/</code> and <code>figures/</code> folders that nothing in the project names any more (a figure replaced, a CSV linked twice before). Nothing is deleted unless you ask.</p>';
+    if (f.loading) return `${head}<p class="prop-hint">Looking…</p>`;
+    if (f.error) return `${head}<p class="prop-error">${escapeHtml(f.error)}</p>`;
+    if (!f.list.length) return `${head}<p>✓ Every file there is used.</p><button type="button" class="btn btn-secondary" data-settings-action="files-refresh">↻ Look again</button>`;
+    const total = f.list.filter(x => ui.ticked.has(x.path)).reduce((a, x) => a + x.size, 0);
+    return `${head}
+        <div class="unused-files">${f.list.map(x => `<label class="prop-check"><input type="checkbox" data-unused-file="${escapeHtml(x.path)}" ${ui.ticked.has(x.path) ? 'checked' : ''}> <code>${escapeHtml(x.path)}</code> <span class="prop-hint">${size(x.size)}</span></label>`).join('')}</div>
+        <div class="arrange-row" style="margin-top:8px;">
+            <button type="button" class="btn ${ui.confirm ? 'btn-danger' : 'btn-secondary'}" data-settings-action="files-delete" ${ui.ticked.size ? '' : 'disabled'}>${ui.confirm ? `Click again: delete ${ui.ticked.size} file${ui.ticked.size === 1 ? '' : 's'}` : `🗑 Delete the ticked files (${size(total)})`}</button>
+            <button type="button" class="btn btn-secondary" data-settings-action="files-refresh">↻ Look again</button>
+        </div>`;
+}
+
 function variablesTab() {
     const fromFiles = fileValues();
     const errors = fileErrors();
@@ -276,9 +316,9 @@ function presentationTab() {
 }
 
 function bodyHtml() {
-    const tabs = [['presentation', 'Presentation'], ['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors'], ['variables', 'Variables']].map(([id, label]) => `
+    const tabs = [['presentation', 'Presentation'], ['defaults', 'Defaults'], ['styles', 'Styles'], ['colors', 'Colors'], ['variables', 'Variables'], ['files', 'Files']].map(([id, label]) => `
         <button type="button" class="settings-tab${ui.tab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`).join('');
-    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab() : ui.tab === 'variables' ? variablesTab()
+    const content = ui.tab === 'styles' ? stylesTab() : ui.tab === 'colors' ? colorsTab() : ui.tab === 'variables' ? variablesTab() : ui.tab === 'files' ? filesTab()
         : ui.tab === 'presentation' ? presentationTab() : defaultsTab();
     return `
         <h2>Project settings</h2>
@@ -341,6 +381,14 @@ function addResetButton(control) {
 
 function wire(m) {
     const onChange = (e) => {
+        // Files: a file ticked or not for deleting
+        if (e.target.matches('[data-unused-file]')) {
+            if (e.type !== 'change') return;
+            if (e.target.checked) ui.ticked.add(e.target.dataset.unusedFile); else ui.ticked.delete(e.target.dataset.unusedFile);
+            ui.confirm = false;
+            render();
+            return;
+        }
         // Presentation tab: author / date. Never redrawn while typing or on
         // blur (a redraw would replace the button being clicked, e.g. Today).
         const field = e.target.closest('[data-project-field]');
@@ -537,6 +585,21 @@ function wire(m) {
             commit();
             break;
         }
+        case 'files-refresh':
+            ui.files = null;
+            render();
+            break;
+        case 'files-delete': {
+            if (!ui.confirm) { ui.confirm = true; render(); break; }
+            const paths = [...ui.ticked];
+            pyApi().delete_project_files(state.projectFolder, paths).then(res => {
+                const n = (res && res.deleted) ? res.deleted.length : 0;
+                flashSaveIndicator(`${n} file${n === 1 ? '' : 's'} deleted${res && res.errors && res.errors.length ? ` (${res.errors.length} not: ${res.errors[0]})` : ''}`);
+                ui.files = null;
+                render();
+            });
+            break;
+        }
         case 'var-reload':
             syncVarFiles({ force: true }).then(() => render());
             break;
@@ -575,9 +638,10 @@ function wire(m) {
     });
 }
 
-/** Opens the dialog, optionally on a tab ('presentation' | 'defaults' | 'styles' | 'colors' | 'variables'), and a style. */
+/** Opens the dialog, optionally on a tab ('presentation' | 'defaults' | 'styles' | 'colors' | 'variables' | 'files'), and a style. */
 export function openProjectSettings(tab = null, { styleType = null, style = null } = {}) {
     if (typeof tab === 'string') ui.tab = tab;
+    ui.files = null; // looked at again each time
     if (styleType) ui.styleType = styleType;
     if (style) ui.style = style;
     render();

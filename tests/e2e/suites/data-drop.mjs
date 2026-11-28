@@ -23,6 +23,7 @@ await page.addInitScript(() => {
     };
     const of = (path) => FILES[path.split('/').pop()];
     window.__links = [];
+    window.__unused = [{ path: 'data/long.csv', size: 120 }, { path: 'data/data_test_1.csv', size: 39 }, { path: 'figures/old.png', size: 2048 }];
     window.pywebview = { api: {
         read_plot_data: (folder, path) => (of(path) ? ok(of(path)) : Promise.resolve({ success: false, error: `${path}: no such file` })),
         link_plot_data: (folder, src) => { window.__links.push(src); return ok({ relative_path: `data/${src.split('/').pop()}`, original: src, ...of(src) }); },
@@ -34,6 +35,8 @@ await page.addInitScript(() => {
         refresh_vars: () => ok({ updated: [] }),
         read_vars_file: () => ok({ values: {}, mtime: 1 }),
         take_dropped_paths: () => ok({ paths: [] }),
+        unused_project_files: (folder, text) => { window.__text = text; return ok({ files: window.__unused.filter(f => !text.includes(f.path)) }); },
+        delete_project_files: (folder, paths) => { window.__deleted = paths; window.__unused = window.__unused.filter(f => !paths.includes(f.path)); return ok({ deleted: paths, errors: [] }); },
         get_recent_projects: () => ok({ projects: [] }),
         get_inspector_settings: () => ok({ settings: null }),
         save_inspector_settings: () => ok(),
@@ -193,6 +196,22 @@ await app(async () => {
 await drop('/home/me/exp/long.csv', 900, 500);
 plot = (await elements()).find(e => e.type === 'plot');
 check('a CSV dropped on a plot: a layer of it added (long: a line per run)', plot && plot.code === 'y = x\n.line data:{data/long.csv} original:/home/me/exp/long.csv x:step y:loss group:run' && !(await page.isVisible('.data-drop')), plot && plot.code);
+
+// ---------- Project settings → Files ----------
+await app(async () => (await import('/ui/projectSettings.js')).openProjectSettings('files'));
+await page.waitForTimeout(200);
+const unused = await app(() => [...document.querySelectorAll('[data-unused-file]')].map(i => `${i.dataset.unusedFile}${i.checked ? '*' : ''}`));
+check('Files: what nothing names (data/long.csv is used by the plot)', JSON.stringify(unused) === '["data/data_test_1.csv*","figures/old.png*"]', unused);
+await page.uncheck('[data-unused-file="figures/old.png"]');
+await page.click('[data-settings-action="files-delete"]');
+await page.waitForTimeout(100);
+const asking = await app(() => document.querySelector('[data-settings-action="files-delete"]')?.textContent.trim());
+check('…Delete asks once more, nothing deleted yet', asking === 'Click again: delete 1 file' && (await app(() => window.__deleted)) === undefined, asking);
+await page.click('[data-settings-action="files-delete"]');
+await page.waitForTimeout(250);
+const afterDelete = await app(() => ({ deleted: window.__deleted, left: [...document.querySelectorAll('[data-unused-file]')].map(i => i.dataset.unusedFile) }));
+check('…then only the ticked file is deleted, the list looked at again', JSON.stringify(afterDelete) === '{"deleted":["data/data_test_1.csv"],"left":["figures/old.png"]}', afterDelete);
+await app(async () => document.querySelector('[data-settings-action="close"]')?.click());
 
 check('no page errors', errors.length === 0, errors);
 console.log(out.join('\n'));

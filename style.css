@@ -2270,3 +2270,7 @@ body.picking-follower #slide-canvas .canvas-element:hover { outline: 2px solid #
 .dd-ys { display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; }
 .dd-sub { margin-left: 22px; }
 .dd-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Project settings → Files */
+.unused-files { display: flex; flex-direction: column; gap: 3px; max-height: 300px; overflow-y: auto; }
+.btn-danger { background: #dc2626; color: #fff; border-color: #dc2626; }
