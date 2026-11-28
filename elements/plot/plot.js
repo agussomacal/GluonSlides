@@ -76,7 +76,7 @@ export function plotSpec(el) {
     const layers = script ? [] : parseLayers(el.code || '', lang).map((l, i) => {
         const layer = { ...l, lang: LANGUAGES.includes(l.lang) ? l.lang : lang };
         if (l.color) layer.color = resolveColor(l.color) || l.color;
-        else if (!['heatmap'].includes(l.kind)) layer.color = PALETTE[i % PALETTE.length];
+        else if (!['heatmap'].includes(l.kind) && !l.group) layer.color = PALETTE[i % PALETTE.length]; // groups: a colour each
         if (DATA_KINDS.has(l.kind) && l.data) {
             const t = dataTable(l.data);
             if (t && t.error) layer.tableError = t.error;

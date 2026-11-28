@@ -801,9 +801,26 @@ function paramValue(layer, key, vars, fallback) {
 const WHOLE_LAYER_KEYS = new Set(['samples', 'seed', 'bins', 'grid', 'resolution', 'levels']);
 export const NUMERIC_LAYER_KEYS = new Set([...WHOLE_LAYER_KEYS, 'width', 'opacity', 'size', 'barwidth', 'offset', 'scale', 'zmin', 'zmax']);
 
-/** Whether a layer is shown for these values: not hidden:yes, and its `visible` condition (if any) holds. Throws LayerError on a bad condition. */
-function layerShown(layer, vars) {
+/**
+ * Whether a layer is shown for these values: not hidden:yes, its `visible`
+ * condition (if any) holds, and a group's value is among those `show`
+ * picks (show:"=pick" a choice, or show:"adam, sgd"; `allGroups`: ignored).
+ * Throws LayerError on a bad condition.
+ */
+function layerShown(layer, vars, allGroups = false) {
     if (layer.hidden === 'yes') return false;
+    const show = layer.show === undefined || layer.show === null ? '' : String(layer.show).trim();
+    if (show && layer.groupValue !== undefined && !allGroups) {
+        let picked;
+        if (show.startsWith('=')) {
+            const f = compileFormula(show.slice(1), 'python');
+            if (f.error) throw new LayerError(`show: ${f.error}`);
+            const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
+            if (missing.length) throw new LayerError(`show: unknown name ${missing.join(', ')}`);
+            picked = f.exec(Object.assign(Object.create(null), vars));
+        } else picked = show.split(',');
+        if (!(Array.isArray(picked) ? picked : [picked]).some(p => String(p).trim() === layer.groupValue)) return false;
+    }
     const cond = typeof layer.visible === 'string' ? layer.visible.replace(/^\s*=\s*/, '').trim() : '';
     if (!cond) return true;
     const f = compileFormula(cond, 'python'); // a condition is Python (texts, ==, in) whatever the layer's language
@@ -1137,7 +1154,7 @@ function axisRange(min, max, frozen, ext, log, fallback) {
  * categories, z }. `frozen` ({ x, y, z }) keeps ranges found once (at the
  * starting values) so the axes don't jump while a slider moves.
  */
-function evaluatePlot(spec0, vars, frozen = null) {
+function evaluatePlot(spec0, vars, frozen = null, { allGroups = false } = {}) {
     // axis ranges that are formulas of the variables (xmin:"=mu-3")
     const notes = [];
     const spec = { ...spec0 };
@@ -1153,7 +1170,7 @@ function evaluatePlot(spec0, vars, frozen = null) {
     // number settings that are formulas, and visibility conditions, for these values
     const layers = (spec.layers || []).map((layer, i) => {
         try {
-            if (!layerShown(layer, vars)) { results[i] = { hidden: true }; return layer; }
+            if (!layerShown(layer, vars, allGroups)) { results[i] = { hidden: true }; return layer; }
             return resolveLayer(layer, vars);
         } catch (e) { fail(i, e); return layer; }
     });
@@ -1219,7 +1236,13 @@ function evaluatePlot(spec0, vars, frozen = null) {
 
 /** Each layer's error for these variables ('' when it draws): what the layer cards show. */
 export function plotErrors(spec, vars, frozen = null) {
-    return evaluatePlot(expandPlot(spec, vars), vars || {}, frozen).results.map(r => (r && r.error) || '');
+    const ex = expandPlot(spec, vars);
+    const results = evaluatePlot(ex, vars || {}, frozen).results;
+    if (spec.script !== undefined || !(ex.layers || []).some(l => l.groupOf !== undefined)) return results.map(r => (r && r.error) || '');
+    // a layer split by group: its first error
+    const out = (spec.layers || []).map(() => '');
+    ex.layers.forEach((l, k) => { const e = results[k] && results[k].error; if (e && !out[l.groupOf]) out[l.groupOf] = e; });
+    return out;
 }
 
 // ---------- plots written as scripts (lang:matplotlib, core/mplEngine.js) ----------
@@ -1237,19 +1260,67 @@ export function isScriptLanguage(name) {
 
 /** A plot written as a script, as layers and settings for these values (its error in scriptError). */
 export function expandPlot(spec, vars) {
-    if (!spec || spec.script === undefined || !SCRIPT_LANGUAGES[spec.lang]) return spec;
+    if (!spec || spec.script === undefined || !SCRIPT_LANGUAGES[spec.lang]) return expandGroups(spec);
     try {
         const { layers, settings } = SCRIPT_LANGUAGES[spec.lang](spec.script, vars || {});
         const set = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v !== undefined && v !== null));
-        return { ...spec, ...set, layers };
+        return expandGroups({ ...spec, ...set, layers });
     } catch (e) {
         return { ...spec, layers: [], scriptError: e.line ? `line ${e.line}: ${e.message}` : e.message };
     }
 }
 
+// ---------- long-format data: a layer per value of a column (group:run) ----------
+
+function columnIndex(table, which) {
+    if (isSet(which)) return Number(which) - 1;
+    const i = (table.header || []).findIndex(h => String(h).trim() === String(which).trim());
+    if (i < 0) throw new LayerError(`group: no column “${which}”${table.header ? ` (columns: ${table.header.join(', ')})` : ''}`);
+    return i;
+}
+
+/**
+ * A data layer with group:<column> (a CSV in long format: run, step, loss)
+ * becomes one layer per value of that column, in order: its rows, a colour
+ * of its own, the value as its label (after the layer's label, if any);
+ * x and y (a histogram's column) default to the other columns. Each keeps
+ * groupOf (the layer it came from) and groupValue (for show:).
+ */
+function expandGroups(spec) {
+    if (!spec || !(spec.layers || []).some(l => l.group)) return spec;
+    const layers = [];
+    spec.layers.forEach((layer, i) => {
+        if (!layer.group || !COLUMN_KEYS[layer.kind]) { layers.push({ ...layer, groupOf: i }); return; }
+        let table;
+        let gi;
+        try {
+            table = tableOf(layer);
+            gi = columnIndex(table, layer.group);
+        } catch (e) {
+            layers.push({ ...layer, groupOf: i, ...(e instanceof LayerError && table ? { tableError: e.message } : {}) });
+            return;
+        }
+        const key = (r) => String(r[gi] ?? '').trim();
+        const values = [...new Set(table.rows.map(key))].filter(v => v !== '');
+        const others = (table.rows[0] || []).map((_, k) => k).filter(k => k !== gi).map(k => String(k + 1));
+        const defaults = layer.kind === 'hist' ? { column: others[0] } : { x: others[0], y: others[1] };
+        values.forEach((v, k) => {
+            const sub = { ...layer, groupOf: i, groupValue: v, table: { header: table.header, rows: table.rows.filter(r => key(r) === v) } };
+            delete sub.data;
+            delete sub.group;
+            Object.entries(defaults).forEach(([name, col]) => { if ((sub[name] === undefined || sub[name] === '') && col !== undefined) sub[name] = col; });
+            sub.color = layer.color && values.length === 1 ? layer.color : PALETTE[(i + k) % PALETTE.length];
+            sub.label = layer.label ? `${layer.label} ${v}` : v;
+            layers.push(sub);
+        });
+    });
+    return { ...spec, layers };
+}
+
 /** Ranges found at these values, to keep while sliders move: { x, y, z }. */
 export function autoRanges(spec, vars) {
-    const r = evaluatePlot(expandPlot(spec, vars), vars, null);
+    // every group counted (show: picks some): the axes fit them all and don't jump
+    const r = evaluatePlot(expandPlot(spec, vars), vars, null, { allGroups: true });
     return { x: r.xr, y: r.yr, z: r.z };
 }
 

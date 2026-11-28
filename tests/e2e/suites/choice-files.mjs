@@ -20,6 +20,7 @@ await page.addInitScript(() => {
         read_plot_data: (folder, path) => {
             if (path === 'data/runs.csv') return ok(RUNS);
             if (path === 'data/results.json') return ok(RESULTS);
+            if (path === 'data/long.csv') return ok({ header: ['run', 'step', 'loss'], rows: [['adam', '1', '0.9'], ['adam', '2', '0.5'], ['sgd', '1', '1.2'], ['sgd', '2', '0.8'], ['ngd', '1', '2'], ['ngd', '2', '1.5']], total: 6, mtime: 1 });
             // names only (no data): one per line, or one row
             if (path === 'data/names.csv') return ok({ header: null, rows: [['Input'], ['Output']], total: 2, mtime: 1 });
             if (path === 'data/namesrow.csv') return ok({ header: null, rows: [['Input', 'Output']], total: 1, mtime: 1 });
@@ -167,6 +168,40 @@ check('✕: back to written options (the ones it had)', cleared.source === undef
 const gl = await app(async () => (await import('/core/state.js')).serializeProject());
 check('written in the .gl: source and use', /\.element\.choice id:2 [^\n]*source:data\/runs\.csv[^\n]*use:header/.test(gl), gl.split('\n').filter(l => l.includes('choice')));
 
+// ---------- long format: a line per value of a column ----------
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    state.slides.push({ id: 20, title: 'Long', elements: [
+        { type: 'choice', id: 21, x: 100, y: 950, width: 500, height: 200, var: 'pick', source: 'data/long.csv', use: 'column:run', value: 'adam, sgd', multiple: 'yes' },
+        { type: 'plot', id: 22, x: 100, y: 100, width: 1200, height: 700, lang: 'python', code: '.line data:{data/long.csv} group:run show:"=pick" label:"loss"' },
+    ] });
+    (await import('/editor/editor.js')).selectSlide(1);
+});
+await page.waitForTimeout(400);
+const longLegend = () => app(() => [...document.querySelectorAll('#slide-canvas [data-element-id="22"] [data-gl-legend-layer]')].map(r => `${r.textContent.trim()}:${r.style.display}`));
+const longLines = () => app(() => [...document.querySelectorAll('#slide-canvas [data-element-id="22"] svg path[stroke-linejoin]')].map(p => p.getAttribute('stroke')));
+check('group:run: a legend row per run, the ones not picked hidden', JSON.stringify(await longLegend()) === '["loss adam:flex","loss sgd:flex","loss ngd:none"]', await longLegend());
+check('…a line per run picked, each its colour', JSON.stringify(await longLines()) === '["#2563eb","#dc2626"]', await longLines());
+const pickOpts = await opts(21);
+check('…the choice: the run column\'s values', JSON.stringify(pickOpts) === '["adam","sgd","ngd"]', pickOpts);
+await page.selectOption('#slide-canvas [data-element-id="21"] select', ['ngd']);
+await page.waitForTimeout(150);
+check('…picking ngd: only its line and its legend row', JSON.stringify(await longLines()) === '["#16a34a"]' && JSON.stringify(await longLegend()) === '["loss adam:none","loss sgd:none","loss ngd:flex"]', [await longLines(), await longLegend()]);
+await app(async () => {
+    const { setSelectedElementIndices } = await import('/core/state.js');
+    setSelectedElementIndices([1], 1);
+    (await import('/editor/editor.js')).renderEditor();
+});
+await page.waitForTimeout(200);
+const groupField = await app(() => ({
+    group: document.querySelector('#properties-body select[data-layer-field="group"]')?.value,
+    show: document.querySelector('#properties-body input[data-layer-field="show"]')?.value,
+    warn: document.querySelector('#properties-body .plot-layer-warn') ? 'warn' : '',
+}));
+check('the card: One per value of run, Only show =pick, no error', groupField.group === 'run' && groupField.show === '=pick' && !groupField.warn, groupField);
+await app(async () => { (await import('/core/variables.js')).resetLiveValues(); (await import('/editor/editor.js')).selectSlide(0); });
+await page.waitForTimeout(200);
+
 // ---------- the exported HTML ----------
 await app(async () => {
     const { state } = await import('/core/state.js');
@@ -195,6 +230,13 @@ const before = await expPath();
 await exp.selectOption('.slide.active [data-glinput="run"]', 'loss_sgd');
 await exp.waitForTimeout(150);
 check('export: choosing a column redraws the plot from it', Boolean(before) && (await expPath()) !== before, [before, await expPath()]);
+await exp.evaluate(() => window.GluonViewer.next());
+await exp.waitForTimeout(200);
+const expLines = () => exp.evaluate(() => [...document.querySelectorAll('.slide.active svg path[stroke-linejoin]')].map(p => p.getAttribute('stroke')));
+check('export: long format, the runs picked at the start', JSON.stringify(await expLines()) === '["#2563eb","#dc2626"]', await expLines());
+await exp.selectOption('.slide.active [data-glinput="pick"]', ['sgd', 'ngd']);
+await exp.waitForTimeout(150);
+check('export: picking others redraws their lines', JSON.stringify(await expLines()) === '["#dc2626","#16a34a"]', await expLines());
 check('export: no page errors', expErrors.length === 0, expErrors);
 await exp.close();
 
