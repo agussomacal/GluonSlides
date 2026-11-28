@@ -73,6 +73,23 @@ await page.waitForTimeout(150);
 e = await els();
 check('Enter takes it: y = 400 − 100·mu, set (300 now)', e[1].formulas.y === '400 - 100*mu' && e[1].y === 300, e[1]);
 check('…its value shown under the field', (await app(() => document.querySelector('#properties-body input[data-prop="y"]').parentElement.querySelector('.formula-result').textContent)) === '= 300 now');
+// the names without typing any letter: right after "=", after an operator, or with Ctrl+Space
+await page.fill('#properties-body input[data-prop="height"]', '');
+await page.type('#properties-body input[data-prop="height"]', '=', { delay: 20 });
+await page.waitForTimeout(120);
+const afterEq = await app(() => [...document.querySelectorAll('.formula-menu div')].map(d => d.textContent));
+await page.type('#properties-body input[data-prop="height"]', '200 + ', { delay: 20 });
+await page.waitForTimeout(120);
+const afterOp = await app(() => [...document.querySelectorAll('.formula-menu div')].map(d => d.textContent));
+await page.keyboard.press('Escape');
+await page.type('#properties-body input[data-prop="height"]', '3', { delay: 20 });
+await page.keyboard.press('Control+Space');
+await page.waitForTimeout(120);
+const ctrlSpace = await app(() => [...document.querySelectorAll('.formula-menu div')].map(d => d.textContent));
+await page.keyboard.press('Escape');
+check('the variables listed right after "=", after an operator, and with Ctrl+Space', afterEq[0]?.startsWith('mu') && afterOp[0]?.startsWith('mu') && ctrlSpace[0]?.startsWith('mu') && afterEq.length > 10, [afterEq.slice(0, 2), afterOp.slice(0, 2), ctrlSpace.slice(0, 2)]);
+await page.fill('#properties-body input[data-prop="height"]', '200');
+await page.waitForTimeout(100);
 await page.fill('#properties-body input[data-prop="y"]', '=400 - 100*nope');
 await page.waitForTimeout(150);
 check('a mistake is said under the field', (await app(() => document.querySelector('#properties-body input[data-prop="y"]').parentElement.querySelector('.formula-result').textContent)).includes('unknown name: nope'));
@@ -107,13 +124,15 @@ const source = await app(async () => {
     const line = cm.getValue().split('\n').findIndex(l => l.startsWith('.element.shape id:3'));
     const vars = cm.getLineTokens(line).filter(t => (t.type || '').includes('gl-var')).map(t => t.string);
     const { glHints } = await import('/editor/inspector/completions.js');
-    const doc = ['.project {P}', '.slide {S} id:1', '.element.shape id:9 x:"=100 + m'];
-    const r = glHints({ getCursor: () => ({ line: 2, ch: doc[2].length }), getLine: (i) => doc[i], lineCount: () => 3 });
+    const doc = ['.project {P}', '.slide {S} id:1', '.element.shape id:9 x:"=100 + m', '.element.shape id:9 x:"=100 + '];
+    const r = glHints({ getCursor: () => ({ line: 2, ch: doc[2].length }), getLine: (i) => doc[i], lineCount: () => 4 });
+    const r2 = glHints({ getCursor: () => ({ line: 3, ch: doc[3].length }), getLine: (i) => doc[i], lineCount: () => 4 });
     (await import('/editor/inspector/index.js')).closeGlInspector();
-    return { vars, hints: r ? r.list.map(x => x.text) : [] };
+    return { vars, hints: r ? r.list.map(x => x.text) : [], afterOp: r2 ? r2.list.map(x => x.text) : [] };
 });
 check('source view: the variables of a setting\'s formula coloured', source.vars.filter(v => v === 'mu').length >= 2, source.vars);
 check('…and suggested while typing one', source.hints.includes('mu') && source.hints.includes('max('), source.hints);
+check('…and listed after an operator, before any letter', source.afterOp[0] === 'mu', source.afterOp.slice(0, 3));
 
 // ---------- the exported HTML ----------
 const html = await app(async () => (await import('/export/html.js')).getExportHtmlString({ localAssets: true }));

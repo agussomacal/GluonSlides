@@ -213,7 +213,8 @@ function scriptHint(ed) {
             const cur = cm.getCursor();
             const line = cm.getLine(cur.line).slice(0, cur.ch);
             const m = line.match(/(?:(np\.random|numpy\.random|np|numpy|plt|ax|math)\.)?([A-Za-z_][A-Za-z0-9_]*)?$/);
-            if (!m || (!m[1] && !m[2])) return null;
+            // nothing typed yet: only at the start of a term (or Ctrl+Space)
+            if (!m || (!m[1] && !m[2] && !/(^|[=+\-*/%(,<>\s])$/.test(line))) return null;
             const typed = m[2] || '';
             const names = matplotlibNames();
             const vars = allVariables();
@@ -252,7 +253,7 @@ function mountScriptEditor(el, host) {
         }, 300);
     });
     cm.on('inputRead', (ed, change) => {
-        if (change.origin === '+input' && /[A-Za-z_.]/.test(change.text[change.text.length - 1].slice(-1))) scriptHint(ed);
+        if (change.origin === '+input' && /[A-Za-z_.=(,]/.test(change.text[change.text.length - 1].slice(-1))) scriptHint(ed);
     });
     ctrlClickToVariable(cm);
     showScriptErrors(el, cm);
@@ -361,7 +362,7 @@ export function mountFormulaEditors(el) {
             }, 250);
         });
         cm.on('inputRead', (ed, change) => {
-            if (change.origin === '+input' && /[A-Za-z_.\\]/.test(change.text[change.text.length - 1].slice(-1))) hint(ed, el, i);
+            if (change.origin === '+input' && /[A-Za-z_.\\=+\-*/(,]/.test(change.text[change.text.length - 1].slice(-1))) hint(ed, el, i);
         });
         ctrlClickToVariable(cm);
         editors.push({ cm, index: i, el });
@@ -380,8 +381,9 @@ function hint(ed, el, i) {
             const cur = cm.getCursor();
             const line = cm.getLine(cur.line).slice(0, cur.ch);
             const m = line.match(/\\?[A-Za-z_][A-Za-z0-9_]*$/);
-            if (!m) return null;
-            const typed = m[0];
+            // at the start of a term (or Ctrl+Space): every name
+            if (!m && !/(^|[=+\-*/%(,<>\s^])$/.test(line)) return null;
+            const typed = m ? m[0] : '';
             const vars = allVariables();
             const { functions, constants } = formulaNames();
             const items = [

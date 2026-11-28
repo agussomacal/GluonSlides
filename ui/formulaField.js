@@ -3,7 +3,8 @@
 // formula of the variables: typing "=" starts one (core/bindings.js).
 // The field then shows the formula (marked ƒ), what it gives now (or
 // what is wrong) under it, and suggests the variables and functions as
-// you type (↑ ↓, Enter or Tab to take one, Esc to close). A plain number
+// you type, and every one right after "=", an operator or a bracket, or
+// with Ctrl+Space (↑ ↓, Enter or Tab to take one, Esc to close). A plain number
 // typed in replaces the formula. Ctrl+click on a variable's name goes
 // to its definition.
 // ============================================================
@@ -51,18 +52,24 @@ function wordBefore(field) {
     return m ? m[0] : '';
 }
 
-function openMenu(field) {
+/** At the start of a term (after =, an operator, a bracket, a comma or a space): every name is offered. */
+function atTermStart(field) {
+    const upto = field.value.slice(0, field.selectionStart ?? field.value.length);
+    return /(^=?|[=+\-*/%(,<>&|!\s])$/.test(upto);
+}
+
+function openMenu(field, { all = false } = {}) {
     const text = field.value;
     if (!(text.trim().startsWith('=') || field.hasAttribute('data-formula-only'))) { closeMenu(); return; }
     const typed = wordBefore(field);
-    if (!typed) { closeMenu(); return; }
+    if (!typed && !all && !atTermStart(field)) { closeMenu(); return; }
     const vars = allVariables();
     const { functions, constants } = formulaNames();
     menuItems = [
         ...Object.keys(vars).sort().map(n => ({ insert: n, label: n, note: formatValue(vars[n]) })),
         ...functions.map(n => ({ insert: `${n}(`, label: `${n}(…)`, note: '' })),
         ...constants.map(n => ({ insert: n, label: n, note: '' })),
-    ].filter(it => it.insert.toLowerCase().startsWith(typed.toLowerCase()) && it.insert !== typed).slice(0, 30);
+    ].filter(it => it.insert.toLowerCase().startsWith(typed.toLowerCase()) && it.insert !== typed).slice(0, 60);
     if (!menuItems.length) { closeMenu(); return; }
     if (!menu) {
         menu = document.createElement('div');
@@ -117,8 +124,13 @@ export function enhanceFormulaFields(panel, el) {
         if (!field.parentElement.querySelector('.formula-result')) field.insertAdjacentHTML('afterend', '<div class="formula-result"></div>');
         showResult(field);
         field.addEventListener('input', () => { setTimeout(() => showResult(field), 0); openMenu(field); });
-        field.addEventListener('blur', () => setTimeout(closeMenu, 100));
+        // leaving the field: its own list closes (not one another field has opened since)
+        field.addEventListener('blur', () => setTimeout(() => { if (menuField === field) closeMenu(); }, 100));
+        // a field holding just "=" (or a condition being started): the names right away
+        field.addEventListener('focus', () => { if (/^=?\s*$/.test(field.value) && (field.value.trim() === '=' || field.hasAttribute('data-formula-only'))) openMenu(field, { all: true }); });
         field.addEventListener('keydown', (e) => {
+            // Ctrl+Space: every name, whatever is typed
+            if (e.key === ' ' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openMenu(field, { all: true }); return; }
             if (!menu || menuField !== field) return;
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();

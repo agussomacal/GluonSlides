@@ -203,8 +203,9 @@ function plotHints(cm, cur, lineText, before, result) {
         if (/^\S/.test(cm.getLine(i))) break;
     }
     const word = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
-    if (!word) return null;
-    const typed = word[0];
+    // nothing typed yet: at the start of a term, every name
+    if (!word && !/[=+\-*/%(,<>^]\s*$/.test(before)) return null;
+    const typed = word ? word[0] : '';
     const d = LAYERS[kind] || {};
     const vars = allVariables();
     const { functions, constants } = formulaNames();
@@ -286,9 +287,9 @@ export function glHints(cm) {
     const ctx = lineContext(cm, cur.line, lineText.trim());
     if (!ctx) return null;
     // a setting written as a formula (x:"=860 + 300*mu"): the variables and functions
-    const formula = before.match(/[A-Za-z]\w*:"?=[^"]*?([A-Za-z_]\w*)$/);
-    if (formula) {
-        const typed = formula[1];
+    const formula = before.match(/[A-Za-z]\w*:"?=[^"]*?([A-Za-z_]\w*)?$/);
+    if (formula && (formula[1] || /[=+\-*/%(,<>\s]$/.test(before))) {
+        const typed = formula[1] || '';
         const vars = allVariables();
         const { functions } = formulaNames();
         const list = [
