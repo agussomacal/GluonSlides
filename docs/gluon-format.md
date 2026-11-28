@@ -525,7 +525,7 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 | Parameter | Values | Built-in | Meaning |
 |---|---|---|---|
 | `lang` | `python` / `latex` / `matplotlib` | `python` | how the formulas are written (a layer can say its own); `matplotlib`: the body is a script (below) |
-| `xmin`, `xmax`, `ymin`, `ymax` | numbers | from the layers | the ranges; one left out is found from the layers at the starting values, then kept while sliders move |
+| `xmin`, `xmax`, `ymin`, `ymax` | numbers or formulas | from the layers | the ranges; one left out is found from the layers at the starting values, then kept while sliders move; a formula (`xmin:"=mu - 3"`) follows the variables |
 | `xscale`, `yscale` | `log` | linear | logarithmic axes (ticks at powers of 10) |
 | `xticks`, `yticks` | `pi` | numbers | ticks at multiples of π (π/2, π, 3π/2…) |
 | `aspect` | `equal` | | the same unit on x and y (a circle is round); the ranges grow to fit the box |
@@ -535,7 +535,9 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 | `samples` | number | `400` | points computed per curve (a layer can say its own) |
 | `fontSize`, `fontFamily`, `fontColor` | | `28`, `sans-serif`, dark | tick labels, axis labels and legend; `fontColor` also draws the axes |
 
-**Layers.** Every layer takes `color` (a colour, `@theme` too; else one of a set), `label` (Markdown and math, for the legend; on markers, plain text next to them), `lang`, and `hidden:yes` (kept but not drawn, also when presenting and exporting). Lines take `width` and `dash` (`dashed` / `dotted`); areas take `opacity`. Parameters marked *formula* may be a number or a formula of the variables (`x:mu`, `from:mu-sigma`).
+**Layers.** Every layer takes `color` (a colour, `@theme` too; else one of a set), `label` (Markdown and math, for the legend; on markers, plain text next to them), `lang`, and `hidden:yes` (kept but not drawn, also when presenting and exporting). Lines take `width` and `dash` (`dashed` / `dotted`); areas take `opacity`. Parameters marked *formula* may be a number or a formula of the variables (`x:mu`, `from:mu-sigma`). Every number setting of a layer (`samples`, `bins`, `seed`, `width`, `opacity`, `size`, `levels`…) may also be a formula, written with `=` and quoted: `samples:"=100*n"`. The settings that must be whole numbers (`samples`, `seed`, `bins`, `levels`, `resolution`, `grid`) are rounded to the nearest; write `floor(…)` or `ceil(…)` for the other ways.
+
+**Visible when.** `visible:"=model == 'Gaussian'"` draws a layer only while the condition holds (a choice, a checkbox, a comparison: `'SGD' in opts`, `show`, `mu > 0`); its row in the legend comes and goes with it, on the canvas, presenting and in the exported HTML. `hidden:yes` wins over it.
 
 | Layer | Its lines | Parameters |
 |---|---|---|

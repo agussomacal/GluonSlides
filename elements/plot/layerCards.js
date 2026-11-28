@@ -18,6 +18,7 @@ import { matplotlibNames } from '../../core/mplEngine.js';
 import { allVariables } from '../../core/variables.js';
 import { dataTable, linkDataFile } from '../../core/plotData.js';
 import { goToVariable } from '../../ui/goToVariable.js';
+import { attachFormulaInput } from '../../ui/formulaField.js';
 
 /** Ctrl+click on a variable's name in a formula or script editor: its definition. */
 function ctrlClickToVariable(cm) {
@@ -65,7 +66,10 @@ function field(b, i, param, el) {
             return wrap(`<select class="prop-control" ${attrs}>${param.options.map(([v, t]) => `<option value="${v}" ${String(value ?? param.def ?? '') === v ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>`);
         case 'number':
         case 'int':
-            return wrap(`<input type="number" class="prop-control" step="${param.type === 'int' ? 1 : 'any'}" ${attrs} value="${escapeHtml(value ?? '')}" placeholder="${escapeHtml(param.def ?? '')}">`);
+            // a number, or "=" and a formula of the variables (whole numbers: rounded to the nearest)
+            return wrap(`<input type="text" inputmode="decimal" class="prop-control" data-layer-number ${param.type === 'int' ? 'data-whole' : ''} ${attrs} value="${escapeHtml(value ?? '')}" placeholder="${escapeHtml(param.def ?? '')}" spellcheck="false">`);
+        case 'condition':
+            return wrap(`<input type="text" class="prop-control" data-layer-number data-formula-only ${attrs} value="${escapeHtml(String(value ?? '').replace(/^\s*=\s*/, ''))}" placeholder="always (e.g. model == 'Gaussian')" spellcheck="false">`, true);
         case 'file': {
             const t = value ? dataTable(value) : null;
             const info = !value ? `<span class="prop-hint">none: ${b.kind === 'hist' ? 'the formula or rows' : 'the rows'} below</span>`
@@ -335,6 +339,8 @@ function showErrors() {
 
 /** Mounts the formula editors of the open cards (after the panel is drawn). */
 export function mountFormulaEditors(el) {
+    // the number fields and conditions: formulas with the variables suggested
+    document.querySelectorAll('#properties-body input[data-layer-number]').forEach(f => { if (!f._formula) { f._formula = true; attachFormulaInput(f); } });
     const CM = window.CodeMirror;
     editors.length = 0;
     if (!CM) return;
@@ -493,6 +499,15 @@ export function initLayerCards(h) {
         let value = control.type === 'checkbox' ? (control.checked ? 'yes' : 'no') : (control.value ?? control.getAttribute('value'));
         if (value === String(param.def ?? '') && param.type !== 'select') value = null; // the default: not written
         if (param.type === 'select' && value === '') value = null;
+        if (value !== null && (param.type === 'number' || param.type === 'int')) {
+            // a plain number stays one; anything else is a formula (written "=…")
+            const v = String(value).trim().replace(/^=\s*/, '');
+            value = !v ? null : Number.isFinite(Number(v)) && !String(value).trim().startsWith('=') ? v : `=${v}`;
+        }
+        if (value !== null && param.type === 'condition') {
+            const v = String(value).trim().replace(/^=\s*/, '');
+            value = v ? `=${v}` : null;
+        }
         apply(el, L.setParam(el.code, i, key, value));
     });
 }

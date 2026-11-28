@@ -742,9 +742,9 @@ function formulaOf(layer, coords, vars) {
     return f;
 }
 
-/** A parameter that may be a formula (x:mu, from:a-1): its number, else `fallback`. */
+/** A parameter that may be a formula (x:mu, from:a-1, or with an "=": "=a-1"): its number, else `fallback`. */
 function paramValue(layer, key, vars, fallback) {
-    const v = layer[key];
+    const v = typeof layer[key] === 'string' ? layer[key].replace(/^\s*=\s*/, '') : layer[key];
     if (v === undefined || v === '') return fallback;
     if (isSet(v)) return Number(v);
     const f = compileFormula(String(v), layer.lang || 'python');
@@ -752,6 +752,44 @@ function paramValue(layer, key, vars, fallback) {
     const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
     if (missing.length) throw new LayerError(`${key}: unknown name ${missing.join(', ')}`);
     return Number(f.exec(Object.assign(Object.create(null), vars)));
+}
+
+// Settings of a layer that are numbers: each may be a formula of the
+// variables ("=10*n"); the whole-number ones are rounded to the nearest
+// (floor(…), ceil(…) for something else).
+const WHOLE_LAYER_KEYS = new Set(['samples', 'seed', 'bins', 'grid', 'resolution', 'levels']);
+export const NUMERIC_LAYER_KEYS = new Set([...WHOLE_LAYER_KEYS, 'width', 'opacity', 'size', 'barwidth', 'offset', 'scale', 'zmin', 'zmax']);
+
+/** Whether a layer is shown for these values: not hidden:yes, and its `visible` condition (if any) holds. Throws LayerError on a bad condition. */
+function layerShown(layer, vars) {
+    if (layer.hidden === 'yes') return false;
+    const cond = typeof layer.visible === 'string' ? layer.visible.replace(/^\s*=\s*/, '').trim() : '';
+    if (!cond) return true;
+    const f = compileFormula(cond, layer.lang || 'python');
+    if (f.error) throw new LayerError(`visible: ${f.error}`);
+    const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
+    if (missing.length) throw new LayerError(`visible: unknown name ${missing.join(', ')}`);
+    return Boolean(f.exec(Object.assign(Object.create(null), vars)));
+}
+
+/** Which layers of a plot are shown for these values (the legend follows it). */
+export function shownLayers(spec, vars) {
+    return (expandPlot(spec, vars).layers || []).map(l => { try { return layerShown(l, vars || {}); } catch (e) { return true; } });
+}
+
+/** A layer with its number settings worked out for these values (formulas evaluated, whole numbers rounded). */
+function resolveLayer(layer, vars) {
+    let out = layer;
+    for (const key of NUMERIC_LAYER_KEYS) {
+        const v = layer[key];
+        if (v === undefined || v === '' || (isSet(v) && !WHOLE_LAYER_KEYS.has(key))) continue;
+        let n = paramValue(layer, key, vars, NaN);
+        if (!Number.isFinite(n)) throw new LayerError(`${key}: not a number`);
+        if (WHOLE_LAYER_KEYS.has(key)) n = Math.round(n);
+        if (out === layer) out = { ...layer };
+        out[key] = n;
+    }
+    return out;
 }
 
 /** Rows of a data layer: its file's (layer.table, given by the page) or the rows in its body. */
@@ -1044,14 +1082,28 @@ function axisRange(min, max, frozen, ext, log, fallback) {
  * categories, z }. `frozen` ({ x, y, z }) keeps ranges found once (at the
  * starting values) so the axes don't jump while a slider moves.
  */
-function evaluatePlot(spec, vars, frozen = null) {
-    const layers = spec.layers || [];
+function evaluatePlot(spec0, vars, frozen = null) {
+    // axis ranges that are formulas of the variables (xmin:"=mu-3")
+    const notes = [];
+    const spec = { ...spec0 };
+    ['xmin', 'xmax', 'ymin', 'ymax'].forEach(key => {
+        const v = spec[key];
+        if (v === undefined || v === null || v === '' || isSet(v)) return;
+        try { spec[key] = paramValue({ [key]: String(v), lang: 'python' }, key, vars, ''); } catch (e) { spec[key] = ''; notes.push(e.message); }
+    });
     const L = plotLayout(spec);
     const ext = { x: [Infinity, -Infinity], y: [Infinity, -Infinity] };
-    const results = layers.map(() => ({}));
+    const results = (spec.layers || []).map(() => ({}));
     const fail = (i, e) => { results[i] = { error: e instanceof LayerError || e instanceof FormulaError ? (e.line ? `line ${e.line}: ${e.message}` : e.message) : String(e.message || e) }; };
+    // number settings that are formulas, and visibility conditions, for these values
+    const layers = (spec.layers || []).map((layer, i) => {
+        try {
+            if (!layerShown(layer, vars)) { results[i] = { hidden: true }; return layer; }
+            return resolveLayer(layer, vars);
+        } catch (e) { fail(i, e); return layer; }
+    });
     layers.forEach((layer, i) => {
-        if (layer.hidden === 'yes') { results[i] = { hidden: true }; return; }
+        if (results[i].hidden || results[i].error) return;
         try {
             results[i] = evalFirst(layer, vars, ext, spec) || {};
         } catch (e) { fail(i, e); }
@@ -1080,7 +1132,6 @@ function evaluatePlot(spec, vars, frozen = null) {
     let yr = axisRange(spec.ymin, spec.ymax, frozen && frozen.y, ext.y, ylog, ylog ? [0.1, 10] : [-1, 1]);
     // a log axis over 0 or negatives: from a thousandth of its end (or 0.1 to 10)
     const positive = (r) => (r[0] > 0 ? r : r[1] > 0 ? [r[1] / 1000, r[1]] : [0.1, 10]);
-    const notes = [];
     if (xBelowZero) notes.push('log x axis: values above 0 only');
     if (ylog && !(yr[0] > 0)) notes.push('log y axis: values above 0 only');
     if (ylog) yr = positive(yr);
@@ -1095,7 +1146,7 @@ function evaluatePlot(spec, vars, frozen = null) {
     }
     const z = {};
     layers.forEach((layer, i) => {
-        if (!GRID_KINDS.has(layer.kind) || results[i].hidden) return;
+        if (!GRID_KINDS.has(layer.kind) || results[i].hidden || results[i].error) return;
         try {
             const r = evalGrid(layer, vars, xr, yr, L);
             results[i] = r;
@@ -1108,7 +1159,7 @@ function evaluatePlot(spec, vars, frozen = null) {
             }
         } catch (e) { fail(i, e); }
     });
-    return { xr, yr, results, categories, z, L, notes };
+    return { xr, yr, results, categories, z, L, notes, layers };
 }
 
 /** Each layer's error for these variables ('' when it draws): what the layer cards show. */
@@ -1337,7 +1388,7 @@ export function plotSvg(spec0, vars) {
     const colour = spec.color || '#0f172a';
     const font = esc(spec.fontFamily || 'sans-serif');
     const fs = L.fs * 0.8;
-    const layers = spec.layers || [];
+    const layers = ev.layers; // number settings worked out
     const colourOf = (layer, i) => layer.color || PALETTE[i % PALETTE.length];
     const parts = [];
     const clip = `glc${Math.random().toString(36).slice(2, 9)}`;
@@ -1649,6 +1700,14 @@ export function liveUpdate(root, vars) {
         holder.innerHTML = plotSvg(spec, vars);
         if (old) old.replaceWith(holder.firstChild);
         else box.prepend(holder.firstChild);
+        // the legend's rows: only the layers shown (a "visible when" condition)
+        const rows = box.querySelectorAll('[data-gl-legend-layer]');
+        if (rows.length) {
+            const shown = shownLayers(spec, vars);
+            rows.forEach(row => { row.style.display = shown[Number(row.getAttribute('data-gl-legend-layer'))] === false ? 'none' : 'flex'; });
+            const legend = box.querySelector('.gl-plot-legend');
+            if (legend) legend.style.display = [...rows].some(r => r.style.display !== 'none') ? '' : 'none';
+        }
     });
 }
 

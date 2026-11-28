@@ -37,7 +37,9 @@ function showResult(field) {
     box.classList.toggle('error', Boolean(r.error));
     box.textContent = r.error ? r.error
         : field.hasAttribute('data-formula-only') ? (r.value ? 'shown now' : 'hidden now')
-            : `= ${formatValue(r.value)} now`;
+            : field.hasAttribute('data-whole') && Number.isFinite(Number(r.value)) && Math.round(r.value) !== Number(r.value)
+                ? `= ${formatValue(r.value)} now → ${Math.round(r.value)} used`
+                : `= ${formatValue(r.value)} now`;
 }
 
 function closeMenu() {
@@ -61,6 +63,8 @@ function atTermStart(field) {
 function openMenu(field, { all = false } = {}) {
     const text = field.value;
     if (!(text.trim().startsWith('=') || field.hasAttribute('data-formula-only'))) { closeMenu(); return; }
+    // a field emptied (a condition removed): no list, so Enter leaves it empty
+    if (!all && !text.trim()) { closeMenu(); return; }
     const typed = wordBefore(field);
     if (!typed && !all && !atTermStart(field)) { closeMenu(); return; }
     const vars = allVariables();

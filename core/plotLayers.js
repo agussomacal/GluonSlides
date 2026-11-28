@@ -29,7 +29,7 @@ function parseParams(text) {
 function formatParam(key, value) {
     const v = String(value);
     if (key === 'data' && !/[\s"}]/.test(v)) return `data:{${v}}`;
-    if (v !== '' && /^[^\s"{}]+$/.test(v)) return `${key}:${v}`;
+    if (v !== '' && /^[^\s"{}=]+$/.test(v)) return `${key}:${v}`; // a formula ("=…") is quoted
     // inside quotes only \" and \\ are escapes: a backslash is doubled only before " or \ (or at the end)
     return `${key}:"${v.replace(/\\(?=["\\]|$)/g, '\\\\').replace(/"/g, '\\"')}"`;
 }

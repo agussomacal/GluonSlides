@@ -24,7 +24,7 @@ import { escapeHtml, renderMarkdownAndKatexToString } from '../../core/render.js
 import { fontStack } from '../../core/fonts.js';
 import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
-import { parseLayers, plotSvg, plotLayout, autoRanges, legendStyle, expandPlot, LANGUAGES, PALETTE } from '../../core/liveEngine.js';
+import { parseLayers, plotSvg, plotLayout, autoRanges, legendStyle, expandPlot, shownLayers, LANGUAGES, PALETTE } from '../../core/liveEngine.js';
 import '../../core/mplEngine.js'; // lang:matplotlib (registers itself)
 import { allVariables, startingVariables } from '../../core/variables.js';
 import { dataTable } from '../../core/plotData.js';
@@ -118,7 +118,9 @@ function overlays(el, spec0) {
     if (spec.ylabel) {
         html += `<div class="gl-plot-label" style="position:absolute; left:${fs * 0.2}px; top:${L.top + L.h / 2}px; width:${L.h}px; transform:translate(-50%, -50%) rotate(-90deg) translateY(${fs * 0.7}px); transform-origin:center; text-align:center; ${font}">${md(spec.ylabel)}</div>`;
     }
-    const labelled = spec.layers.filter(l => l.label && l.hidden !== 'yes' && !['vline', 'hline', 'point', 'text'].includes(l.kind));
+    // every labelled layer has a row; the ones not shown now (a "visible when") are hidden, and follow the values (liveUpdate)
+    const shown = shownLayers(spec, startingVariables());
+    const labelled = spec.layers.map((l, i) => ({ ...l, index: i })).filter(l => l.label && l.hidden !== 'yes' && !['vline', 'hline', 'point', 'text'].includes(l.kind));
     if (spec.title) {
         html += `<div class="gl-plot-title" style="position:absolute; left:${L.left}px; width:${L.w}px; top:${fs * 0.2}px; text-align:center; ${font} font-size:${fs * 1.1}px;">${md(spec.title)}</div>`;
     }
@@ -133,9 +135,10 @@ function overlays(el, spec0) {
                 ? `<line x1="0" y1="${fs * 0.3}" x2="${fs * 1.6}" y2="${fs * 0.3}" stroke="${c}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`
                 : style === 'dot' ? `<circle cx="${fs * 0.8}" cy="${fs * 0.3}" r="${fs * 0.22}" fill="${c}"/>`
                     : `<rect x="${fs * 0.2}" y="0" width="${fs * 1.2}" height="${fs * 0.6}" fill="${c}" fill-opacity="${Number(l.opacity) || (l.kind === 'fill' ? 0.3 : 0.6)}"/>`;
-            return `<div style="display:flex; align-items:center; gap:${fs * 0.4}px;"><svg width="${fs * 1.6}" height="${fs * 0.6}">${swatch}</svg><span>${md(l.label)}</span></div>`;
+            return `<div data-gl-legend-layer="${l.index}" style="display:${shown[l.index] === false ? 'none' : 'flex'}; align-items:center; gap:${fs * 0.4}px;"><svg width="${fs * 1.6}" height="${fs * 0.6}">${swatch}</svg><span>${md(l.label)}</span></div>`;
         }).join('');
-        html += `<div class="gl-plot-legend" style="position:absolute; right:${L.right + fs * 0.5}px; top:${L.top + fs * 0.4}px; padding:${fs * 0.2}px ${fs * 0.4}px; background:rgba(255,255,255,0.75); border-radius:${fs * 0.2}px; ${font} font-size:${fs * 0.8}px;">${rows}</div>`;
+        const none = labelled.every(l => shown[l.index] === false);
+        html += `<div class="gl-plot-legend" style="${none ? 'display:none; ' : ''}position:absolute; right:${L.right + fs * 0.5}px; top:${L.top + fs * 0.4}px; padding:${fs * 0.2}px ${fs * 0.4}px; background:rgba(255,255,255,0.75); border-radius:${fs * 0.2}px; ${font} font-size:${fs * 0.8}px;">${rows}</div>`;
     }
     return html;
 }
