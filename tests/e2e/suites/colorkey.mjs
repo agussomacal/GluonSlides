@@ -118,6 +118,57 @@ const followRows = await app(() => [...document.querySelectorAll('.follow-item s
 check('Follow a variable… on a shape: its colours too', followRows.includes('Fill colour') && followRows.includes('Border colour'), followRows);
 await page.keyboard.press('Escape');
 
+// ---------- the colour picker: ƒ Follow a variable ----------
+await app(async () => {
+    const { state, setSelectedElementIndices } = await import('/core/state.js');
+    const i = state.slides[0].elements.findIndex(e => e.id === 4);
+    setSelectedElementIndices([i], i);
+    (await import('/editor/editor.js')).renderEditor();
+});
+await page.waitForTimeout(200);
+const bgField = await app(() => document.querySelector('#properties-body .color-field[data-prop="bg"] .color-name')?.textContent.trim());
+check('a shape\'s fill given by a formula: its field says so (ƒ runcol[pick])', bgField === 'ƒ runcol[pick]', bgField);
+await page.click('#properties-body .color-field[data-prop="bg"]');
+await page.waitForTimeout(150);
+const pop = await app(() => ({ title: [...document.querySelectorAll('#color-popover .color-pop-title')].map(t => t.textContent.trim()), chips: [...document.querySelectorAll('#color-popover [data-follow]')].map(c => c.dataset.follow), input: document.querySelector('#color-popover [data-color-follow]')?.value }));
+check('…its picker: ƒ Follow a variable, the colour key\'s colours, the formula', pop.title.includes('ƒ Follow a variable') && JSON.stringify([...pop.chips].sort()) === `["=runcol['adam']","=runcol['ngd']","=runcol['sgd']"]` && pop.input === '=runcol[pick]', pop);
+await page.click(`#color-popover [data-follow="=runcol['ngd']"]`);
+await page.waitForTimeout(200);
+const shapeF = await app(async () => (await import('/core/state.js')).state.slides[0].elements.find(e => e.id === 4).formulas);
+check('…a click on ngd\'s colour: bg:"=runcol[\'ngd\']"', shapeF && shapeF.bg === "runcol['ngd']", shapeF);
+await page.keyboard.press('Escape');
+// a plot layer's colour, from the picker
+await app(async () => {
+    const { state, setSelectedElementIndices } = await import('/core/state.js');
+    const p = state.slides[0].elements.find(e => e.id === 5);
+    p.code = '.curve\ny = x';
+    const i = state.slides[0].elements.indexOf(p);
+    setSelectedElementIndices([i], i);
+    (await import('/editor/editor.js')).renderEditor();
+});
+await page.waitForTimeout(250);
+await page.click('#properties-body .color-field[data-layer-field="color"]');
+await page.waitForTimeout(150);
+await page.click(`#color-popover [data-follow="=runcol['sgd']"]`);
+await page.waitForTimeout(250);
+const layerCode = await app(async () => (await import('/core/state.js')).state.slides[0].elements.find(e => e.id === 5).code);
+check('a plot layer\'s colour from the picker: color:"=runcol[\'sgd\']"', layerCode.startsWith(`.curve color:"=runcol['sgd']"`), layerCode);
+const curveStroke = await app(async () => ({ drawn: document.querySelector('#slide-canvas [data-element-id="5"] svg path[stroke-linejoin]')?.getAttribute('stroke'), sgd: (await import('/core/variables.js')).allVariables()['runcol.sgd'] }));
+check('…drawn in sgd\'s colour', curveStroke.drawn === curveStroke.sgd, curveStroke);
+const layerField = await app(() => document.querySelector('#properties-body .color-field[data-layer-field="color"] .color-name')?.textContent.trim());
+check('…its field: ƒ runcol[\'sgd\']', layerField === "ƒ runcol['sgd']", layerField);
+await page.keyboard.press('Escape');
+// Colours from: the colour keys
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    state.slides[0].elements.find(e => e.id === 5).code = '.line group:run colors:runcol show:"=runcol.shown"\nrun, step, loss\nadam, 1, 1\nadam, 2, 2\nsgd, 1, 2\nsgd, 2, 1\nngd, 1, 0.5\nngd, 2, 0.7';
+    state.slides[0].elements.find(e => e.id === 4).formulas.bg = 'runcol[pick]';
+    (await import('/editor/editor.js')).renderEditor();
+});
+await page.waitForTimeout(250);
+const colorsFrom = await app(() => [...document.querySelectorAll('#properties-body select[data-layer-field="colors"] option')].map(o => `${o.textContent.trim()}${o.selected ? '*' : ''}`));
+check('Colours from: a list of the colour keys', JSON.stringify(colorsFrom) === '["the plot\'s own","🎨 runcol*"]', colorsFrom);
+
 // ---------- the exported HTML ----------
 await app(async () => { const { state } = await import('/core/state.js'); state.slides[0].elements[0].entries = 'sgd: #000000'; (await import('/core/variables.js')).resetLiveValues(); (await import('/editor/editor.js')).redrawCanvas(); });
 await page.waitForTimeout(200);

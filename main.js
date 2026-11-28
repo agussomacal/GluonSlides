@@ -19,7 +19,10 @@ import { initStyledSelects } from './ui/selectMenu.js';
 import { loadSystemFonts } from './core/fonts.js';
 import { openProjectSettings } from './ui/projectSettings.js';
 import { openProjectFiles, startFilesBadge } from './ui/projectFiles.js';
-import { initColorPicker } from './ui/colorPicker.js';
+import { initColorPicker, enableColorFormulas } from './ui/colorPicker.js';
+import { evaluateColor } from './core/bindings.js';
+import { allVariables } from './core/variables.js';
+import { attachFormulaInput } from './ui/formulaField.js';
 
 // Side-effectful import: each element module self-registers.
 import './elements/index.js';
@@ -133,6 +136,7 @@ document.addEventListener('change', runValueAction('change'));
 initGlInspector();
 initStyledSelects();
 initColorPicker();
+enableColorFormulas({ evaluateColor, allVariables, attachFormulaInput }); // colours that follow a variable (ƒ in the picker)
 document.addEventListener('open-project-settings', (e) => {
     const d = e.detail || {};
     openProjectSettings(d.tab, { styleType: d.styleType, style: d.style });

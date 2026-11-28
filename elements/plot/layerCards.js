@@ -57,7 +57,8 @@ function field(b, i, param, el) {
     const wrap = (control, wide = false) => `<div class="prop-group${wide ? ' layer-wide' : ''}"><label${title}>${escapeHtml(param.label)}</label>${control}</div>`;
     switch (param.type) {
         case 'color':
-            return wrap(colorField({ 'data-color-key': `layer-${i}-${param.key}`, 'data-layer-field': param.key, 'data-layer': String(i) }, value || PALETTE[i % PALETTE.length], { allowNone: false }));
+            // ƒ in the picker: a colour key's colour (=runcol['adam']) or a formula
+            return wrap(colorField({ 'data-color-key': `layer-${i}-${param.key}`, 'data-layer-field': param.key, 'data-layer': String(i), 'data-allow-formula': 'yes' }, value || PALETTE[i % PALETTE.length], { allowNone: false }));
         case 'bool': {
             const on = (value || param.def || 'no') === 'yes';
             return `<label class="prop-check layer-check"${title}><input type="checkbox" ${attrs} ${on ? 'checked' : ''}> ${escapeHtml(param.label)}</label>`;
@@ -91,6 +92,15 @@ function field(b, i, param, el) {
             }
             return wrap(`<input type="text" class="prop-control" ${attrs} value="${escapeHtml(value ?? '')}" placeholder="name or number" spellcheck="false">`);
         }
+        case 'text':
+            if (param.key === 'colors') {
+                // the project's colour keys (their variables: name.shown)
+                const vars = allVariables();
+                const keys = Object.keys(vars).filter(n => n.endsWith('.shown') && Array.isArray(vars[n])).map(n => n.slice(0, -6));
+                if (value && !keys.includes(value)) keys.push(value);
+                return wrap(`<select class="prop-control" ${attrs}><option value="">the plot's own</option>${keys.map(k => `<option value="${escapeHtml(k)}" ${value === k ? 'selected' : ''}>🎨 ${escapeHtml(k)}</option>`).join('')}</select>`);
+            }
+            return wrap(`<input type="text" class="prop-control" ${attrs} value="${escapeHtml(value ?? '')}" spellcheck="false">`, param.key === 'label');
         case 'formula':
             return wrap(`<input type="text" class="prop-control" list="plot-variable-names" ${attrs} value="${escapeHtml(value ?? '')}" placeholder="${escapeHtml(param.def ?? '')}" spellcheck="false">`);
         default:

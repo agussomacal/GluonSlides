@@ -14,6 +14,7 @@ import { evaluateFormula, evaluateColor, BINDABLE_COMMON } from '../core/binding
 import { allVariables } from '../core/variables.js';
 import { formulaNames, formatValue } from '../core/liveEngine.js';
 import { escapeHtml } from '../core/render.js';
+import { refreshColorField } from './colorPicker.js';
 
 let menu = null;
 let menuItems = [];
@@ -162,6 +163,11 @@ export function attachFormulaInput(field) {
 /** Makes the panel's number fields take formulas (called after the panel is drawn). */
 export function enhanceFormulaFields(panel, el) {
     if (!panel || !el) return;
+    // colour fields of a colour given by a formula: show it (ƒ runcol[pick])
+    panel.querySelectorAll('.color-field[data-prop]').forEach(field => {
+        const formula = el.formulas && el.formulas[field.dataset.prop];
+        if (formula) refreshColorField(field, `=${formula}`);
+    });
     const keys = bindableKeys(el);
     panel.querySelectorAll('input[data-prop]').forEach(field => {
         const key = field.dataset.prop;
