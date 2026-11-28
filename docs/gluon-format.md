@@ -619,6 +619,53 @@ A slider that sets a variable. Plots that use it are redrawn and values in text 
 | `accent` | colour | blue | the slider's colour |
 | `fontSize`, `fontFamily`, `fontColor` | | | its label and value |
 
+### checkbox, numberbox, textbox, choice
+
+Other inputs that set a variable, like the slider: on the canvas, while presenting, in the presenter view (the audience's screen follows) and in the exported HTML. Using them doesn't change the file; `value` is where they start.
+
+```gl
+.project {Deck}
+.slide {Inputs} id:1
+.element.checkbox id:3 var:show value:yes label:"Show the fit" x:100 y:100 width:500 height:60
+.element.numberbox id:4 var:n min:1 max:1000 step:1 value:200 label:"Samples" x:100 y:200 width:500 height:70
+.element.textbox id:5 var:who value:"Ada" label:"Name" x:100 y:300 width:500 height:70
+.element.choice id:6 var:opts options:"Adam, SGD, NGD" value:"Adam, NGD" multiple:yes label:"Methods" x:100 y:400 width:400 height:220
+```
+
+| Element | Its variable | Parameters |
+|---|---|---|
+| `checkbox` | true / false | `value` (`yes` / `no`: ticked at the start) |
+| `numberbox` | a number | `min`, `max` (kept inside), `step`, `value` |
+| `textbox` | a text | `value` |
+| `choice` | the option chosen (a text), or with `multiple:yes` the options chosen (a list; Ctrl+click in the list) | `options` (separated by commas), `value` (the option(s) chosen at the start, separated by commas) |
+
+All take `var`, `label` (Markdown and math), `accent` (a colour), `fontSize`, `fontFamily`, `fontColor`. In formulas a checkbox is `True` / `False` (1 / 0 in arithmetic), a text is compared with `==` / `!=` (`who == 'Ada'`), and a list answers `in` (`'SGD' in opts`, `'SGD' not in opts`). In text `\var{show}` shows *true* / *false*, `\var{show}[on|off]` your own words, a list its options separated by commas.
+
+### animation
+
+Variables that move by themselves while presenting, all in step. In the editor it is a dashed chip saying what it does; in the slide show and the exports it is invisible. The body has a line per variable:
+
+```gl
+.project {Deck}
+.slide {Moving} id:1
+.element.animation id:20 duration:3 easing:inout repeat:once step:2 x:1400 y:900 width:400 height:120
+	mu: -2 -> 2
+	sigma: 1 -> 0.5
+	phase = 2*pi*t/4
+```
+
+- `name: from -> to`: from one value to the other over the duration (both may be formulas of the variables);
+- `name = …`: a formula of `t` (seconds since it started) and `p` (the eased progress, 0 to 1), and of the variables.
+
+| Parameter | Values | Built-in | Meaning |
+|---|---|---|---|
+| `duration` | seconds | none | how long; without one it goes on until it stops (formula lines only) |
+| `easing` | `linear` / `in` / `out` / `inout` | `linear` | its pace: steady, speeding up, slowing down, smooth |
+| `repeat` | `once` / `loop` / `bounce` | `once` | once, again and again, or back and forth |
+| `afterwards` | `keep` / `reset` | `keep` | when it stops, its variables keep their values, or go back to the start |
+
+It starts when its slide is shown, or at its build step (`step:2`: the second click; an animation counts as a build), and stops after `until`, at its end, or when the slide is left. Moving one of its variables by hand (a slider) stops it. The PDF shows each step's page as the animations end there (a loop: as it starts).
+
 ### macro instance
 
 `.macro.<name>` places an instance of the definition `<name>` (see [`.define`](#define-and-macroname)), scaled to `width` × `height`. Its body has, in this order:
@@ -653,7 +700,7 @@ The body of a text box, a column or a table cell:
 - **Math** with KaTeX: `$…$` inline, `$$…$$` displayed (centred unless the project says `equations:text`). Macros from `macros.tex` work.
 - **Text commands**: `\textcolor{colour}{…}`, `\highlight{colour}{…}`, `\colorbox{colour}{…}`, `\textbf{…}`, `\textit{…}`, `\emph{…}`, `\underline{…}`, `\texttt{…}`. Colours here may also be CSS / xcolor names (`red`, `ForestGreen`), theme colours (`@accent`) and xcolor mixes (`red!60`, `red!50!blue`). Macros from `macros.tex` whose definition uses these commands work in text too.
 - **Fields**, replaced on each slide: `\slidenumber`, `\totalslides`, `\slidetitle`, `\sectiontitle`, `\presentationtitle`, `\author`, `\date`, `\tableofcontents`.
-- **Variables**: `\var{name}`, or `\var{name}[%.2f]` with a format (`%.2f`, `%.3e`, `%.4g`, `%d`, `%.1%`), shows a [variable](#vars)'s value, in text and inside math; one moved by a slider changes in place while presenting. An unknown name shows as `[? name]`.
+- **Variables**: `\var{name}`, or `\var{name}[%.2f]` with a format (`%.2f`, `%.3e`, `%.4g`, `%d`, `%.1%`), or `\var{name}[on|off]` (words for true / false), shows a [variable](#vars)'s value, in text and inside math; one moved by an input or an animation changes in place while presenting. An unknown name shows as `[? name]`.
 - **Citations**: `\cite{key}`, `\citep`, `\citet`, `\parencite`, `\textcite`, `\fullcite`, `\cite[p.~5]{key}`, and `\printbibliography` (optionally `[9-]`, `[1-8]`, `[5]`), from `bibliography.bib`.
 - HTML, such as `<span style="color:red">…</span>`.
 

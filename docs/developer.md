@@ -30,6 +30,7 @@ core/               the model and what works on it (no editor UI)
   mplEngine.js      lang:matplotlib: reads a matplotlib / numpy script (a part of Python,
                     numpy-style arrays) into plot layers; no imports but liveEngine's
                     (inlined after it into exports that need it)
+  (ui/followVariable.js: right-click "Follow a variable…" / "Make something follow this…")
   bindings.js       settings given by formulas of the variables ("=…"): values, the
                     constant moved by a drag, live updates while a slider moves
   plotSchema.js     each plot layer's settings (types, defaults, help): read by the
@@ -77,7 +78,7 @@ ui/                 windows, dialogs and chrome
   tutorial.js       the tutorial presentation
 elements/           one folder per element type, each self-registering
   index.js          one import per type
-  text/ shape/ figure/ path/ columns/ table/ group/ macro/ plot/ slider/
+  text/ shape/ figure/ path/ columns/ table/ group/ macro/ plot/ slider/ inputs/ animation/
                     (plot/layerCards.js: a plot's layers as cards in its panel)
   figure/toLatex.js   "Convert to LaTeX" on a picture
 export/
