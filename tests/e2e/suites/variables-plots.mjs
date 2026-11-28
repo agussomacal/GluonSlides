@@ -116,7 +116,9 @@ const slid = await app(() => {
 });
 check('moving the slider redraws the curve', slid.moved);
 check('…and updates the values in text (also in math)', slid.shown === '1.50' && slid.value === '1.5', JSON.stringify(slid));
-// a real drag on the slider's knob: the value changes, the slider stays put
+// a real drag on the slider's knob (selected first: a click): the value changes, the slider stays put
+await page.click('#slide-canvas [data-element-id="3"]', { position: { x: 3, y: 3 } });
+await page.waitForTimeout(150);
 const knob = await page.locator('#slide-canvas [data-element-id="3"] input[type=range]').boundingBox();
 await page.mouse.move(knob.x + knob.width * 0.5, knob.y + knob.height / 2);
 await page.mouse.down();

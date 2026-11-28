@@ -1151,8 +1151,9 @@ function renderInteractiveElements(container, elements) {
         domEl.onmousedown = (e) => {
             if (domEl.classList.contains('editing-mode')) return;
             if (e.button !== 0) return;
-            // A slider's knob (elements/slider): it moves the value, not the element.
-            if (e.target.closest && e.target.closest('input[data-glslider], [data-glinput], .gl-checkbox')) return;
+            // An input's control (a slider's knob, a checkbox…) of a selected input works it, not the
+            // element; not selected, or with Shift held, the press reaches here and moves it (style.css)
+            if (!e.shiftKey && domEl.classList.contains('selected') && e.target.closest && e.target.closest('input[data-glslider], [data-glinput]')) return;
             // Locked: no dragging. The press goes on to the canvas, so a drag
             // selects with a rectangle; a click selects it (see the click handler).
             if (locked) return;
@@ -2057,3 +2058,11 @@ export function deleteSelectedSlides(showFlash = true) {
     }
     return true;
 }
+// Shift held: the inputs on the canvas (sliders, checkboxes, boxes, choices) can be moved
+// even when selected, instead of working (style.css: body.gl-shift-held).
+(() => {
+    const set = (on) => document.body && document.body.classList.toggle('gl-shift-held', on);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Shift') set(true); }, true);
+    window.addEventListener('keyup', (e) => { if (e.key === 'Shift') set(false); }, true);
+    window.addEventListener('blur', () => set(false));
+})();

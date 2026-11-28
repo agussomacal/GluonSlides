@@ -126,6 +126,8 @@ export function plotFrom(info, cfg, file, original) {
 function close(result = null) {
     if (box) box.remove();
     box = null;
+    if (marker) marker.remove();
+    marker = null;
     document.removeEventListener('keydown', onKey, true);
     const d = done;
     done = null;
@@ -190,12 +192,65 @@ function render(info, cfg, name) {
             : [['table', '▦ Table'], ['plot', '📈 Plot'], ['choice', '📋 Choice']];
     if (!modes.some(([m]) => m === cfg.mode)) cfg.mode = modes[0][0];
     const what = info.kind === 'json' ? 'a JSON file' : info.kind === 'names' ? `${info.rows.flat().filter(Boolean).length} names` : `${info.total} rows · ${info.cols.length} columns`;
+    const scroll = box.querySelector('.dd-scroll')?.scrollTop || 0;
     box.innerHTML = `
-        <div class="dd-title">📄 ${escapeHtml(name)} <span>· ${escapeHtml(what)}</span></div>
-        ${preview(info)}
-        <div class="dd-modes">${modes.map(([m, t]) => `<button type="button" class="dd-mode${cfg.mode === m ? ' on' : ''}" data-dd-mode="${m}">${t}</button>`).join('')}</div>
-        <div class="dd-body">${body(info, cfg)}</div>
+        <div class="dd-title" title="Drag to move">📄 ${escapeHtml(name)} <span>· ${escapeHtml(what)}</span></div>
+        <div class="dd-scroll">
+            ${preview(info)}
+            <div class="dd-modes">${modes.map(([m, t]) => `<button type="button" class="dd-mode${cfg.mode === m ? ' on' : ''}" data-dd-mode="${m}">${t}</button>`).join('')}</div>
+            <div class="dd-body">${body(info, cfg)}</div>
+        </div>
         <div class="dd-actions"><button type="button" class="btn btn-secondary" data-dd-cancel>Cancel</button><button type="button" class="btn btn-primary" data-dd-add>Add ⏎</button></div>`;
+    box.querySelector('.dd-scroll').scrollTop = scroll;
+    showMarker(cfg);
+}
+
+// ---------- where it will go: a dashed frame on the slide ----------
+
+let marker = null;
+let markerAt = null;
+
+/** The size of what the panel would make now (slide pixels). */
+function sizeFor(cfg) {
+    const scale = state.slideWidth / 1920;
+    if (cfg.mode === 'plot') return { w: 1100 * scale, h: 640 * scale + (cfg.interactive ? ((cfg.several ? 200 : 70) + 16) * scale : 0) };
+    if (cfg.mode === 'choice') return { w: 460 * scale, h: 70 * scale };
+    if (cfg.mode === 'table') return { w: 1000 * scale, h: 400 * scale };
+    return null;
+}
+
+function showMarker(cfg) {
+    const canvas = document.getElementById('slide-canvas');
+    const size = sizeFor(cfg);
+    if (!canvas || !size) { if (marker) marker.remove(); marker = null; return; }
+    if (!marker || !canvas.contains(marker)) {
+        marker = document.createElement('div');
+        marker.className = 'dd-marker';
+        canvas.appendChild(marker);
+    }
+    const pos = placeAt(markerAt, size.w, size.h);
+    Object.assign(marker.style, { left: `${pos.x}px`, top: `${pos.y}px`, width: `${size.w}px`, height: `${size.h}px` });
+}
+
+/** The title bar moves the panel. */
+function draggable() {
+    box.addEventListener('mousedown', (e) => {
+        const title = e.target.closest('.dd-title');
+        if (!title || e.button !== 0) return;
+        e.preventDefault();
+        const r = box.getBoundingClientRect();
+        const dx = e.clientX - r.left;
+        const dy = e.clientY - r.top;
+        box.classList.add('moved');
+        const move = (ev) => {
+            box.style.left = `${Math.max(0, Math.min(window.innerWidth - 60, ev.clientX - dx))}px`;
+            box.style.top = `${Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy))}px`;
+        };
+        const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+        move(e);
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+    });
 }
 
 /**
@@ -225,13 +280,14 @@ export async function openDataDrop(item, at, client, insert) {
     if (info.kind === 'table' && cfg.format === 'wide' && !info.header) cfg.use = 'column:1';
     if (!info.cols || !info.cols.some(c => !c.numeric)) cfg.format = 'wide';
     closeDataDrop();
+    // in the middle of the window, whole (it scrolls inside if needed); a frame on the slide shows where it goes
+    void client;
+    markerAt = at;
     box = document.createElement('div');
     box.className = 'data-drop';
     document.body.appendChild(box);
     render(info, cfg, item.name);
-    const w = 400;
-    box.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, (client && client.x) || window.innerWidth / 2 - w / 2))}px`;
-    box.style.top = `${Math.max(8, Math.min(window.innerHeight - (box.offsetHeight || 420) - 8, (client && client.y) || 120))}px`;
+    draggable();
     document.addEventListener('keydown', onKey, true);
     box.addEventListener('mousedown', (e) => e.stopPropagation());
     box.addEventListener('click', (e) => {

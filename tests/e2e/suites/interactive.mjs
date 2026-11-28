@@ -60,7 +60,35 @@ check('…and in conditions: show (shown), B in opts (hidden)', !(await hidden(7
 check('the animation\'s variable starts at its start (mu = 0.0)', (await app(() => document.querySelector('#slide-canvas [data-element-id="10"]').textContent.trim())) === 'mu = 0.0');
 check('the animation is a dashed chip in the editor', await app(() => document.querySelector('#slide-canvas [data-element-id="9"] .gl-animation-chip')?.textContent.includes('mu: 0 → 10')));
 
-// using the inputs on the canvas
+// using the inputs on the canvas: a first click selects (it doesn't tick), then the control works
+const ticked = () => app(() => document.querySelector('#slide-canvas [data-element-id="2"] input').checked);
+await page.click('#slide-canvas [data-element-id="2"] input');
+await page.waitForTimeout(150);
+const firstClick = await app(async () => ({ sel: (await import('/core/state.js')).state.selectedElementIndex, cls: document.querySelector('#slide-canvas [data-element-id="2"]').classList.contains('selected') }));
+check('a click on an input not selected: selects it, not ticked', firstClick.cls && (await ticked()) === true, firstClick);
+// not selected, a drag moves it
+const cbBox = await page.locator('#slide-canvas [data-element-id="3"]').boundingBox();
+const before3 = await app(async () => (await import('/core/state.js')).state.slides[0].elements.find(e => e.id === 3).x);
+await page.mouse.move(cbBox.x + 10, cbBox.y + cbBox.height / 2);
+await page.mouse.down();
+await page.mouse.move(cbBox.x + 70, cbBox.y + cbBox.height / 2, { steps: 5 });
+await page.mouse.up();
+await page.waitForTimeout(150);
+const after3 = await app(async () => (await import('/core/state.js')).state.slides[0].elements.find(e => e.id === 3).x);
+check('…a drag on an input not selected moves it', after3 > before3 + 20, [before3, after3]);
+// selected, with Shift held: moved too, not ticked
+const box2 = await page.locator('#slide-canvas [data-element-id="2"] input').boundingBox();
+const before2 = await app(async () => (await import('/core/state.js')).state.slides[0].elements.find(e => e.id === 2).x);
+await page.keyboard.down('Shift');
+await page.mouse.move(box2.x + box2.width / 2, box2.y + box2.height / 2);
+await page.mouse.down();
+await page.mouse.move(box2.x + box2.width / 2 + 60, box2.y + box2.height / 2, { steps: 5 });
+await page.mouse.up();
+await page.keyboard.up('Shift');
+await page.waitForTimeout(150);
+const after2 = await app(async () => (await import('/core/state.js')).state.slides[0].elements.find(e => e.id === 2).x);
+check('…selected, Shift held: a drag moves it, it isn\'t ticked', after2 > before2 + 20 && (await ticked()) === true, [before2, after2]);
+// selected: the click ticks
 await page.click('#slide-canvas [data-element-id="2"] input');
 await page.waitForTimeout(100);
 await page.fill('#slide-canvas [data-element-id="3"] input', '7');

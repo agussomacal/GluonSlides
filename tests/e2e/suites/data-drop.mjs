@@ -85,6 +85,26 @@ const modes = await app(() => [...document.querySelectorAll('.dd-mode')].map(b =
 check('…Table, Plot or Choice (a table first time)', JSON.stringify(modes) === '["▦ Table*","📈 Plot","📋 Choice"]', modes);
 check('…nothing copied yet', (await app(() => window.__links.length)) === 0);
 await page.click('[data-dd-mode="plot"]');
+// dropped near a corner: the panel is still in the middle, whole; a frame on the slide shows where it goes
+await page.click('[data-dd-cancel]');
+await drop('/home/me/exp/wide.csv', 1800, 1000);
+await page.click('[data-dd-mode="plot"]');
+const where = await app(() => {
+    const r = document.querySelector('.data-drop').getBoundingClientRect();
+    const m = document.querySelector('#slide-canvas .dd-marker');
+    return { cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2), w: innerWidth, h: innerHeight, inside: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+        add: (() => { const b = document.querySelector('[data-dd-add]').getBoundingClientRect(); return b.bottom <= innerHeight && b.top >= 0; })(),
+        marker: m && { x: parseFloat(m.style.left), y: parseFloat(m.style.top), w: parseFloat(m.style.width), h: parseFloat(m.style.height) } };
+});
+check('the panel: in the middle of the window, whole, Add visible', Math.abs(where.cx - where.w / 2) <= 2 && Math.abs(where.cy - where.h / 2) <= 2 && where.inside && where.add, where);
+check('…a frame where the plot will go (kept on the slide, by the drop point)', where.marker && Math.round(where.marker.x + where.marker.w) === 1920 && Math.round(where.marker.y + where.marker.h) === 1080 && where.marker.w === 1100, where.marker);
+const title = await page.locator('.dd-title').boundingBox();
+await page.mouse.move(title.x + 20, title.y + 10);
+await page.mouse.down();
+await page.mouse.move(title.x - 180, title.y - 100, { steps: 4 });
+await page.mouse.up();
+const movedBy = await page.locator('.dd-title').boundingBox();
+check('…dragging its title moves it', Math.round(title.x - movedBy.x) === 200 && Math.round(title.y - movedBy.y) === 110, [title, movedBy]);
 const wide = await app(() => ({
     format: document.querySelector('input[data-dd="format"]:checked')?.value,
     x: document.querySelector('select[data-dd="x"]')?.value,
