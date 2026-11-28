@@ -3,7 +3,9 @@
 // presentation, or 🎓 on the start screen): a project of a few slides
 // that teaches by doing — each slide says what to try on itself. It is
 // written in the .gl format, so it is also an example of it (Ctrl+E
-// shows it). It opens in a tab of its own and is not saved anywhere.
+// shows it). It opens in a tab of its own and is not saved anywhere; in
+// the app it gets a scratch folder with a sample CSV, so "Try it: drop a
+// sample file" opens the drop panel (ui/dataDrop.js) as a real drop would.
 // ============================================================
 
 export const TUTORIAL_GL = String.raw`# GluonSlides tutorial
@@ -115,6 +117,67 @@ export const TUTORIAL_GL = String.raw`# GluonSlides tutorial
 
 	**Plots ▾** in the toolbar adds plots; **Interactive ▾** sliders, checkboxes, number and text boxes, choices and animations. A CSV of results dropped on the slide becomes a plot, with a choice to pick the column or the run while presenting.
 
+.slide {Your data} id:110
+.element.text id:111 style:title x:100 y:60 width:1700 height:120
+	Your data, straight in
+.element.plot id:112 x:80 y:190 width:1080 height:660 lang:python xlabel:step ylabel:loss legend:no fontSize:26
+	.line group:run colors:runcol show:"=runcol.shown" width:4
+	run, step, loss
+	adam, 1, 0.755
+	adam, 2, 0.547
+	adam, 3, 0.400
+	adam, 4, 0.297
+	adam, 5, 0.224
+	adam, 6, 0.172
+	adam, 7, 0.136
+	adam, 8, 0.111
+	adam, 9, 0.093
+	adam, 10, 0.080
+	sgd, 1, 1.083
+	sgd, 2, 0.939
+	sgd, 3, 0.815
+	sgd, 4, 0.709
+	sgd, 5, 0.617
+	sgd, 6, 0.538
+	sgd, 7, 0.470
+	sgd, 8, 0.411
+	sgd, 9, 0.361
+	sgd, 10, 0.318
+	ngd, 1, 0.596
+	ngd, 2, 0.381
+	ngd, 3, 0.251
+	ngd, 4, 0.172
+	ngd, 5, 0.124
+	ngd, 6, 0.095
+	ngd, 7, 0.077
+	ngd, 8, 0.066
+	ngd, 9, 0.060
+	ngd, 10, 0.056
+.element.colorkey id:113 var:runcol keys:"adam, sgd, ngd" label:Runs x:1200 y:200 width:300 height:200 fontSize:30
+.element.text id:114 style:hint x:1200 y:430 width:640 height:580
+	**Drop a CSV of results** on a slide: it asks for a table, a plot (one line per column, or one per run, like here) or a choice. It stays linked: rerun your script and the slide follows.
+
+	The legend is a **colour key**: click it, then click a run to hide it. Each run keeps its colour in every plot.
+
+	**▶ [Try it: drop a sample file](#gluon-try-drop)** (in the app).
+
+.slide {Things that follow} id:120
+.element.text id:121 style:title x:100 y:60 width:1700 height:120
+	Things that follow a variable
+.element.shape id:124 name:Mover x:"=150 + 650*t" y:260 width:240 height:160 radius:20 bg:"=cmap(t, 0, 1, 'viridis')" visible:"=show_box"
+.element.shape id:125 name:Target x:900 y:560 width:240 height:160 radius:20 bg:@light borderCol:@primary borderWidth:3
+.element.path id:126 from:{Mover}@auto to:{Target}@left route:curved end:arrow stroke:@dark strokeWidth:5 x:390 y:340 width:510 height:300
+	0 0
+	1 1
+.element.slider id:122 x:120 y:880 width:620 height:70 var:t min:0 max:1 step:0.01 value:0.3 label:"$t$" format:%.2f fontSize:30
+.element.checkbox id:123 x:800 y:880 width:420 height:70 var:show_box value:yes label:"Show the box" fontSize:30
+.element.text id:127 style:hint x:1300 y:200 width:540 height:800
+	**Click the slider, then drag it**: the box moves and changes colour (${'`'}x:"=150 + 650*t"${'`'}, ${'`'}bg:"=cmap(t, 0, 1)"${'`'}), and the arrow follows it. Untick the checkbox: the box hides, and its arrow.
+
+	**Right-click any object → Follow a variable…** to make one of its settings follow a variable: position, size, opacity, colour, visibility.
+
+	An **animation** (*Interactive ▾*) moves variables by itself while presenting.
+
 .slide {Pictures} id:60
 .element.text id:61 style:title x:100 y:60 width:1700 height:120
 	Pictures
@@ -155,9 +218,15 @@ export const TUTORIAL_GL = String.raw`# GluonSlides tutorial
 .element.text id:91 style:title x:100 y:60 width:1700 height:120
 	What next
 .element.text id:92 x:100 y:240 width:1700 height:700 fontSize:34 textAlign:left verticalAlign:top
-	- **Start a project**: Back to Home (bottom left) → *Create New Project*.
+	- **Start a project**: Back to Home (bottom left) → *Create New Project*, or **📊 Example: results that update** for a project whose slides follow a script's results.
+	- **Your files**: 🗂 *Project files* (bottom left) shows the figures and data of a project, what uses each, and cleans up the rest.
 	- **Bring a talk you have**: *Import Talk* takes Beamer, Slidev, PowerPoint and PDF, best with the compiled PDF next to it.
 	- **Share it**: HTML and PDF export, bottom left.
 	- **Make it yours**: *Project settings* for fonts, theme colours and styles.
 	- **Help (?)**, top right: the quick tour again, and the keyboard shortcuts (Ctrl+/), which you can change.
+`;
+
+// a sample of results in long format (run, step, loss), for "Try it: drop a sample file"
+export const TUTORIAL_SAMPLE = `run,step,loss
+${['adam', 'sgd', 'ngd'].map((r, k) => Array.from({ length: 15 }, (_, i) => `${r},${i + 1},${((1 + k * 0.2) * Math.exp(-(0.35 - k * 0.1) * (i + 1)) + 0.05).toFixed(4)}`).join('\n')).join('\n')}
 `;

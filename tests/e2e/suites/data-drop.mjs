@@ -20,6 +20,7 @@ await page.addInitScript(() => {
         'long.csv': { header: ['run', 'step', 'loss'], rows: [['adam', '1', '0.9'], ['adam', '2', '0.5'], ['sgd', '1', '1.2'], ['sgd', '2', '0.8']], total: 4, mtime: 1 },
         'names.csv': { header: null, rows: [['Input'], ['Output']], total: 2, mtime: 1 },
         'results.json': { json: { adam: { acc: 0.91 }, sgd: { acc: 0.85 } }, mtime: 1 },
+        'runs.csv': { header: ['run', 'step', 'loss'], rows: [['adam', '1', '0.9'], ['sgd', '1', '1.2']], total: 2, mtime: 1 },
     };
     const of = (path) => FILES[path.split('/').pop()];
     window.__links = [];
@@ -35,6 +36,7 @@ await page.addInitScript(() => {
         refresh_vars: () => ok({ updated: [] }),
         read_vars_file: () => ok({ values: {}, mtime: 1 }),
         take_dropped_paths: () => ok({ paths: [] }),
+        scratch_folder: (files) => { window.__scratch = Object.keys(files); return ok({ folder: '/tmp/gluon-tutorial-x' }); },
         unused_project_files: (folder, text) => { window.__text = text; return ok({ files: window.__unused.filter(f => !text.includes(f.path)) }); },
         delete_project_files: (folder, paths) => { window.__deleted = paths; window.__unused = window.__unused.filter(f => !paths.includes(f.path)); return ok({ deleted: paths, errors: [] }); },
         get_recent_projects: () => ok({ projects: [] }),
@@ -249,6 +251,22 @@ await page.waitForTimeout(250);
 const afterDelete = await app(() => ({ deleted: window.__deleted, left: [...document.querySelectorAll('[data-unused-file]')].map(i => i.dataset.unusedFile) }));
 check('…then only the ticked file is deleted, the list looked at again', JSON.stringify(afterDelete) === '{"deleted":["data/data_test_1.csv"],"left":["figures/old.png"]}', afterDelete);
 await app(async () => document.querySelector('[data-settings-action="close"]')?.click());
+
+// ---------- the tutorial: "Try it: drop a sample file" ----------
+await app(async () => (await import('/ui/project.js')).openTutorialProject());
+await page.waitForTimeout(300);
+const tutFolder = await app(async () => ({ folder: (await import('/core/state.js')).state.projectFolder, path: (await import('/core/state.js')).state.projectPath, files: window.__scratch }));
+check('the tutorial in the app: a scratch folder with the sample (still no project file)', tutFolder.folder === '/tmp/gluon-tutorial-x' && !tutFolder.path && JSON.stringify(tutFolder.files) === '["runs.csv"]', tutFolder);
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    (await import('/editor/editor.js')).selectSlide(state.slides.findIndex(s => s.title === 'Your data'));
+});
+await page.waitForTimeout(250);
+await app(() => document.querySelector('#slide-canvas a[href="#gluon-try-drop"]').click());
+await page.waitForTimeout(300);
+check('…Try it: the drop panel opens on the sample, as a real drop', /runs\.csv · 2 rows · 3 columns/.test(await panelText()), await panelText());
+await page.keyboard.press('Escape');
+await page.waitForTimeout(100);
 
 check('no page errors', errors.length === 0, errors);
 console.log(out.join('\n'));

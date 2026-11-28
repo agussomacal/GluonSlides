@@ -34,9 +34,9 @@ const tut = await app(async () => {
     };
 });
 check('the tutorial opens in the editor', tut.editor && tut.name === 'GluonSlides tutorial', JSON.stringify(tut.name));
-check('…its slides', tut.slides.length === 10 && tut.slides[0] === 'Welcome' && tut.slides[9] === 'Next steps', JSON.stringify(tut.slides));
+check('…its slides', tut.slides.length === 12 && tut.slides[0] === 'Welcome' && tut.slides.includes('Your data') && tut.slides.includes('Things that follow') && tut.slides[11] === 'Next steps', JSON.stringify(tut.slides));
 check('…not saved anywhere', !tut.path);
-check('…a master, notes, and every kind of object', tut.masters === 1 && tut.notes.includes('Speaker notes') && tut.types === 'columns,figure,group,path,plot,slider,table,text', tut.types);
+check('…a master, notes, and every kind of object', tut.masters === 1 && tut.notes.includes('Speaker notes') && tut.types === 'checkbox,colorkey,columns,figure,group,path,plot,shape,slider,table,text', tut.types);
 check('…the connector attached by name', tut.connector && tut.connector.from === '{Data}@right' && tut.connector.to === '{Model}@left' && tut.connector.width > 300, JSON.stringify(tut.connector));
 check('…blank lines between paragraphs kept', /highlights\.\n\nTyping/.test(tut.hint || ''), JSON.stringify(tut.hint));
 const tutPlot = await app(async () => {
@@ -47,6 +47,25 @@ const tutPlot = await app(async () => {
     return svg ? { errors: [...svg.querySelectorAll('g[fill="#dc2626"] text')].map(t => t.textContent), bars: svg.querySelectorAll('g[clip-path] rect').length } : null;
 });
 check('…its plot draws (histogram and curves), no error', tutPlot && !tutPlot.errors.length && tutPlot.bars > 20, JSON.stringify(tutPlot));
+const tutData = await app(async () => {
+    const { state } = await import('/core/state.js');
+    (await import('/editor/editor.js')).selectSlide(state.slides.findIndex(s => s.title === 'Your data'));
+    await new Promise(r => setTimeout(r, 200));
+    const lines = [...document.querySelectorAll('#slide-canvas .element-plot svg path[stroke-linejoin]')].map(p => p.getAttribute('stroke'));
+    const swatches = [...document.querySelectorAll('#slide-canvas .element-colorkey .gl-key-swatch')].map(sw => sw.style.background);
+    const link = document.querySelector('#slide-canvas a[href="#gluon-try-drop"]');
+    return { lines, keys: swatches.length, link: Boolean(link) };
+});
+check('"Your data": a line per run in the colour key\'s colours, a Try it link', tutData.lines.length === 3 && new Set(tutData.lines).size === 3 && tutData.keys === 3 && tutData.link, JSON.stringify(tutData));
+const tutFollow = await app(async () => {
+    const { state } = await import('/core/state.js');
+    (await import('/editor/editor.js')).selectSlide(state.slides.findIndex(s => s.title === 'Things that follow'));
+    await new Promise(r => setTimeout(r, 200));
+    const box = state.slides.find(s => s.title === 'Things that follow').elements.find(e => e.id === 124);
+    const arrow = state.slides.find(s => s.title === 'Things that follow').elements.find(e => e.id === 126);
+    return { x: box.x, bg: box.bg, arrowX: arrow.x, errors: box._formulaErrors || null };
+});
+check('"Things that follow": the box placed and coloured by t (0.3), the arrow attached', tutFollow.x === 345 && /^#[0-9a-f]{6}$/.test(tutFollow.bg) && !tutFollow.errors && Math.abs(tutFollow.arrowX - 585) < 2, JSON.stringify(tutFollow));
 await app(async () => (await import('/editor/editor.js')).selectSlide(0));
 check('no tour by itself in a browser', !(await page.$('.tour-layer')));
 await shot('tutorial');

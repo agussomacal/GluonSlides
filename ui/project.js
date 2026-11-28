@@ -19,7 +19,7 @@ import { renderEditor } from '../editor/editor.js';
 import { loadImportedLibraries } from '../core/macros.js';
 import { loadProjectFonts } from '../core/fonts.js';
 import { tourOnFirstUse } from './tour.js';
-import { TUTORIAL_GL } from './tutorial.js';
+import { TUTORIAL_GL, TUTORIAL_SAMPLE } from './tutorial.js';
 
 /** Macro definitions shaped like slides, so their figures load too. */
 function macroSlides() {
@@ -318,10 +318,29 @@ export async function openExampleProject(parent = null) {
 export async function openTutorialProject() {
     await prepareTabFor();
     clearFigureCache();
-    resetProjectState({ name: 'GluonSlides tutorial' });
+    // in the app: a scratch folder with a sample CSV ("Try it: drop a sample file"); still not saved (no project file)
+    let folder = null;
+    const api = pyApi();
+    if (api && typeof api.scratch_folder === 'function') {
+        const res = await api.scratch_folder({ 'runs.csv': TUTORIAL_SAMPLE });
+        if (res && res.success) folder = res.folder;
+    }
+    resetProjectState({ name: 'GluonSlides tutorial', folder });
     applyProjectData(parseProjectContent(TUTORIAL_GL));
     enterEditor();
 }
+
+// "Try it: drop a sample file" (a link #gluon-try-drop in the tutorial): the drop panel, as for a real drop
+document.addEventListener('click', (e) => {
+    const link = e.target.closest && e.target.closest('a[href="#gluon-try-drop"]');
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!state.projectFolder) { flashSaveIndicator('Try it in the app: it needs a folder for the file'); return; }
+    Promise.all([import('./dataDrop.js'), import('../editor/editor.js')]).then(([dd, ed]) => {
+        dd.openDataDrop({ name: 'runs.csv', path: `${state.projectFolder}/runs.csv` }, null, null, (type, props) => ed.insertElement(type, props));
+    });
+}, true);
 
 export async function goToHome() {
     await flushPendingSave();

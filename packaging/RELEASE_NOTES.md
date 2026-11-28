@@ -4,8 +4,10 @@
 
 - **Interactive plots**: plots of formulas (Python or LaTeX) and data, with layers for curves, areas, parametric curves, points with error bars, lines, bars, histograms (also sampled from a formula), heatmaps, contour lines and arrows, or written as a **matplotlib script**. They follow **sliders, checkboxes, number and text boxes, choices** (one or several, options written or from a file) and **animations**, in the editor, while presenting and in the exported HTML.
 - **Live numbers**: `\var{err}` shows a value from a JSON or CSV file your script writes; `\var{results[opt].acc}` the one a choice picks.
-- **Anything can follow a variable**: right-click → *Follow a variable…*; positions, sizes, opacity, visibility, a plot layer's settings and axis ranges can be formulas (`=860 + 300*mu`), and dragging moves the formula's constant.
-- **🗂 Project files**: every file of `figures/` and `data/`, what uses it, duplicates (merge) and unused files (delete). The same file is no longer copied twice.
+- **Anything can follow a variable**: right-click → *Follow a variable…*; positions, sizes, opacity, visibility, **colours**, a plot layer's settings and axis ranges can be formulas (`=860 + 300*mu`, `=cmap(err, 0, 0.1)`), and dragging moves the formula's constant. Lines attached to moving shapes follow them, in the exported HTML too.
+- **Colour keys**: each run (or category) its colour, the same in every plot and object that uses it, with a legend you can click to show and hide runs while presenting.
+- **📊 Example: results that update** (start screen): a project with a small results file and the script that writes it; run the script and watch the slides change. The tutorial shows the new features too, with a sample file to drop.
+- **🗂 Project files**: every file of `figures/` and `data/`, what uses it, duplicates (merge) and unused files; removed files go to the project's trash and can be restored. The same file is no longer copied twice. Big data files are thinned to what draws the same picture.
 - **Find** (Ctrl+F) over the project's `.gl` text; Ctrl+click on a variable goes to where it is defined.
 - On the canvas, inputs work once selected (a first click selects, **Shift**+drag moves them).
 
