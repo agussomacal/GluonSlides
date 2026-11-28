@@ -1495,6 +1495,10 @@ class PlotDataTest(TempDirTest):
         res = read_plot_data(self.tmp, self.write("run.csv", "step;loss\n1;0.9\n2;0.4\n"))
         self.assertEqual((res["header"], res["rows"]), (["step", "loss"], [["1", "0.9"], ["2", "0.4"]]))
         bars = read_plot_data(self.tmp, self.write("bars.csv", "Adam,3\nSGD,5\n"))
+        js = read_plot_data(self.tmp, self.write("results.json", '{"adam": {"acc": 0.91}, "sgd": {"acc": 0.85}}'))
+        self.assertTrue(js["success"])
+        self.assertEqual(list(js["json"].keys()), ["adam", "sgd"])
+        self.assertFalse(read_plot_data(self.tmp, self.write("bad.json", "{oops"))["success"])
         self.assertEqual((bars["header"], len(bars["rows"])), (None, 2))  # "Adam,3" is data
 
     def test_big_files_are_thinned_keeping_the_last_row(self):

@@ -185,6 +185,33 @@ function compileNode(node) {
                 throw new FormulaError(`unknown name: ${n}`);
             };
         }
+        case 'path': {
+            const parts = node.parts.map(part => (typeof part === 'string' ? part : compileNode(part.e)));
+            return (env) => {
+                let name = parts[0];
+                let value;
+                let isValue = false;
+                for (let k = 1; k < parts.length; k++) {
+                    const part = parts[k];
+                    if (typeof part === 'string') {
+                        if (isValue) throw new FormulaError(`.${part}: only names have parts`);
+                        name += `.${part}`;
+                        continue;
+                    }
+                    const key = part(env);
+                    if (!isValue && name in env && (Array.isArray(env[name]) || typeof env[name] === 'string')) { value = env[name]; isValue = true; }
+                    if (isValue) {
+                        if (!(Array.isArray(value) || typeof value === 'string')) throw new FormulaError('only a list or a text has elements');
+                        const i = Math.trunc(Number(key));
+                        value = value[i < 0 ? value.length + i : i];
+                        if (value === undefined) throw new FormulaError(`no element ${key}`);
+                    } else name += `.${typeof key === 'boolean' ? (key ? 'True' : 'False') : key}`;
+                }
+                if (isValue) return value;
+                if (name in env) return env[name];
+                throw new FormulaError(`unknown name: ${name}`);
+            };
+        }
         case 'neg': { const a = compileNode(node.a); return (env) => -a(env); }
         case 'not': { const a = compileNode(node.a); return (env) => (a(env) ? 0 : 1); }
         case 'and': { const a = compileNode(node.a); const b = compileNode(node.b); return (env) => (a(env) ? b(env) : 0); }
@@ -212,6 +239,8 @@ function compileNode(node) {
 function namesIn(node, out = new Set()) {
     if (!node || typeof node !== 'object') return out;
     if (node.t === 'name') out.add(node.n);
+    // results[opt].acc: only the names inside the brackets are known beforehand
+    if (node.t === 'path') node.parts.forEach(part => { if (typeof part !== 'string') namesIn(part.e, out); });
     for (const k of ['a', 'b', 'c']) if (node[k]) namesIn(node[k], out);
     (node.args || []).forEach(a => namesIn(a, out));
     return out;
@@ -219,7 +248,7 @@ function namesIn(node, out = new Set()) {
 
 // ---------- lang:python ----------
 
-const PY_TOKEN = /\s*(?:(\d+(?:_\d+)*(?:\.\d*)?(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(\*\*|\/\/|<=|>=|==|!=|[-+*/%()<>,=])|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"))/y;
+const PY_TOKEN = /\s*(?:(\d+(?:_\d+)*(?:\.\d*)?(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(\*\*|\/\/|<=|>=|==|!=|[-+*/%()<>,=[\]])|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|\.([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*))/y;
 const PY_MODULES = /^(?:(?:np|numpy)\.random\.|random\.|math\.|np\.|numpy\.|scipy\.special\.|special\.|sp\.|cmath\.)/;
 
 function tokenizePython(src, line) {
@@ -236,6 +265,7 @@ function tokenizePython(src, line) {
             const word = m[2].replace(PY_MODULES, '');
             out.push(['and', 'or', 'not', 'if', 'else', 'in'].includes(word) ? { k: 'op', v: word } : { k: 'name', v: word });
         } else if (m[4] !== undefined) out.push({ k: 'str', v: m[4].slice(1, -1).replace(/\\(.)/g, '$1') });
+        else if (m[5] !== undefined) out.push({ k: 'attr', v: m[5] }); // .acc after results[opt]
         else out.push({ k: 'op', v: m[3] });
         i = PY_TOKEN.lastIndex;
     }
@@ -327,6 +357,17 @@ function parsePythonExpr(tokens, line) {
                 expect(')');
                 if (!FUNCTIONS[tok.v]) throw new FormulaError(`unknown function: ${tok.v}`, line);
                 return { t: 'call', f: tok.v, args };
+            }
+            // results[opt].acc: the name results.<opt's value>.acc (opts[0]: an element of a list)
+            if (isOp('[')) {
+                const parts = [tok.v];
+                while (isOp('[') || (tokens[p] && tokens[p].k === 'attr')) {
+                    if (tokens[p].k === 'attr') { parts.push(tokens[p++].v); continue; }
+                    p++;
+                    parts.push({ e: ternary() });
+                    expect(']');
+                }
+                return { t: 'path', parts };
             }
             return { t: 'name', n: tok.v };
         }
@@ -765,7 +806,7 @@ function layerShown(layer, vars) {
     if (layer.hidden === 'yes') return false;
     const cond = typeof layer.visible === 'string' ? layer.visible.replace(/^\s*=\s*/, '').trim() : '';
     if (!cond) return true;
-    const f = compileFormula(cond, layer.lang || 'python');
+    const f = compileFormula(cond, 'python'); // a condition is Python (texts, ==, in) whatever the layer's language
     if (f.error) throw new LayerError(`visible: ${f.error}`);
     const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
     if (missing.length) throw new LayerError(`visible: unknown name ${missing.join(', ')}`);
@@ -777,9 +818,23 @@ export function shownLayers(spec, vars) {
     return (expandPlot(spec, vars).layers || []).map(l => { try { return layerShown(l, vars || {}); } catch (e) { return true; } });
 }
 
+// the columns of a data layer: a name, a number, or "=" and a formula giving one (y:"=opt", a choice of the header)
+const COLUMN_KEYS = { points: ['x', 'y', 'yerr'], line: ['x', 'y'], bar: ['x', 'y'], hist: ['column'] };
+
 /** A layer with its number settings worked out for these values (formulas evaluated, whole numbers rounded). */
 function resolveLayer(layer, vars) {
     let out = layer;
+    for (const key of COLUMN_KEYS[layer.kind] || []) {
+        const v = layer[key];
+        if (typeof v !== 'string' || !v.trim().startsWith('=')) continue;
+        const f = compileFormula(v.trim().slice(1), 'python');
+        if (f.error) throw new LayerError(`${key}: ${f.error}`);
+        const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
+        if (missing.length) throw new LayerError(`${key}: unknown name ${missing.join(', ')}`);
+        const got = f.exec(Object.assign(Object.create(null), vars));
+        if (out === layer) out = { ...layer };
+        out[key] = Array.isArray(got) ? String(got[0] ?? '') : String(got);
+    }
     for (const key of NUMERIC_LAYER_KEYS) {
         const v = layer[key];
         if (v === undefined || v === '' || (isSet(v) && !WHOLE_LAYER_KEYS.has(key))) continue;
@@ -1672,6 +1727,15 @@ function within(root, selector) {
 }
 
 /** Shows the variables' current values in `root` and redraws its plots. */
+/** The value \\var{name} shows: a variable, or a path picked by others (results[opt].acc); undefined if none. */
+export function variableValue(name, vars) {
+    if (name in vars) return vars[name];
+    if (!name.includes('[')) return undefined;
+    const f = compileFormula(name, 'python');
+    if (f.error || f.names.some(n => !(n in vars))) return undefined;
+    try { return f.exec(Object.assign(Object.create(null), vars)); } catch (e) { return undefined; }
+}
+
 export function liveUpdate(root, vars) {
     if (!root) return;
     liveBindings(root, vars);
@@ -1679,8 +1743,9 @@ export function liveUpdate(root, vars) {
     within(root, '[data-glvar]').forEach(node => {
         if (node.tagName === 'INPUT') return;
         const name = node.getAttribute('data-glvar');
-        if (!(name in vars)) return;
-        const text = formatValue(vars[name], node.getAttribute('data-glfmt') || '');
+        const value = variableValue(name, vars);
+        if (value === undefined) return;
+        const text = formatValue(value, node.getAttribute('data-glfmt') || '');
         if (node.classList.contains('gl-var')) node.textContent = text;
         else node.innerHTML = `<span class="mord">${esc(text)}</span>`; // inside KaTeX math
     });

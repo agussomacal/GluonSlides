@@ -8,6 +8,7 @@ script); the table shows the copy's cells.
 
 import csv
 import io
+import json
 import os
 import shutil
 
@@ -124,9 +125,14 @@ def copy_into_data(project_folder, source):
 
 def read_plot_data(project_folder, path):
     """{"success", "header", "rows", "total", "mtime"}: a CSV's rows for a plot (the
-    header apart when the first row isn't numbers), thinned to MAX_PLOT_ROWS."""
+    header apart when the first row isn't numbers), thinned to MAX_PLOT_ROWS.
+    A .json file gives {"success", "json", "mtime"}: its content (a choice's
+    options can be its keys)."""
     try:
         p = _resolve(project_folder, path)
+        if str(path).lower().endswith(".json"):
+            with open(p, encoding="utf-8-sig") as f:
+                return {"success": True, "json": json.load(f), "mtime": os.path.getmtime(p)}
         with open(p, encoding="utf-8-sig", errors="replace", newline="") as f:
             text = f.read()
         sample = text[:4096]

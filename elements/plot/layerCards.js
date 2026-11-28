@@ -82,7 +82,12 @@ function field(b, i, param, el) {
         case 'column': {
             const t = p.data ? dataTable(p.data) : null;
             if (t && t.header && t.header.length) {
-                return wrap(`<select class="prop-control" ${attrs}><option value="">${param.key === 'yerr' ? 'none' : 'default'}</option>${t.header.map(h => `<option value="${escapeHtml(h)}" ${value === h ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}</select>`);
+                // or the column a variable names (a choice of the header: y:"=opt")
+                const vars = allVariables();
+                const named = Object.keys(vars).filter(n => typeof vars[n] === 'string' || Array.isArray(vars[n])).sort().map(n => `=${n}`);
+                if (value && String(value).startsWith('=') && !named.includes(value)) named.unshift(value);
+                const byVar = named.length ? `<optgroup label="the column a variable names">${named.map(v => `<option value="${escapeHtml(v)}" ${value === v ? 'selected' : ''}>${escapeHtml(v.replace('=', '= '))}</option>`).join('')}</optgroup>` : '';
+                return wrap(`<select class="prop-control" ${attrs}><option value="">${param.key === 'yerr' ? 'none' : 'default'}</option>${t.header.map(h => `<option value="${escapeHtml(h)}" ${value === h ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}${byVar}</select>`);
             }
             return wrap(`<input type="text" class="prop-control" ${attrs} value="${escapeHtml(value ?? '')}" placeholder="name or number" spellcheck="false">`);
         }

@@ -557,7 +557,7 @@ A plot: **layers** drawn on shared axes, computed from formulas and data with th
 
 Text before any layer line is a first `.curve` (comments there belong to the first layer). Rows are separated by commas, semicolons or tabs (or spaces); a first row of names only is a header, and `#` starts a comment.
 
-**Data files**: `data:{data/run.csv}` reads a CSV of the project folder (the panel's *＋ Data file…* copies one into `data/` and writes `original:"…"`, so the copy follows the file your script rewrites, like a linked table). Columns are chosen by their header's name (`x:step y:loss`, quoted if they have spaces) or by number. A file with very many rows is drawn from 20 000 of them, evenly spread (5 000 in an exported HTML), the last one always kept.
+**Data files**: `data:{data/run.csv}` reads a CSV of the project folder (the panel's *＋ Data file…* copies one into `data/` and writes `original:"…"`, so the copy follows the file your script rewrites, like a linked table). Columns are chosen by their header's name (`x:step y:loss`, quoted if they have spaces) or by number, or by a variable naming one: `y:"=run"`, with a choice whose options are the file's header, draws the column chosen (the axes then fit each column instead of staying as at the start). A file with very many rows is drawn from 20 000 of them, evenly spread (5 000 in an exported HTML), the last one always kept.
 
 **Histograms of a formula**: with `samples:N`, the formula is drawn N times: random functions give the samples (`y = normal(mu, sigma)`). The draws are seeded (`seed`), so moving a slider moves the same draws instead of making new noise; `i` is the draw's number (0 to N−1).
 
@@ -639,9 +639,27 @@ Other inputs that set a variable, like the slider: on the canvas, while presenti
 | `checkbox` | true / false | `value` (`yes` / `no`: ticked at the start) |
 | `numberbox` | a number | `min`, `max` (kept inside), `step`, `value` |
 | `textbox` | a text | `value` |
-| `choice` | the option chosen (a text), or with `multiple:yes` the options chosen (a list; Ctrl+click in the list) | `options` (separated by commas), `value` (the option(s) chosen at the start, separated by commas) |
+| `choice` | the option chosen (a text), or with `multiple:yes` the options chosen (a list; Ctrl+click in the list) | `options` (separated by commas), `value` (the option(s) chosen at the start, separated by commas); or `source` and `use` (below) |
 
 All take `var`, `label` (Markdown and math), `accent` (a colour), `fontSize`, `fontFamily`, `fontColor`. In formulas a checkbox is `True` / `False` (1 / 0 in arithmetic), a text is compared with `==` / `!=` (`who == 'Ada'`), and a list answers `in` (`'SGD' in opts`, `'SGD' not in opts`). In text `\var{show}` shows *true* / *false*, `\var{show}[on|off]` your own words, a list its options separated by commas.
+
+**A choice's options from a file**, so they match what your experiment wrote:
+
+```gl
+.element.choice id:7 var:run source:data/runs.csv use:header original:"/home/me/exp/runs.csv" x:100 y:900 width:500 height:70
+.element.choice id:8 var:opt source:data/results.json use:keys x:700 y:900 width:500 height:70
+```
+
+| `use` | The options |
+|---|---|
+| `header` (a CSV's default) | the column names |
+| `column:<name>` (or a number) | the values of that column, each once, in order |
+| `keys` (a JSON's default) | the keys of the object (a list: its items) |
+| `keys:<path>` | the keys (or items) of what is at `a.b` inside it |
+
+The file is copied into `data/` (`original` is followed when your script rewrites it, like a linked table). The options it gave are also kept in `options`, which an export or an unreadable file falls back to.
+
+**Picking by a variable.** In formulas and in `\var{…}`, `name[key]` makes a name from another variable's value: with `results.json` = `{"adam": {"acc": 0.91}, "sgd": {"acc": 0.85}}` (variables `results.adam.acc`, `results.sgd.acc`) and a choice `opt`, `results[opt].acc` is the chosen one's (`\var{results[opt].acc}[%.2f]` in text; `results['adam'].acc` with a written key). On a list, `opts[0]` is an element (`opts[-1]` the last). Only Python formulas take it.
 
 ### animation
 

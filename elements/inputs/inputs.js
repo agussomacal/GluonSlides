@@ -10,16 +10,23 @@
 //   .element.numberbox id:4 var:n min:1 max:1000 step:1 value:100 label:"Samples"
 //   .element.textbox   id:5 var:method value:"Adam" label:"Optimiser"
 //   .element.choice    id:6 var:opts options:"Adam, SGD, NGD" value:"Adam" multiple:no label:"Methods"
+//   .element.choice    id:7 var:run source:data/runs.csv use:header original:"/home/me/exp/runs.csv"
+//
+// A choice may take its options from a file in the project (copied into
+// data/ and followed when the original changes): a CSV's column names
+// (use:header) or a column's values (use:column:optimizer), a JSON's keys
+// (use:keys) or the keys of an object inside it (use:keys:runs.final).
 // ============================================================
 
-import { state } from '../../core/state.js';
+import { state, activeElements, markDirty, pyApi, flashSaveIndicator } from '../../core/state.js';
+import { dataTable, linkDataFile } from '../../core/plotData.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml, renderMarkdownAndKatexToString } from '../../core/render.js';
 import { fontStack } from '../../core/fonts.js';
 import { resolveColor } from '../../core/colors.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { bindSliders, liveUpdate } from '../../core/liveEngine.js';
-import { allVariables, setLiveValue, inputStart, choiceOptions } from '../../core/variables.js';
+import { allVariables, setLiveValue, inputStart, choiceOptions, fileOptions } from '../../core/variables.js';
 import { hasFormulas, liveApplyToCanvas } from '../../core/bindings.js';
 
 function redrawCanvasLater() {
@@ -163,19 +170,98 @@ function choiceMarkup(el, v) {
         style="flex:1; min-width:0; font:inherit; padding:0.1em 0.2em; border:1px solid currentColor; border-radius:0.2em; background:transparent; color:inherit; ${accentStyle(el)}">${options}</select>`, { column: many });
 }
 
+// ---------- a choice's options from a file (source:data/run.csv use:header) ----------
+
+/** What "Take" offers for the file: [[use, label]] (a CSV: its header, a column's values; a JSON: its keys, an object's keys inside). */
+function usesOf(el) {
+    const t = el.source ? dataTable(el.source) : null;
+    if (!t || t.error) return [];
+    if (t.json !== undefined) {
+        const out = [['keys', Array.isArray(t.json) ? 'its items' : 'its keys']];
+        const walk = (node, path, depth) => {
+            if (!node || typeof node !== 'object' || Array.isArray(node) || depth > 3) return;
+            Object.entries(node).forEach(([k, v]) => {
+                if (v && typeof v === 'object') {
+                    const at = path ? `${path}.${k}` : k;
+                    out.push([`keys:${at}`, Array.isArray(v) ? `the items of ${at}` : `the keys of ${at}`]);
+                    walk(v, at, depth + 1);
+                }
+            });
+        };
+        walk(t.json, '', 0);
+        return out.slice(0, 60);
+    }
+    return [['header', 'the column names'], ...(t.header || []).map(h => [`column:${h}`, `the values of ${h}`])];
+}
+
+function sourceFields(el) {
+    if (!el.source) {
+        return `${field(el, 'options', 'Options (separated by commas)')}
+        <button type="button" class="btn btn-secondary" data-choice-op="pick" title="A CSV (its column names, or a column's values) or a JSON (its keys), followed when your script rewrites it">📄 Options from a file…</button>`;
+    }
+    const r = fileOptions(el);
+    const uses = usesOf(el);
+    const use = el.use || (uses[0] && uses[0][0]) || '';
+    const info = r.loading ? '<span class="prop-hint">reading…</span>'
+        : r.error ? `<span class="prop-error">${escapeHtml(r.error)}</span>`
+            : `<span class="prop-hint">${r.options.length} option${r.options.length === 1 ? '' : 's'}: ${escapeHtml(r.options.slice(0, 6).join(', '))}${r.options.length > 6 ? ', …' : ''}</span>`;
+    return `<div class="prop-group"><label>Options from</label>
+            <div class="layer-file"><code>${escapeHtml(el.source)}</code>
+            <button type="button" class="btn btn-secondary" data-choice-op="pick">Choose…</button>
+            <button type="button" class="prop-reset" data-choice-op="clear" title="Write the options instead">✕</button></div></div>
+        ${uses.length ? `<div class="prop-group"><label>Take</label><select class="prop-control" data-prop="use">${uses.map(([u, t]) => `<option value="${escapeHtml(u)}" ${u === use ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select></div>` : ''}
+        <div class="prop-group">${info}</div>`;
+}
+
+let choicePanel = false;
+function initChoicePanel() {
+    const panel = document.getElementById('properties-body');
+    if (!panel || choicePanel) return;
+    choicePanel = true;
+    panel.addEventListener('click', async (e) => {
+        const op = e.target.closest('[data-choice-op]');
+        if (!op) return;
+        const el = activeElements()[state.selectedElementIndex];
+        if (!el || el.type !== 'choice') return;
+        if (op.dataset.choiceOp === 'clear') {
+            el.options = choiceOptions(el).join(', '); // the options it had, now written
+            delete el.source; delete el.use; delete el.original;
+        } else {
+            const api = pyApi();
+            if (!api || typeof api.select_vars_file !== 'function') { flashSaveIndicator('Files need the app'); return; }
+            const picked = await api.select_vars_file();
+            if (!picked || !picked.success || !picked.path) return;
+            const res = await linkDataFile(picked.path);
+            if (!res || !res.success) { flashSaveIndicator((res && res.error) || 'The file could not be read'); return; }
+            el.source = res.relative_path;
+            el.original = res.original;
+            delete el.use;
+        }
+        markDirty();
+        document.dispatchEvent(new CustomEvent('slide-content-changed'));
+    });
+}
+
+/** The options a file gave are kept written too (the file says what it last gave; an export without it reads them). */
+function keepFileOptions(el) {
+    if (!el.source) return;
+    const r = fileOptions(el);
+    if (!r.loading && !r.error) el.options = r.options.join(', ');
+}
+
 ElementRegistry.register({
     type: 'choice', label: 'Add Choice', icon: '📋', className: 'element-choice', category: 'interactive',
-    gl: { props: [...COMMON_PROPS, 'options', 'multiple'], numericProps: COMMON_NUMERIC, body: null },
+    gl: { props: [...COMMON_PROPS, 'options', 'multiple', 'source', 'use', 'original'], numericProps: COMMON_NUMERIC, body: null },
     defaults: base('choice', () => ({ var: freshName('choice'), options: 'A, B, C', value: 'A', multiple: 'no', label: 'Choose' }), [460, 70]),
-    renderDom(domEl, el, ctx) { renderBox(domEl, el); domEl.innerHTML = choiceMarkup(el, current(el)); bindOnCanvas(domEl, ctx); },
+    renderDom(domEl, el, ctx) { keepFileOptions(el); renderBox(domEl, el); domEl.innerHTML = choiceMarkup(el, current(el)); bindOnCanvas(domEl, ctx); },
     exportStyle,
     exportInner: (el) => choiceMarkup(el, inputStart(el)),
     // several options: the list grows to show them
     propChanged(el, prop) {
         if (prop === 'multiple' && el.multiple === 'yes') el.height = Math.max(el.height, Math.round((Number(el.fontSize) || 28) * 1.5 * Math.min(8, Math.max(2, choiceOptions(el).length)) + (el.label ? (Number(el.fontSize) || 28) * 1.4 : 0)));
     },
-    properties: (el) => `${commonFields(el)}
-        ${field(el, 'options', 'Options (separated by commas)')}
+    properties: (el) => `${(initChoicePanel(), '')}${commonFields(el)}
+        ${sourceFields(el)}
         <div class="prop-row">${field(el, 'value', el.multiple === 'yes' ? 'Starts with (commas)' : 'Starts with')}</div>
         <label class="prop-check"><input type="checkbox" data-prop="multiple" ${el.multiple === 'yes' ? 'checked' : ''}> Several at once (Ctrl+click in the list)</label>
         ${styleFields(el)}

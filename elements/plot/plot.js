@@ -99,8 +99,10 @@ export function plotSpec(el) {
     };
     // a matplotlib script: read again with the values at every drawing (core/mplEngine.js)
     if (script) spec.script = String(el.code || '');
-    // ranges from the layers at the starting values: they stay put while sliders move
-    spec.auto = autoRanges(spec, startingVariables());
+    // ranges from the layers at the starting values: they stay put while sliders move;
+    // not when a column is picked by a variable (another column: the axes fit it)
+    const pickedColumn = layers.some(l => DATA_KINDS.has(l.kind) && ['x', 'y', 'yerr', 'column'].some(k => String(l[k] ?? '').trim().startsWith('=')));
+    if (!pickedColumn) spec.auto = autoRanges(spec, startingVariables());
     return spec;
 }
 
