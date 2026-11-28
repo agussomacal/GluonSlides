@@ -679,6 +679,7 @@ A colour key: keys (the runs of a file, written ones) each with a colour, shared
 | `legend` | `no`: not shown on the slide (a chip in the editor) |
 | `clickable` | `no`: the legend's keys can't be turned off |
 | `label` | a title over the legend |
+| `only` | the keys the legend lists: `"=pick"` (a choice) shows only the runs picked; the others are hidden |
 
 The body gives colours set by hand (`sgd: #000000`, `adam: @primary`); a key without one takes the theme colour of its place. A body listing every key (`sgd`, `adam`, `ngd`, one per line) gives the order too.
 

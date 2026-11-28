@@ -2309,6 +2309,7 @@ button.pf-use:hover { border-color: #3b82f6; }
 
 /* elements/colorkey: the legend's keys turned off; the panel's rows */
 .gl-colorkey .gl-key.off { opacity: 0.35; text-decoration: line-through; }
+.gl-colorkey .gl-key.unlisted { display: none !important; }
 .gl-colorkey .gl-key.off .gl-key-swatch { filter: grayscale(1); }
 #slide-canvas [data-element-id].selected .gl-colorkey .gl-key { pointer-events: auto; }
 body.gl-shift-held #slide-canvas [data-element-id] .gl-colorkey .gl-key { pointer-events: none; }

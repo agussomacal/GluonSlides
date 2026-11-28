@@ -215,6 +215,8 @@ export async function getExportHtmlString({ startSlide = 0, startAt = null, star
             [data-step], [data-until] { transition: opacity 0.25s ease; }
             .step-hidden { opacity: 0; visibility: hidden; }
             .gl-off { display: none !important; } /* hidden by its condition (visible:"=…") */
+            .gl-colorkey .gl-key.off { opacity: 0.35; text-decoration: line-through; } /* a colour key's legend: a key turned off */
+            .gl-colorkey .gl-key.off .gl-key-swatch { filter: grayscale(1); }
             .gluon-blank { position: fixed; inset: 0; z-index: 2000; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
             .gluon-blank.black { background: #000000; opacity: 1; }
             .gluon-blank.white { background: #ffffff; opacity: 1; }

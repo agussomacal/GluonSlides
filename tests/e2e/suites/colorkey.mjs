@@ -78,6 +78,23 @@ await page.selectOption('#slide-canvas [data-element-id="3"] select', 'ngd');
 await page.waitForTimeout(250);
 check('choosing ngd: the shape turns ngd\'s colour', (await fill(4)) === rgb(info.ngd), await fill(4));
 
+// only:"=pick": the legend lists just the run the choice picked
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    (await import('/core/variables.js')).resetLiveValues();
+    state.slides[0].elements[0].only = '=pick';
+    (await import('/editor/editor.js')).redrawCanvas();
+});
+await page.waitForTimeout(250);
+const listed = () => app(() => [...document.querySelectorAll('#slide-canvas [data-element-id="2"] [data-glkey]')].filter(k => getComputedStyle(k).display !== 'none').map(k => k.dataset.glkey));
+check('only:"=pick": the legend lists just the run picked (adam)', JSON.stringify(await listed()) === '["adam"]', await listed());
+await page.click('#slide-canvas [data-element-id="3"]', { position: { x: 3, y: 3 } });
+await page.waitForTimeout(150);
+await page.selectOption('#slide-canvas [data-element-id="3"] select', 'sgd');
+await page.waitForTimeout(250);
+check('…choosing sgd: it lists sgd', JSON.stringify(await listed()) === '["sgd"]', await listed());
+await app(async () => { (await import('/core/variables.js')).resetLiveValues(); (await import('/editor/editor.js')).redrawCanvas(); });
+
 // ---------- the panel ----------
 await app(async () => {
     const { setSelectedElementIndices } = await import('/core/state.js');
@@ -183,6 +200,7 @@ const eStrokes = () => exp.evaluate(() => [...document.querySelectorAll('.slide.
 check('export: the runs in their key\'s colours', JSON.stringify(await eStrokes()) === JSON.stringify([info.adam, '#000000', info.ngd]), await eStrokes());
 await exp.click('.slide.active [data-glkey="adam"]');
 await exp.waitForTimeout(150);
+check('export: the key clicked looks off', await exp.evaluate(() => { const k = document.querySelector('.slide.active [data-glkey="adam"]'); return k.classList.contains('off') && Number(getComputedStyle(k).opacity) < 0.5; }));
 check('export: a click on a key in the legend hides its run', JSON.stringify(await eStrokes()) === JSON.stringify(['#000000', info.ngd]), await eStrokes());
 const eFill = () => exp.evaluate(() => getComputedStyle(document.querySelector('.slide.active [data-glid="4"] .shape-fill')).backgroundColor);
 check('export: the shape the colour of the run picked', (await eFill()) === rgb(info.adam), await eFill());
@@ -190,6 +208,8 @@ await exp.selectOption('.slide.active [data-glinput="pick"]', 'sgd');
 await exp.waitForTimeout(150);
 check('export: picking sgd: the shape turns black', (await eFill()) === 'rgb(0, 0, 0)', await eFill());
 check('export: palette() knows the theme there too', (await exp.evaluate(() => getComputedStyle(document.querySelector('.slide.active [data-glid="6"] .shape-fill')).borderTopColor)) === rgb(info.pal[1 % info.pal.length]));
+const eListed = () => exp.evaluate(() => [...document.querySelectorAll('.slide.active [data-glkey]')].filter(k => getComputedStyle(k).display !== 'none').map(k => k.dataset.glkey));
+check('export: the legend lists only the run picked (sgd)', JSON.stringify(await eListed()) === '["sgd"]', await eListed());
 check('export: no page errors', expErrors.length === 0, expErrors);
 await exp.close();
 

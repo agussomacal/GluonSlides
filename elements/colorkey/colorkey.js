@@ -15,14 +15,15 @@
 // theme colour of its place) and colours set by hand. On the slide it is
 // a legend: a click on a key turns it off and on while presenting
 // (clickable:no: not), or nothing (legend:no: a chip in the editor only).
+// only:"=pick" lists just the keys a choice picked (the others hidden).
 // ============================================================
 
 import { state, markDirty, activeElements, pyApi, flashSaveIndicator, forEachElementDeep } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml, renderMarkdownAndKatexToString } from '../../core/render.js';
 import { fontStack } from '../../core/fonts.js';
-import { bindSliders, liveUpdate } from '../../core/liveEngine.js';
-import { allVariables, setLiveValue, colorKeyEntries, parseColorLines } from '../../core/variables.js';
+import { bindSliders, liveUpdate, compileFormula, variableValue } from '../../core/liveEngine.js';
+import { allVariables, startingVariables, setLiveValue, colorKeyEntries, parseColorLines } from '../../core/variables.js';
 import { hasFormulas, liveApplyToCanvas } from '../../core/bindings.js';
 import { colorField } from '../../ui/colorPicker.js';
 import { dataTable, linkDataFile } from '../../core/plotData.js';
@@ -42,15 +43,25 @@ function shownNow(el, entries) {
     return Array.isArray(v) ? v : entries.map(e => e.key);
 }
 
-function legendMarkup(el, entries, shown) {
+/** The keys `only` lists now (a choice: only:"=pick"), or null (all). */
+function onlyNow(el, vars) {
+    const code = String(el.only || '').trim().replace(/^=\s*/, '');
+    if (!code) return null;
+    const v = variableValue(code, vars) ?? (() => { const f = compileFormula(code, 'python'); try { return f.error ? undefined : f.exec(Object.assign(Object.create(null), vars)); } catch (e) { return undefined; } })();
+    if (v === undefined) return null;
+    return (Array.isArray(v) ? v : [v]).map(String);
+}
+
+function legendMarkup(el, entries, shown, only = null) {
     const fs = Number(el.fontSize) || 26;
     const clickable = el.clickable !== 'no';
     const title = el.label ? `<div class="gl-colorkey-title" style="font-weight:600; margin-bottom:${fs * 0.2}px;">${renderMarkdownAndKatexToString({ content: el.label })}</div>` : '';
-    const rows = entries.map(e => `<button type="button" class="gl-key${shown.includes(e.key) ? '' : ' off'}" data-glkey="${escapeHtml(e.key)}"
-        style="display:flex; align-items:center; gap:${fs * 0.4}px; font:inherit; color:inherit; background:transparent; border:0; padding:${fs * 0.08}px 0; cursor:${clickable ? 'pointer' : 'default'}; text-align:left;">
+    const rows = entries.map(e => `<button type="button" class="gl-key${shown.includes(e.key) ? '' : ' off'}${only && !only.includes(e.key) ? ' unlisted' : ''}" data-glkey="${escapeHtml(e.key)}"
+        style="display:${only && !only.includes(e.key) ? 'none' : 'flex'}; align-items:center; gap:${fs * 0.4}px; font:inherit; color:inherit; background:transparent; border:0; padding:${fs * 0.08}px 0; cursor:${clickable ? 'pointer' : 'default'}; text-align:left;">
         <span class="gl-key-swatch" style="display:inline-block; width:${fs * 1.1}px; height:${fs * 0.7}px; border-radius:${fs * 0.15}px; background:${escapeHtml(e.color)};"></span>
         <span>${escapeHtml(e.key)}</span></button>`).join('');
-    return `<div class="gl-input gl-colorkey" data-glinput="${escapeHtml(`${el.var || 'colors'}.shown`)}" data-gltype="keys" data-glclickable="${clickable ? 'yes' : 'no'}"
+    const onlyAttr = el.only ? ` data-glonly="${escapeHtml(String(el.only).trim().replace(/^=\s*/, ''))}"` : '';
+    return `<div class="gl-input gl-colorkey" data-glinput="${escapeHtml(`${el.var || 'colors'}.shown`)}" data-gltype="keys" data-glclickable="${clickable ? 'yes' : 'no'}"${onlyAttr}
         style="position:absolute; inset:0; display:flex; flex-direction:column; justify-content:flex-start; font-size:${fs}px; overflow:hidden;">${title}${rows || '<span style="opacity:0.6">no keys yet</span>'}</div>`;
 }
 
@@ -147,7 +158,7 @@ ElementRegistry.register({
     type: 'colorkey', label: 'Add Colour key', icon: '🎨', className: 'element-colorkey', category: 'interactive',
 
     gl: {
-        props: ['x', 'y', 'width', 'height', 'var', 'label', 'keys', 'source', 'use', 'skip', 'original', 'legend', 'clickable', 'fontSize', 'fontFamily', 'fontColor'],
+        props: ['x', 'y', 'width', 'height', 'var', 'label', 'keys', 'source', 'use', 'skip', 'original', 'legend', 'clickable', 'only', 'fontSize', 'fontFamily', 'fontColor'],
         numericProps: ['x', 'y', 'width', 'height', 'fontSize'],
         body: 'entries',
     },
@@ -170,7 +181,7 @@ ElementRegistry.register({
         const entries = colorKeyEntries(el);
         domEl.style.fontFamily = fontStack(el.fontFamily);
         domEl.style.color = el.fontColor;
-        domEl.innerHTML = el.legend === 'no' ? chipMarkup(el, entries) : legendMarkup(el, entries, shownNow(el, entries));
+        domEl.innerHTML = el.legend === 'no' ? chipMarkup(el, entries) : legendMarkup(el, entries, shownNow(el, entries), onlyNow(el, allVariables()));
         if (ctx.context !== 'canvas' || el.legend === 'no') return;
         // on the canvas the legend works once selected (style.css), like the other inputs
         bindSliders(domEl, {}, (name, v) => {
@@ -185,7 +196,7 @@ ElementRegistry.register({
     exportStyle: (el) => (el.legend === 'no' ? 'display:none;' : `font-family:${fontStack(el.fontFamily)}; color:${el.fontColor};`),
     exportInner(el) {
         const entries = colorKeyEntries(el);
-        return el.legend === 'no' ? '' : legendMarkup(el, entries, entries.map(e => e.key));
+        return el.legend === 'no' ? '' : legendMarkup(el, entries, entries.map(e => e.key), onlyNow(el, startingVariables()));
     },
 
     properties(el) {
@@ -219,6 +230,7 @@ ElementRegistry.register({
                 <div class="arrange-row" style="margin-top:6px;"><button type="button" class="btn btn-secondary" data-ck-op="shuffle">🔀 Shuffle</button><button type="button" class="btn btn-secondary" data-ck-op="reset">↺ Palette order</button></div></div>
             <label class="prop-check"><input type="checkbox" data-prop="legend" ${el.legend !== 'no' ? 'checked' : ''}> Shown on the slide as a legend</label>
             <label class="prop-check"><input type="checkbox" data-prop="clickable" ${el.clickable !== 'no' ? 'checked' : ''} ${el.legend === 'no' ? 'disabled' : ''}> A click on a key turns it off and on (while presenting)</label>
+            <div class="prop-group"><label title="Only the keys this gives are listed in the legend: a choice's variable (=pick), a list, a condition…">Only list</label><input type="text" class="prop-control" data-prop="only" value="${escapeHtml(el.only || '')}" placeholder="every key (e.g. =pick, a choice)" spellcheck="false" ${el.legend === 'no' ? 'disabled' : ''}></div>
             <p class="prop-hint">Each key has a colour: <code>${name}[run]</code> in formulas (a shape's fill: <code>=${name}[pick]</code>), <code>colors:${name}</code> on a plot layer with <em>One per value of</em>. The keys on: <code>${name}.shown</code> (<em>Only show</em> <code>=${name}.shown</code>).</p>`;
     },
 });

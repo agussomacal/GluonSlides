@@ -104,7 +104,7 @@ export function plotFrom(info, cfg, file, original) {
         if (pick) {
             choice = { var: pick, source: file, use: `column:${g}`, original, multiple: cfg.several ? 'yes' : 'no', value: cfg.several ? values.join(', ') : (values[0] || ''), label: g, options: values.join(', ') };
         }
-        const colorkey = key ? { var: key, source: file, use: `column:${g}`, original, keys: undefined, label: g, legend: cfg.keyLegend ? 'yes' : 'no', clickable: pick ? 'no' : 'yes', entries: '', rows: values.length } : null;
+        const colorkey = key ? { var: key, source: file, use: `column:${g}`, original, keys: undefined, label: g, legend: cfg.keyLegend ? 'yes' : 'no', clickable: pick ? 'no' : 'yes', ...(pick ? { only: `=${pick}` } : {}), entries: '', rows: values.length } : null;
         return { code, choice, colorkey, xlabel: kind === 'hist' ? ref(cfg.y) : ref(cfg.x), ylabel: kind === 'hist' ? '' : ref(cfg.y) };
     }
     const ys = [...cfg.ys].sort((a, b) => a - b);
@@ -122,7 +122,8 @@ export function plotFrom(info, cfg, file, original) {
             return `.${kind} ${head}${xPart} ${yKey}:${q(n)} label:${q(n)}${colorOf(n)}${bars}${cond}`;
         }).join('\n');
     }
-    const colorkey = key ? { var: key, keys: names.join(', '), label: '', legend: cfg.keyLegend ? 'yes' : 'no', clickable: pick ? 'no' : 'yes', entries: '', rows: names.length } : null;
+    // with a choice: the legend lists only the columns picked
+    const colorkey = key ? { var: key, keys: names.join(', '), label: '', legend: cfg.keyLegend ? 'yes' : 'no', clickable: pick ? 'no' : 'yes', ...(pick ? { only: `=${pick}` } : {}), entries: '', rows: names.length } : null;
     if (pick) {
         const skip = info.cols.map(c => c.ref).filter(r => !names.includes(r));
         choice = { var: pick, source: info.header ? file : '', use: 'header', skip: skip.join(', '), original, multiple: cfg.several ? 'yes' : 'no', value: cfg.several ? names.join(', ') : names[0], label: 'Show', options: names.join(', ') };

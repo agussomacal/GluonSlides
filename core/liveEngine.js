@@ -2055,8 +2055,24 @@ function readControl(node) {
     return node.value;
 }
 
+/** A colour key's legend with only:"=pick": the keys not listed now hidden. */
+function liveOnly(root, vars) {
+    within(root, '[data-glonly]').forEach(node => {
+        const code = node.getAttribute('data-glonly');
+        let v = variableValue(code, vars);
+        if (v === undefined) {
+            const f = compileFormula(code, 'python');
+            if (f.error || f.names.some(n => !(n in vars))) return;
+            try { v = f.exec(Object.assign(Object.create(null), vars)); } catch (e) { return; }
+        }
+        const list = (Array.isArray(v) ? v : [v]).map(String);
+        node.querySelectorAll('[data-glkey]').forEach(k => { const out = !list.includes(k.getAttribute('data-glkey')); k.classList.toggle('unlisted', out); k.style.display = out ? 'none' : 'flex'; });
+    });
+}
+
 /** Shows the variables' values in the controls of `root` (not the one being typed in). */
 function liveInputs(root, vars) {
+    liveOnly(root, vars);
     within(root, '[data-glinput]').forEach(node => {
         const name = node.getAttribute('data-glinput');
         if (!(name in vars) || node === document.activeElement) return;

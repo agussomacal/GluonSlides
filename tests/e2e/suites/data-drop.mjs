@@ -145,6 +145,8 @@ els = await elements();
 plot = els.find(e => e.type === 'plot');
 let choice = els.find(e => e.type === 'choice');
 check('…the plot: group:run colors:runcol show:"=pick"', plot && plot.code === '.line data:{data/long.csv} original:/home/me/exp/long.csv x:step y:loss group:run colors:runcol show:"=pick"', plot && plot.code);
+const ckLong = els.find(e => e.type === 'colorkey');
+check('…its colour key lists only the runs picked (only:"=pick")', ckLong && ckLong.only === '=pick', ckLong);
 check('…a choice under it: the runs, several at once, all picked', choice && choice.var === 'pick' && choice.source === 'data/long.csv' && choice.use === 'column:run' && choice.multiple === 'yes' && choice.value === 'adam, sgd' && choice.y > plot.y + plot.height, choice);
 const lines = await app(() => document.querySelectorAll('#slide-canvas .element-plot svg path[stroke-linejoin]').length);
 check('…two runs drawn', lines === 2, lines);
