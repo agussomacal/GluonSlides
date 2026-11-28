@@ -14,7 +14,8 @@
 
 import { markDirty, findElementPath, currentSlide } from '../core/state.js';
 import { ElementRegistry } from '../core/registry.js';
-import { setFormula, BINDABLE_COMMON } from '../core/bindings.js';
+import { setFormula, BINDABLE_COMMON, COLOR_KEYS } from '../core/bindings.js';
+import { allVariables } from '../core/variables.js';
 import { parseTracks, formatValue, isScriptLanguage, PALETTE } from '../core/liveEngine.js';
 import { escapeHtml } from '../core/render.js';
 import { resolveColor } from '../core/colors.js';
@@ -27,6 +28,7 @@ const LABELS = {
     r: 'Radius', cx: 'Centre x', cy: 'Centre y', radius: 'Corner radius', fontSize: 'Text size', borderWidth: 'Border thickness',
     strokeWidth: 'Line width', gap: 'Gap', value: 'Starts at', min: 'From', max: 'To', step: 'Step', duration: 'Duration',
     samples: 'Points (curves)', xmin: 'x axis from', xmax: 'x axis to', ymin: 'y axis from', ymax: 'y axis to',
+    bg: 'Fill colour', borderCol: 'Border colour', fontColor: 'Text colour', stroke: 'Line colour', fill: 'Fill colour', accent: 'Accent colour',
 };
 
 // a plot: its axis ranges are text settings ("" = found from the layers), written "=…" as they are
@@ -51,6 +53,17 @@ const isNumber = (v) => v !== '' && Number.isFinite(Number(v));
 function elementSetting(el, key) {
     const before = { formula: el.formulas ? el.formulas[key] : undefined, value: el[key], hidden: el._hidden };
     const condition = key === 'visible';
+    if (COLOR_KEYS.includes(key)) {
+        // a colour: a text formula (runcol[pick], palette(2), cmap(err, 0, 1))
+        return {
+            key, label: LABELS[key] || key, condition: false, color: true,
+            formula: before.formula !== undefined,
+            now: before.formula ? `=${before.formula}` : String(before.value ?? ''),
+            start: before.formula !== undefined ? before.formula : '',
+            apply(text) { setFormula(el, key, text || null); if (!text) el[key] = before.value; },
+            restore() { setFormula(el, key, before.formula ?? null); if (before.formula === undefined) el[key] = before.value; },
+        };
+    }
     return {
         key,
         label: LABELS[key] || key,
@@ -135,6 +148,9 @@ function settingsOf(el) {
         if (!curves || isScriptLanguage(el.lang)) keys = keys.filter(k => k !== 'samples');
         keys = keys.filter(k => k !== 'fontSize' && k !== 'borderWidth');
     }
+    // its colours (those it has)
+    const typeDefaults = (() => { try { return (def && typeof def.defaults === 'function' && def.defaults({})) || {}; } catch (e) { return {}; } })();
+    keys = [...keys, ...COLOR_KEYS.filter(k => (el[k] !== undefined || typeDefaults[k] !== undefined) && !(el.type === 'path' && k === 'fill' && el.closed !== 'yes') && !['plot', 'colorkey', 'animation'].includes(el.type))];
     const list = keys.map(key => elementSetting(el, key));
     if (el.type === 'plot') list.push(...PLOT_RANGES.map(key => rangeSetting(el, key)));
     return list;
@@ -156,13 +172,18 @@ function place(at) {
 function formulaStep(setting, at, withVar) {
     const isCondition = setting.condition;
     let start = setting.start;
-    // a variable to follow: a setting without a formula starts at its value plus it
-    if (withVar && !setting.formula) start = isCondition ? withVar : start ? `${start} + ${withVar}` : withVar;
+    // a variable to follow: a setting without a formula starts at its value plus it (a colour key: its first key's colour)
+    if (withVar && !setting.formula) {
+        const vars = allVariables();
+        const keyed = Object.keys(vars).filter(n => n.startsWith(`${withVar}.`) && n !== `${withVar}.shown`).map(n => n.slice(withVar.length + 1));
+        if (setting.color) start = keyed.length ? `${withVar}['${keyed[0].replace(/'/g, "\\'")}']` : withVar;
+        else start = isCondition ? withVar : start ? `${start} + ${withVar}` : withVar;
+    }
     const title = setting.layerLabel ? `${escapeHtml(setting.layerLabel)} › ${escapeHtml(setting.label)}` : escapeHtml(setting.label);
     box.innerHTML = `
         <div class="follow-title">${title} <span>follows</span></div>
-        <div class="prop-group"><input type="text" class="prop-control follow-formula" spellcheck="false" ${isCondition ? 'data-formula-only' : ''} ${setting.whole ? 'data-whole' : ''}
-            value="${escapeHtml(isCondition ? start : `=${start}`)}" placeholder="${isCondition ? 'a condition, e.g. mu > 0' : '=…'}"></div>
+        <div class="prop-group"><input type="text" class="prop-control follow-formula" spellcheck="false" ${isCondition ? 'data-formula-only' : ''} ${setting.whole ? 'data-whole' : ''} ${setting.color ? 'data-color-formula' : ''}
+            value="${escapeHtml(isCondition ? start : `=${start}`)}" placeholder="${isCondition ? 'a condition, e.g. mu > 0' : setting.color ? "=runcol[pick], =palette(2), ='#dc2626'" : '=…'}"></div>
         <div class="follow-hint">Enter: keep · Esc: as it was${setting.whole ? ' · whole numbers: rounded' : ''}</div>`;
     const input = box.querySelector('input');
     attachFormulaInput(input);

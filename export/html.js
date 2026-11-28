@@ -15,6 +15,7 @@ import { expandSlides } from '../core/bibPages.js';
 import { masterFor } from '../core/masters.js';
 import { withSlideContext, invalidateNumbering } from '../core/fields.js';
 import { startingVariables } from '../core/variables.js';
+import { palette, resolveColor } from '../core/colors.js';
 import { applyFormulas } from '../core/bindings.js';
 
 const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/';
@@ -66,8 +67,11 @@ async function liveScript(needed, needsMatplotlib = false) {
         // in a block of its own: its names can't collide with the engine's
         + (needsMatplotlib ? `\n{\n${strip(await fetchText('core/mplEngine.js', 'the matplotlib reader'))}\n}` : '');
     const vars = JSON.stringify(startingVariables()).replace(/</g, '\\u003c');
+    // the theme colours (palette(i), '@primary' in colour formulas)
+    const theme = JSON.stringify(palette().map(p => ({ name: p.name, color: resolveColor(p.color) || p.color }))).replace(/</g, '\\u003c');
     const run = `(function () {
 ${engine}
+setThemeColors(${theme});
 const vars = ${vars};
 const startVars = Object.assign({}, vars);
 const root = document.body;

@@ -20,7 +20,7 @@ const CATEGORIES = [
     { id: 'media', label: 'Media', icon: '🖼️' },
     { id: 'plots', label: 'Plots', icon: '📈', menu: true },             // a plot per kind of layer
     { id: 'interactive', label: 'Interactive', icon: '🎚️', menu: true,  // what sets variables
-        order: ['slider', 'checkbox', 'numberbox', 'textbox', 'choice', 'animation'] },
+        order: ['slider', 'checkbox', 'numberbox', 'textbox', 'choice', 'animation', 'colorkey'] },
     { id: 'macros', label: 'Macros', icon: '🧩', menu: true }, // always a dropdown
 ];
 

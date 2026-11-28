@@ -663,6 +663,29 @@ A file of names only (one per line, or one row) gives those names. `skip:"step"`
 
 **Picking by a variable.** In formulas and in `\var{…}`, `name[key]` makes a name from another variable's value: with `results.json` = `{"adam": {"acc": 0.91}, "sgd": {"acc": 0.85}}` (variables `results.adam.acc`, `results.sgd.acc`) and a choice `opt`, `results[opt].acc` is the chosen one's (`\var{results[opt].acc}[%.2f]` in text; `results['adam'].acc` with a written key). On a list, `opts[0]` is an element (`opts[-1]` the last). Only Python formulas take it.
 
+### colorkey
+
+A colour key: keys (the runs of a file, written ones) each with a colour, shared by plots and objects so a run has the same colour everywhere. On the slide it is a legend; a click on a key turns it off and on while presenting.
+
+```gl
+.element.colorkey id:30 var:runcol keys:"adam, sgd, ngd" x:1500 y:100 width:320 height:220
+	sgd: #000000
+```
+
+| Parameter | Meaning |
+|---|---|
+| `var` | its variable: `runcol.adam` is adam's colour (`runcol[run]` in formulas), `runcol.shown` the keys on (all at the start) |
+| `keys` | the keys, separated by commas; or `source`, `use`, `skip`, `original` as a [choice](#checkbox-numberbox-textbox-choice) takes its options from a file |
+| `legend` | `no`: not shown on the slide (a chip in the editor) |
+| `clickable` | `no`: the legend's keys can't be turned off |
+| `label` | a title over the legend |
+
+The body gives colours set by hand (`sgd: #000000`, `adam: @primary`); a key without one takes the theme colour of its place. A body listing every key (`sgd`, `adam`, `ngd`, one per line) gives the order too.
+
+Use it with `colors:runcol` on a plot layer with `group:` (each value its colour) and `show:"=runcol.shown"` (the legend's clicks show and hide the runs), or in any colour setting: `bg:"=runcol[pick]"`.
+
+**Colours as formulas.** The colours of an object (`bg`, `borderCol`, `fontColor`, a line's `stroke` and `fill`, an input's `accent`) and a plot layer's `color` can be formulas giving a colour: `"=runcol[pick]"`, `"='#dc2626' if err > 0.1 else '@primary'"`, `"=palette(2)"` (the third theme colour), `"=cmap(err, 0, 0.1, 'magma')"` (a colour along a colour map: `viridis`, `magma`, `coolwarm`, `blues`, `gray`). Formulas are always written quoted.
+
 ### animation
 
 Variables that move by themselves while presenting, all in step. In the editor it is a dashed chip saying what it does; in the slide show and the exports it is invisible. The body has a line per variable:

@@ -20,6 +20,8 @@ export function variableSource(name) {
     const visit = (els) => forEachElementDeep(els || [], el => {
         if (!input && INPUT_TYPES.includes(el.type) && el.var === name) input = el;
         if (!animation && el.type === 'animation' && parseTracks(el.tracks).some(t => t.name === name)) animation = el;
+        // a colour key: its colours (runcol.adam) and the keys on (runcol.shown)
+        if (!input && el.type === 'colorkey' && el.var && (name === el.var || name.startsWith(`${el.var}.`))) input = el;
     });
     (state.slides || []).forEach(s => visit(s.elements));
     (state.masters || []).forEach(m => visit(m.elements));
@@ -37,7 +39,7 @@ export function goToVariable(name) {
     if (!src) return false;
     if (src.kind === 'slider') {
         revealElement(src.id);
-        flashSaveIndicator(`${name}: set by this ${{ slider: 'slider', checkbox: 'checkbox', numberbox: 'number box', textbox: 'text box', choice: 'choice', animation: 'animation' }[src.type] || 'input'}`);
+        flashSaveIndicator(`${name}: set by this ${{ slider: 'slider', checkbox: 'checkbox', numberbox: 'number box', textbox: 'text box', choice: 'choice', animation: 'animation', colorkey: 'colour key' }[src.type] || 'input'}`);
         return true;
     }
     openProjectSettings('variables');

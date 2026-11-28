@@ -161,7 +161,7 @@ const ShapeElement = {
     },
 
     exportInner(el) {
-        return `<div style="${fillStyle(el)}"></div>`;
+        return `<div class="shape-fill" style="${fillStyle(el)}"></div>`;
     },
 
     properties(el) {

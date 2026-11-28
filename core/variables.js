@@ -19,6 +19,7 @@ import { state, pyApi, forEachElementDeep } from './state.js';
 import { protectMath } from './render.js';
 import { formatValue, compileFormula, parseTracks, variableValue } from './liveEngine.js';
 import { dataTable } from './plotData.js';
+import { palette, resolveColor } from './colors.js';
 
 const fileState = new Map();   // `${folder}\u0000${file}` -> { values, mtime, error }
 const live = {};               // slider positions moved in the editor (not saved)
@@ -133,11 +134,48 @@ export function inputStart(el) {
 
 export const INPUT_TYPES = ['slider', 'checkbox', 'numberbox', 'textbox', 'choice'];
 
+// ---------- colour keys (elements/colorkey) ----------
+
+/** A colour key's lines: [{ key, color? }] ("adam: @primary", or just "adam": its place in the order). */
+export function parseColorLines(text) {
+    return String(text || '').split('\n').map(l => l.replace(/#(?![0-9a-fA-F]{3,8}\b).*$/, '').trim()).filter(Boolean).map(l => {
+        const m = l.match(/^(.+?)\s*:\s*(\S.*)$/);
+        return m ? { key: m[1].trim(), color: m[2].trim() } : { key: l };
+    });
+}
+
+/** Its keys, in order, each with its colour: [{ key, color (CSS), set (written by hand) }]. */
+export function colorKeyEntries(el) {
+    const lines = parseColorLines(el.entries);
+    let keys;
+    if (el.source) {
+        const r = fileOptions(el);
+        const skip = new Set(String(el.skip || '').split(',').map(o => o.trim()).filter(Boolean));
+        keys = r.loading || r.error ? lines.map(l => l.key) : r.options.filter(o => !skip.has(o));
+    } else if (el.keys) keys = String(el.keys).split(',').map(k => k.trim()).filter(Boolean);
+    else keys = lines.map(l => l.key);
+    // the order: the body's when it lists every key (reordered in the panel), else the keys' own
+    const written = lines.map(l => l.key);
+    const ordered = keys.length && keys.every(k => written.includes(k)) ? written.filter(k => keys.includes(k)) : keys;
+    const pal = palette().map(p => resolveColor(p.color) || p.color);
+    return [...new Set(ordered)].map((key, i) => {
+        const line = lines.find(l => l.key === key);
+        const set = Boolean(line && line.color);
+        return { key, color: set ? (resolveColor(line.color) || line.color) : pal[i % pal.length], set, written: line ? line.color : '' };
+    });
+}
+
 /** Each input's variable and its starting value, over the whole project. */
 export function sliderValues() {
     const out = {};
     const visit = (els) => forEachElementDeep(els || [], el => {
         if (INPUT_TYPES.includes(el.type) && el.var) out[el.var] = inputStart(el);
+        // a colour key: name.key = its colour; name.shown = the keys on (all, at the start)
+        if (el.type === 'colorkey' && el.var) {
+            const entries = colorKeyEntries(el);
+            entries.forEach(e => { out[`${el.var}.${e.key}`] = e.color; });
+            out[`${el.var}.shown`] = entries.map(e => e.key);
+        }
     });
     (state.slides || []).forEach(s => visit(s.elements));
     (state.masters || []).forEach(m => visit(m.elements));

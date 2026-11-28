@@ -34,7 +34,7 @@ const els = () => app(async () => JSON.parse(JSON.stringify((await import('/core
 let e = await els();
 check('read: formulas kept, values computed at mu = 0', e[1].formulas.x === '860 + 300*mu' && e[1].x === 860 && e[1].width === 200 && (e[1].rotate || 0) === 0 && e[2].formulas.visible === 'mu > 0' && e[2]._hidden === true && e[2].opacity === 0.5, [e[1], e[2]]);
 const saved = await app(async () => (await import('/core/state.js')).serializeProject());
-check('written back as typed', saved.includes('.element.shape id:3 rotate:=30*mu x:"=860 + 300*mu" y:400 width:"=200 + 50*mu"') && saved.includes('visible:"=mu > 0"') && saved.includes('opacity:0.5'), saved.split('\n').filter(l => l.startsWith('.element')).join(' | '));
+check('written back as typed', saved.includes('.element.shape id:3 rotate:"=30*mu" x:"=860 + 300*mu" y:400 width:"=200 + 50*mu"') && saved.includes('visible:"=mu > 0"') && saved.includes('opacity:0.5'), saved.split('\n').filter(l => l.startsWith('.element')).join(' | '));
 
 // ---------- moving the constant ----------
 const shifts = await app(async () => {

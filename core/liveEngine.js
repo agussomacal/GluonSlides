@@ -89,7 +89,43 @@ export const FUNCTIONS = {
     sinc: (x) => (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)),
     degrees: (x) => x * 180 / Math.PI, radians: (x) => x * Math.PI / 180, deg2rad: (x) => x * Math.PI / 180,
     mod: (a, b) => ((a % b) + b) % b, float: Number, int: Math.trunc,
+    // colours: the i-th theme colour; a colour along a colour map (cmap(err, 0, 0.1, 'magma'))
+    palette: (i) => { const list = THEME.list.length ? THEME.list : PALETTE; const k = Math.round(Number(i) || 0); return list[((k % list.length) + list.length) % list.length]; },
+    cmap: (v, lo = 0, hi = 1, name = 'viridis') => `#${colormap(String(name), (Number(v) - lo) / ((hi - lo) || 1)).map(c => c.toString(16).padStart(2, '0')).join('')}`,
 };
+
+// ---------- colours ----------
+
+// The project's theme colours (core/colors.js; the exported page is given them): @name and palette(i).
+let THEME = { names: {}, list: [] };
+export function setThemeColors(entries) {
+    const list = Array.isArray(entries) ? entries.filter(e => e && e.color) : [];
+    THEME = { names: Object.fromEntries(list.map(e => [e.name, e.color])), list: list.map(e => e.color) };
+}
+
+/** A colour as CSS: a theme colour (@primary) as its value. */
+export function cssColor(v) {
+    const s = String(v ?? '').trim();
+    if (s.startsWith('@')) return THEME.names[s.slice(1)] || '#ff00ff';
+    return s;
+}
+
+// the colour settings an object can take a formula for, and where each goes on its node
+export const COLOR_KEYS = ['bg', 'borderCol', 'fontColor', 'stroke', 'fill', 'accent'];
+
+/** Puts colour setting `key` = `value` on an element's node (canvas or exported page). */
+export function applyColor(node, key, value) {
+    const c = cssColor(value);
+    if (!c) return;
+    const fill = node.querySelector(':scope > .shape-fill');
+    const path = node.querySelector(':scope > svg.path-svg > path');
+    if (key === 'bg') (fill || node).style.backgroundColor = c;
+    else if (key === 'borderCol') (fill || node).style.borderColor = c;
+    else if (key === 'fontColor') node.style.color = c;
+    else if (key === 'stroke' && path) path.setAttribute('stroke', c);
+    else if (key === 'fill' && path && path.getAttribute('fill') !== 'none') path.setAttribute('fill', c);
+    else if (key === 'accent') node.querySelectorAll('input, select').forEach(i => { i.style.accentColor = c; });
+}
 // Random numbers (histograms sampled from a formula): a seeded generator, so a
 // slider moving the distribution moves the same draws instead of new noise.
 function mulberry32(seed) {
@@ -841,6 +877,14 @@ const COLUMN_KEYS = { points: ['x', 'y', 'yerr'], line: ['x', 'y'], bar: ['x', '
 /** A layer with its number settings worked out for these values (formulas evaluated, whole numbers rounded). */
 function resolveLayer(layer, vars) {
     let out = layer;
+    // a colour given by a formula (color:"=runcol['adam']", color:"=cmap(err, 0, 1)")
+    if (typeof layer.color === 'string' && layer.color.trim().startsWith('=')) {
+        const f = compileFormula(layer.color.trim().slice(1), 'python');
+        if (f.error) throw new LayerError(`color: ${f.error}`);
+        const missing = f.names.filter(n => !(n in vars) && !(n in CONSTANTS));
+        if (missing.length) throw new LayerError(`color: unknown name ${missing.join(', ')}`);
+        out = { ...layer, color: cssColor(f.exec(Object.assign(Object.create(null), vars))) };
+    }
     for (const key of COLUMN_KEYS[layer.kind] || []) {
         const v = layer[key];
         if (typeof v !== 'string' || !v.trim().startsWith('=')) continue;
@@ -1260,11 +1304,11 @@ export function isScriptLanguage(name) {
 
 /** A plot written as a script, as layers and settings for these values (its error in scriptError). */
 export function expandPlot(spec, vars) {
-    if (!spec || spec.script === undefined || !SCRIPT_LANGUAGES[spec.lang]) return expandGroups(spec);
+    if (!spec || spec.script === undefined || !SCRIPT_LANGUAGES[spec.lang]) return expandGroups(spec, vars);
     try {
         const { layers, settings } = SCRIPT_LANGUAGES[spec.lang](spec.script, vars || {});
         const set = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v !== undefined && v !== null));
-        return expandGroups({ ...spec, ...set, layers });
+        return expandGroups({ ...spec, ...set, layers }, vars);
     } catch (e) {
         return { ...spec, layers: [], scriptError: e.line ? `line ${e.line}: ${e.message}` : e.message };
     }
@@ -1283,10 +1327,11 @@ function columnIndex(table, which) {
  * A data layer with group:<column> (a CSV in long format: run, step, loss)
  * becomes one layer per value of that column, in order: its rows, a colour
  * of its own, the value as its label (after the layer's label, if any);
- * x and y (a histogram's column) default to the other columns. Each keeps
+ * x and y (a histogram's column) default to the other columns; colors:<a
+ * colour key> gives each group its colour there. Each keeps
  * groupOf (the layer it came from) and groupValue (for show:).
  */
-function expandGroups(spec) {
+function expandGroups(spec, vars = {}) {
     if (!spec || !(spec.layers || []).some(l => l.group)) return spec;
     const layers = [];
     spec.layers.forEach((layer, i) => {
@@ -1309,7 +1354,9 @@ function expandGroups(spec) {
             delete sub.data;
             delete sub.group;
             Object.entries(defaults).forEach(([name, col]) => { if ((sub[name] === undefined || sub[name] === '') && col !== undefined) sub[name] = col; });
-            sub.color = layer.color && values.length === 1 ? layer.color : PALETTE[(i + k) % PALETTE.length];
+            // colors:runcol (a colour key): each group its colour there, the same in every plot
+            const keyed = layer.colors && vars ? vars[`${String(layer.colors).trim()}.${v}`] : undefined;
+            sub.color = typeof keyed === 'string' ? cssColor(keyed) : layer.color && values.length === 1 ? layer.color : PALETTE[(i + k) % PALETTE.length];
             sub.label = layer.label ? `${layer.label} ${v}` : v;
             layers.push(sub);
         });
@@ -1864,6 +1911,7 @@ function liveBindings(root, vars) {
             if (f.error || f.names.some(n => !(n in vars))) return;
             let v;
             try { v = f.exec(Object.assign(Object.create(null), vars)); } catch (e) { return; }
+            if (COLOR_KEYS.includes(key)) { if (typeof v === 'string') applyColor(node, key, v); return; }
             v = typeof v === 'boolean' ? (v ? 1 : 0) : Number(v);
             if (!Number.isFinite(v)) return;
             const px = `${Math.round(v * 1000) / 1000}px`;
@@ -1965,6 +2013,18 @@ export function bindSliders(root, vars, onChange) {
         vars[name] = value;
         onChange(name, value);
     });
+    // a colour key's legend (elements/colorkey, data-gltype="keys"): a click on a key turns it off or on;
+    // its variable is the list of keys on
+    root.addEventListener('click', (e) => {
+        const key = e.target && e.target.closest ? e.target.closest('[data-glkey]') : null;
+        const box = key && key.closest('[data-glinput][data-gltype="keys"]');
+        if (!box || box.getAttribute('data-glclickable') === 'no') return;
+        key.classList.toggle('off');
+        const name = box.getAttribute('data-glinput');
+        const value = [...box.querySelectorAll('[data-glkey]')].filter(k => !k.classList.contains('off')).map(k => k.getAttribute('data-glkey'));
+        vars[name] = value;
+        onChange(name, value);
+    });
     // A clicked input keeps the keys until Esc or Enter (or a click
     // elsewhere): they let go of it, without ending the slide show. (In
     // full screen the browser keeps Esc for leaving full screen: Enter then.)
@@ -2003,6 +2063,7 @@ function liveInputs(root, vars) {
         const v = vars[name];
         const type = node.getAttribute('data-gltype');
         if (type === 'bool') node.checked = Boolean(v);
+        else if (type === 'keys') node.querySelectorAll('[data-glkey]').forEach(k => k.classList.toggle('off', !(Array.isArray(v) && v.includes(k.getAttribute('data-glkey')))));
         else if (type === 'choices') [...node.options].forEach(o => { o.selected = Array.isArray(v) && v.includes(o.value); });
         else if (String(node.value) !== String(v)) node.value = v;
     });

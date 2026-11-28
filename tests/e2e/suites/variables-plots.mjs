@@ -162,7 +162,7 @@ await app(async () => {
 
 // ---------- the toolbar ----------
 const menu = await app(() => [...document.querySelectorAll('.toolbar-dropdown[data-category="interactive"] .toolbar-menu button')].map(b => b.textContent.trim()));
-check('Interactive ▾: the inputs and the animation', JSON.stringify(menu.map(t => t.replace(/^\S+\s*/, ''))) === '["Slider","Checkbox","Number box","Text box","Choice","Animation"]', JSON.stringify(menu));
+check('Interactive ▾: the inputs, the animation and the colour key', JSON.stringify(menu.map(t => t.replace(/^\S+\s*/, ''))) === '["Slider","Checkbox","Number box","Text box","Choice","Animation","Colour key"]', JSON.stringify(menu));
 const plotsMenu = await app(() => [...document.querySelectorAll('.toolbar-dropdown[data-category="plots"] .toolbar-menu button')].map(b => b.textContent.trim().replace(/^\S+\s*/, '')));
 check('Plots ▾: a plot per kind of layer, empty, matplotlib', plotsMenu.length === 12 && plotsMenu[0].startsWith('Curve') && plotsMenu.includes('Histogram') && plotsMenu.includes('Matplotlib script') && plotsMenu.includes('Empty plot'), JSON.stringify(plotsMenu));
 

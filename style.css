@@ -2306,3 +2306,14 @@ button.pf-use:hover { border-color: #3b82f6; }
 .pf-dup { color: #d97706; font-size: 11px; }
 .pf-merge { padding: 1px 8px; font-size: 11px; }
 .pf-ops { display: flex; gap: 2px; }
+
+/* elements/colorkey: the legend's keys turned off; the panel's rows */
+.gl-colorkey .gl-key.off { opacity: 0.35; text-decoration: line-through; }
+.gl-colorkey .gl-key.off .gl-key-swatch { filter: grayscale(1); }
+#slide-canvas [data-element-id].selected .gl-colorkey .gl-key { pointer-events: auto; }
+body.gl-shift-held #slide-canvas [data-element-id] .gl-colorkey .gl-key { pointer-events: none; }
+.ck-rows { display: flex; flex-direction: column; gap: 4px; }
+.ck-row { display: flex; align-items: center; gap: 6px; }
+.ck-key { flex: 0 0 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.ck-row .color-field { flex: 1; }
+.ck-auto { font-size: 10px; color: var(--text-muted); width: 24px; }

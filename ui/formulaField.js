@@ -10,7 +10,7 @@
 // ============================================================
 
 import { ElementRegistry } from '../core/registry.js';
-import { evaluateFormula, BINDABLE_COMMON } from '../core/bindings.js';
+import { evaluateFormula, evaluateColor, BINDABLE_COMMON } from '../core/bindings.js';
 import { allVariables } from '../core/variables.js';
 import { formulaNames, formatValue } from '../core/liveEngine.js';
 import { escapeHtml } from '../core/render.js';
@@ -33,6 +33,12 @@ function showResult(field) {
     const isFormula = text.startsWith('=') || (field.hasAttribute('data-formula-only') && text);
     field.classList.toggle('has-formula', Boolean(isFormula));
     if (!isFormula) { box.textContent = ''; box.classList.remove('error'); return; }
+    if (field.hasAttribute('data-color-formula')) {
+        const c = evaluateColor(text.replace(/^=\s*/, ''));
+        box.classList.toggle('error', Boolean(c.error));
+        box.innerHTML = c.error ? escapeHtml(c.error) : `<span style="display:inline-block; width:1em; height:1em; vertical-align:-0.15em; border-radius:3px; background:${escapeHtml(c.value)}"></span> ${escapeHtml(c.value)} now`;
+        return;
+    }
     const r = evaluateFormula(text.replace(/^=\s*/, ''));
     box.classList.toggle('error', Boolean(r.error));
     box.textContent = r.error ? r.error

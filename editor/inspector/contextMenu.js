@@ -11,7 +11,7 @@ import { state, currentSlide, findElementPath } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { openFollow, pickFollower } from '../../ui/followVariable.js';
 
-const FOLLOWED = new Set(['slider', 'checkbox', 'numberbox', 'textbox', 'choice', 'animation']);
+const FOLLOWED = new Set(['slider', 'checkbox', 'numberbox', 'textbox', 'choice', 'animation', 'colorkey']);
 import { parseIdValue } from './glNavigation.js';
 
 const MENU_ID = 'gl-context-menu';

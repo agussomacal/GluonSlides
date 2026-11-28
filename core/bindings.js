@@ -16,11 +16,33 @@
 
 import { state, forEachElementDeep } from './state.js';
 import { ElementRegistry } from './registry.js';
-import { compileFormula } from './liveEngine.js';
+import { compileFormula, COLOR_KEYS, setThemeColors, applyColor } from './liveEngine.js';
+import { palette, resolveColor } from './colors.js';
 import { allVariables } from './variables.js';
 
-/** Settings every object can take a formula for (besides its own numbers). */
+/** Settings every object can take a formula for (besides its own numbers and colours). */
 export const BINDABLE_COMMON = ['x', 'y', 'width', 'height', 'rotate', 'opacity', 'visible'];
+export { COLOR_KEYS };
+
+/** The engine's theme colours (palette(i), @name in formulas) from the project's. */
+export function syncThemeColors() {
+    setThemeColors(palette().map(p => ({ name: p.name, color: resolveColor(p.color) || p.color })));
+}
+
+/** A colour formula's value: { value: '#2563eb' } (a theme colour resolved) or { error }. */
+export function evaluateColor(formula, vars = allVariables()) {
+    const f = compileFormula(String(formula), 'python');
+    if (f.error) return { error: f.error };
+    const missing = f.names.filter(n => !(n in vars));
+    if (missing.length) return { error: `unknown name${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}` };
+    try {
+        const v = f.exec(Object.assign(Object.create(null), vars));
+        if (typeof v !== 'string' || !v.trim()) return { error: 'not a colour (a text like \'#2563eb\' or \'@primary\')' };
+        return { value: resolveColor(v.trim()) || v.trim() };
+    } catch (e) {
+        return { error: e.message };
+    }
+}
 
 /** The value of a formula with these variables: { value } or { error }. */
 export function evaluateFormula(formula, vars = allVariables()) {
@@ -68,6 +90,12 @@ export function applyElementFormulas(el, vars = allVariables()) {
     if (!el.formulas) return;
     const errors = {};
     Object.entries(el.formulas).forEach(([key, formula]) => {
+        // a colour: the text it gives (not a number; dragging doesn't change it)
+        if (COLOR_KEYS.includes(key)) {
+            const c = evaluateColor(formula, vars);
+            if (c.error) errors[key] = c.error; else el[key] = c.value;
+            return;
+        }
         const r = evaluateFormula(formula, vars);
         if (r.error) { errors[key] = r.error; return; }
         if (key === 'visible') el._hidden = !r.value;
@@ -83,6 +111,7 @@ export function applyElementFormulas(el, vars = allVariables()) {
 
 /** Recomputes every formula-driven value of the project. */
 export function applyFormulas(vars = allVariables()) {
+    syncThemeColors();
     everyElement(el => applyElementFormulas(el, vars));
     syncDerived(); // e.g. a circle's box from a radius given by a formula
 }
@@ -165,6 +194,7 @@ export function liveApplyToCanvas(root, vars = allVariables()) {
         node.style.transform = Number(el.rotate) ? `rotate(${Number(el.rotate)}deg)` : '';
         node.style.opacity = el.opacity !== undefined && Number(el.opacity) < 1 ? String(Math.max(0, Number(el.opacity))) : '';
         if (el.formulas.fontSize) node.style.fontSize = `${el.fontSize}px`;
+        COLOR_KEYS.forEach(key => { if (el.formulas && el.formulas[key] && el[key]) applyColor(node, key, el[key]); });
         node.classList.toggle('formula-hidden', Boolean(el._hidden));
     });
 }

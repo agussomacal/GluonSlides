@@ -38,7 +38,7 @@ let e = await els();
 check('the circle by centre and radius: r = 40·s = 40, its box around (960, 500)', e[1].r === 40 && e[1].x === 920 && e[1].y === 460 && e[1].width === 80 && e[1].height === 80, e[1]);
 check('a plain circle: box from cx, cy, r', e[2].x === 200 && e[2].width === 200 && e[2].lockAspect === 'yes', e[2]);
 let text = await saved();
-check('written as kind:circle cx cy r (no box)', text.includes('.element.shape id:3 kind:circle cx:960 cy:500 r:=40*s') && text.includes('.element.shape id:4 kind:circle cx:300 cy:300 r:100 bg:#fca5a5') && !/id:4[^\n]*width:/.test(text), text.split('\n').filter(l => l.includes('kind:circle')));
+check('written as kind:circle cx cy r (no box)', text.includes('.element.shape id:3 kind:circle cx:960 cy:500 r:"=40*s"') && text.includes('.element.shape id:4 kind:circle cx:300 cy:300 r:100 bg:#fca5a5') && !/id:4[^\n]*width:/.test(text), text.split('\n').filter(l => l.includes('kind:circle')));
 
 // a slider grows it about its centre, on the canvas
 await app(() => { const i = document.querySelector('#slide-canvas [data-element-id="2"] input'); i.value = '3'; i.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -48,7 +48,7 @@ check('slider at 3: r = 120, still centred on (960, 500)', JSON.stringify(live) 
 await app(() => { const i = document.querySelector('#slide-canvas [data-element-id="2"] input'); i.dispatchEvent(new Event('change', { bubbles: true })); });
 await page.waitForTimeout(200);
 text = await saved();
-check('…the file still says cx:960 cy:500 r:=40*s', text.includes("cx:960 cy:500 r:=40*s"));
+check('…the file still says cx:960 cy:500 r:"=40*s"', text.includes('cx:960 cy:500 r:"=40*s"'));
 
 // moving the plain circle moves its centre; resizing changes its radius
 await app(async () => { const m = await import('/core/state.js'); m.setSelectedElementIndices([], null); (await import('/editor/editor.js')).renderEditor(); });

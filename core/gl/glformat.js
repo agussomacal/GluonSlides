@@ -4,6 +4,9 @@
 // in ElementRegistry, with tab-indented block bodies.
 // ============================================================
 
+
+// colour settings that may be a formula of the variables (core/liveEngine.js COLOR_KEYS)
+const COLOR_FORMULA_KEYS = ['bg', 'borderCol', 'fontColor', 'stroke', 'fill', 'accent'];
 import {ElementRegistry} from '../registry.js';
 
 export const GL_FORMAT_VERSION = 2;
@@ -327,7 +330,8 @@ function serializeElementDirective(el) {
     // Locked in the editor (can't be dragged); no effect on the slides.
     if (el.locked === 'yes') head.push('locked:yes');
     // Turned about its centre, in degrees (clockwise).
-    const formula = (key) => (el.formulas && el.formulas[key] ? `${key}:${encodeParamValue(`=${el.formulas[key]}`)}` : null);
+    // always quoted ("=…"), whatever it holds
+    const formula = (key) => (el.formulas && el.formulas[key] ? `${key}:"${`=${el.formulas[key]}`.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : null);
     if (formula('rotate')) head.push(formula('rotate'));
     else if (Number(el.rotate)) head.push(`rotate:${Math.round(Number(el.rotate) * 10) / 10}`);
     // Opacity (0 to 1; 1 is not written) and a visibility condition (core/bindings.js).
@@ -745,6 +749,8 @@ function buildElement(type, params) {
         if (spec.numericProps.has(key) && isFormula(raw)) {
             keepFormula(key, raw);
             el[key] = 0;
+        } else if (COLOR_FORMULA_KEYS.includes(key) && isFormula(raw)) {
+            keepFormula(key, raw); // a colour given by a formula (core/bindings.js): its value comes when drawing
         } else if (spec.numericProps.has(key)) {
             const num = Number(raw);
             el[key] = Number.isFinite(num) ? num : 0;
