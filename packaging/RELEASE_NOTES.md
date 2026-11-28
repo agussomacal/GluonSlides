@@ -1,18 +1,13 @@
-## What's new in 0.3.0
+## What's new in 0.4.0
 
-**Import your existing talks.** *Import Talk…* on the start screen turns a Beamer talk (`.tex`, or the `.zip` Overleaf downloads), a Slidev `slides.md`, a PowerPoint `.pptx` or a PDF into an editable project. Drop the whole folder, the zip, or all the files at once. With the compiled PDF alongside, the layout is checked against it and figures missing from the source are taken from it. Overlays and clicks become build steps; text, math, colours, columns, tables, notes and sections are kept.
+**Your data, straight in.** Drop a CSV or JSON file of results on a slide: a panel asks whether it becomes a **table**, a **plot** or a **choice** (a JSON can also become variables). For a plot, pick lines, points, bars or a histogram, the x column and the columns to draw, or, for long-format data (`run, step, loss`), one line per run. *Let me choose while presenting* adds a dropdown under the plot to switch the column or the runs shown. Everything stays linked to the file: rerun your script and the slide updates.
 
-- **Equations in pictures** (PowerPoint, PDF) can be read back to LaTeX, at import or by right-clicking a picture → *Convert to LaTeX*. This uses an optional component (about 220 MB, downloaded once after asking) that runs on your computer.
-- **Columns** and **tables**: from the *Text ▾* menu; tables drawn, pasted from a spreadsheet, or from a CSV file, and linked to the file so they update when it changes. Dropping a CSV on the window makes a linked table.
-- **Connectors**: lines and arrows attached to shapes follow them when they move. **Rotation** of any object.
-- **Builds that go away**: *Disappears after step* (`until`), for content that replaces other content, and a step preview in the toolbar.
-- **Text commands** in any text: `\textcolor{red}{…}`, `\highlight{yellow}{…}`, `\textbf`, theme colours, and your own `macros.tex` macros. Select or double-click words for a small format bar (bold, italic, colours).
-- **Tabs**: several projects open at once, with copy and paste between them.
-- **Help**: the **?** button has a quick tour, a tutorial presentation, the keyboard shortcuts (now changeable), and the `.gl` file of the project (Ctrl+E).
-- The side panes can be hidden and resized; new projects go where the last one went; a progress bar for long jobs; display equations centred as in LaTeX; double-clicking a `.gl` file opens it; a note when a new version is out.
-- Documentation: a [user guide](https://github.com/agussomacal/GluonSlides/blob/main/docs/user-guide.md) and a [reference of the .gl format](https://github.com/agussomacal/GluonSlides/blob/main/docs/gluon-format.md).
-
-PDF import and the equation reader are optional components the app downloads the first time you need them (PyMuPDF about 25 MB; the equation model about 220 MB).
+- **Interactive plots**: plots of formulas (Python or LaTeX) and data, with layers for curves, areas, parametric curves, points with error bars, lines, bars, histograms (also sampled from a formula), heatmaps, contour lines and arrows, or written as a **matplotlib script**. They follow **sliders, checkboxes, number and text boxes, choices** (one or several, options written or from a file) and **animations**, in the editor, while presenting and in the exported HTML.
+- **Live numbers**: `\var{err}` shows a value from a JSON or CSV file your script writes; `\var{results[opt].acc}` the one a choice picks.
+- **Anything can follow a variable**: right-click → *Follow a variable…*; positions, sizes, opacity, visibility, a plot layer's settings and axis ranges can be formulas (`=860 + 300*mu`), and dragging moves the formula's constant.
+- **🗂 Project files**: every file of `figures/` and `data/`, what uses it, duplicates (merge) and unused files (delete). The same file is no longer copied twice.
+- **Find** (Ctrl+F) over the project's `.gl` text; Ctrl+click on a variable goes to where it is defined.
+- On the canvas, inputs work once selected (a first click selects, **Shift**+drag moves them).
 
 ## Download
 
