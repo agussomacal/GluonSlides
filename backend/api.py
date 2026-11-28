@@ -69,6 +69,34 @@ class Api:
             user_settings.remember_project_parent(parent)
         return res
 
+    def create_example_project(self, name, files, parent=None):
+        """A new project folder (in `parent`, asked for when not given) holding `files`
+        ({relative path: text}: the .gl, data, a script): the path of its .gl."""
+        parent = parent or dialogs.ask_folder(user_settings.default_project_parent())
+        if not parent:
+            return _cancelled()
+        res = project_io.project_paths(parent, name)
+        if not res.get("success"):
+            return res
+        try:
+            os.makedirs(res["folder"], exist_ok=True)
+            gl = os.path.basename(res["path"])
+            projectfiles.write_files(res["folder"], {(gl if k == "project.gl" else k): v for k, v in (files or {}).items()})
+            user_settings.remember_project_parent(parent)
+            return res
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def scratch_folder(self, files):
+        """A temporary folder holding `files` (the tutorial's: dropping a file there needs a folder)."""
+        import tempfile
+        try:
+            folder = tempfile.mkdtemp(prefix="gluon-tutorial-")
+            projectfiles.write_files(folder, files)
+            return {"success": True, "folder": folder}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def get_ui_prefs(self):
         """The interface's saved choices, and where new projects go by default."""
         return {"success": True, "prefs": user_settings.get_ui_prefs(),

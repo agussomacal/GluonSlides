@@ -72,6 +72,7 @@ const clickActions = {
     'open-macros': openMacrosModal,
     'open-project-settings': openProjectSettings,
     'open-project-files': openProjectFiles,
+    'open-example': () => import('./ui/project.js').then(m => m.openExampleProject()),
     'save-macros': saveMacros,
     'open-bib': openBibModal,
     'save-bib': saveBib,

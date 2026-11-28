@@ -250,3 +250,15 @@ def project_path(project_folder, rel):
     if not project_folder or not _inside(path, project_folder):
         raise ValueError(f"{rel}: not in the project")
     return path
+
+
+def write_files(project_folder, files):
+    """Writes {relative path: text} inside the project folder (subfolders made): the paths written."""
+    written = []
+    for rel, text in (files or {}).items():
+        path = project_path(project_folder, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        written.append(_rel(path, project_folder))
+    return written

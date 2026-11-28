@@ -178,6 +178,13 @@ class ProjectFileListTest(TempDirTest):
         with self.assertRaises(ValueError):
             project_path(self.tmp, "../elsewhere.txt")
 
+    def test_write_files_stays_inside(self):
+        from backend.projectfiles import write_files
+        self.assertEqual(write_files(self.tmp, {"data/runs.csv": "a,b\n", "make_results.py": "print(1)\n"}), ["data/runs.csv", "make_results.py"])
+        self.assertEqual(Path(os.path.join(self.tmp, "data", "runs.csv")).read_text(), "a,b\n")
+        with self.assertRaises(ValueError):
+            write_files(self.tmp, {"../escape.txt": "x"})
+
 
 class FiguresTest(TempDirTest):
     """Importing figures into <project>/figures/ and loading them as data URIs."""

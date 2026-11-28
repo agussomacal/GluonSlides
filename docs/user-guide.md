@@ -247,6 +247,8 @@ Rows and columns count from 1. The cells are always written, also for a linked t
 
 Numbers in your text can come from your results instead of being typed: write `\var{err}` in any text box, column or table cell (also inside math: `$\sigma = \var{sigma}$`), or `\var{err}[%.2e]` with a format (`%.2f`, `%.3e`, `%.4g`, `%d`, `%.1%`). Typing `\var{` lists the variables with their values.
 
+**📊 Example: results that update** on the start screen creates a project to try this with: a folder with `data/runs.csv`, `data/summary.json` and the script that writes them, `make_results.py`, and slides that read them (a plot per run with a colour key, a choice of run with its numbers). Run the script again (`python make_results.py` in that folder) and the slides change by themselves.
+
 **Project settings → Variables** is where they come from:
 
 - **From files**: *＋ Link a JSON or CSV file…* copies a file your script writes into the project's `data/` folder and follows it, like a linked table: rerun the analysis and the numbers on the slides update. A JSON object gives its keys (nested ones as `fit.a`); a CSV gives `name,value` rows, or a header of names and the last row of values (a log your script appends to). ↻ reads it again; ✕ stops using it.

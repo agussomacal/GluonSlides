@@ -5,10 +5,10 @@
 // ============================================================
 
 import { prepareTabFor, projectLoaded, setTabHooks, renderTabs } from './tabs.js';
-import { resetLiveValues } from '../core/variables.js';
+import { resetLiveValues, syncVarFiles } from '../core/variables.js';
 import { clearBibPages } from '../core/bibPages.js';
 import {
-    state, pyApi, whenApiReady, parseTexMacros, markDirty, flushPendingSave,
+    state, pyApi, whenApiReady, parseTexMacros, markDirty, flushPendingSave, flashSaveIndicator,
     serializeProject, deserializeProject, currentSnapshot, resetHistory,
     resetProjectState, DEFAULT_TEX_MACROS, applyProjectData, parseProjectContent,
 } from '../core/state.js';
@@ -165,8 +165,10 @@ function enterEditor() {
     state.isDirty = false;
     resetHistory();
     syncProjectChrome();
-    // values moved in the previous project (sliders, inputs, animations) don't carry over
+    // values moved in the previous project (sliders, inputs, animations) don't carry over;
+    // its variable files read now (not at the next look)
     resetLiveValues();
+    syncVarFiles({ force: true });
     showView('editor-view');
     renderEditor();
     projectLoaded();
@@ -294,6 +296,22 @@ export async function openSampleProject() {
         borderStyle: 'solid',
     });
     enterEditor();
+}
+
+/** "📊 Example: results that update" (ui/example.js): a project folder (asked for) with its data and script, opened. */
+export async function openExampleProject(parent = null) {
+    const api = await whenApiReady();
+    if (!api || typeof api.create_example_project !== 'function') { flashSaveIndicator('The example needs the app (it writes a folder)'); return { success: false }; }
+    const { exampleFiles } = await import('./example.js');
+    const files = exampleFiles();
+    const res = await api.create_example_project('Results that update', files, parent);
+    if (!res || !res.success) {
+        if (res && res.error) flashSaveIndicator(res.error);
+        return { success: false, error: res && res.error };
+    }
+    await openProjectByPath(res.path, files['project.gl']);
+    flashSaveIndicator('Example created: run make_results.py in its folder and watch the slides');
+    return { success: true, path: res.path };
 }
 
 /** The tutorial presentation (ui/tutorial.js), in a tab of its own; not saved anywhere. */
