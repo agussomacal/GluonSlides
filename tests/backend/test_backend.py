@@ -142,6 +142,25 @@ class ProjectFilesTest(TempDirTest):
         self.assertFalse(os.path.exists(os.path.join(self.project, "data", "old_1.csv")))
 
 
+class ProjectFileListTest(TempDirTest):
+    """Project files: every file of figures/ and data/, named or not, duplicates found."""
+
+    def test_list_and_duplicates(self):
+        from backend.projectfiles import list_files, project_path
+        os.makedirs(os.path.join(self.tmp, "data"))
+        os.makedirs(os.path.join(self.tmp, "figures"))
+        for rel, text in (("data/a.csv", "1,2\n"), ("data/a_1.csv", "1,2\n"), ("data/z.csv", "1,2\n"), ("data/b.csv", "3,4\n"), ("figures/p.png", "1,2\n")):
+            Path(os.path.join(self.tmp, rel)).write_text(text)
+        files = {f["path"]: f for f in list_files(self.tmp, "uses data/z.csv")}
+        self.assertEqual(sorted(files), ["data/a.csv", "data/a_1.csv", "data/b.csv", "data/z.csv", "figures/p.png"])
+        # the one the project names is kept; the others are the same as it; another folder isn't compared
+        self.assertEqual((files["data/z.csv"]["same_as"], files["data/a.csv"]["same_as"], files["data/a_1.csv"]["same_as"]), (None, "data/z.csv", "data/z.csv"))
+        self.assertEqual((files["data/b.csv"]["same_as"], files["figures/p.png"]["same_as"]), (None, None))
+        self.assertTrue(files["data/z.csv"]["named"] and not files["data/a.csv"]["named"])
+        with self.assertRaises(ValueError):
+            project_path(self.tmp, "../elsewhere.txt")
+
+
 class FiguresTest(TempDirTest):
     """Importing figures into <project>/figures/ and loading them as data URIs."""
 

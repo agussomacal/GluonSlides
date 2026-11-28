@@ -220,6 +220,25 @@ class Api:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def list_project_files(self, project_folder, text=""):
+        """Every file of figures/ and data/, which the project's text names, and which are the same file twice."""
+        try:
+            return {"success": True, "files": projectfiles.list_files(project_folder, text)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def open_project_file(self, project_folder, rel, folder_only=False):
+        """Opens a file of the project (or, folder_only, the folder holding it; a folder itself) with the system."""
+        try:
+            path = projectfiles.project_path(project_folder, rel)
+            if folder_only and not os.path.isdir(path):
+                path = os.path.dirname(path)
+            if os.path.isdir(path) is False and not os.path.exists(path):
+                return {"success": False, "error": f"{rel}: not found"}
+            return project_io.open_file_with_system(path)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def delete_project_files(self, project_folder, paths):
         """Deletes files of data/ and figures/ (Project settings → Files, clean up)."""
         return {"success": True, **projectfiles.delete_files(project_folder, paths)}

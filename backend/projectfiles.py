@@ -129,3 +129,48 @@ def delete_files(project_folder, paths, folders=("data", "figures")):
         except OSError as e:
             errors.append(f"{rel}: {e}")
     return {"deleted": deleted, "errors": errors}
+
+
+def list_files(project_folder, text="", folders=("figures", "data")):
+    """Every file of figures/ and data/: [{"path", "size", "mtime", "named", "same_as"}].
+    named: the project's text names it; same_as: an earlier file with the same
+    content (sizes first, then SHA-256), the one to keep (one the project names
+    first, else the first by name)."""
+    files = []
+    for sub in folders:
+        folder = os.path.join(project_folder or "", sub)
+        if not os.path.isdir(folder):
+            continue
+        for name in sorted(os.listdir(folder)):
+            path = os.path.join(folder, name)
+            if not os.path.isfile(path) or name.startswith("."):
+                continue
+            rel = _rel(path, project_folder)
+            st = os.stat(path)
+            named = bool(text) and (rel in text or rel.replace("/", "\\") in text)
+            files.append({"path": rel, "size": st.st_size, "mtime": st.st_mtime, "named": named, "same_as": None})
+    by_size = {}
+    for f in files:
+        by_size.setdefault((os.path.dirname(f["path"]), f["size"]), []).append(f)
+    for group in by_size.values():
+        if len(group) < 2:
+            continue
+        by_hash = {}
+        for f in group:
+            by_hash.setdefault(file_hash(os.path.join(project_folder, f["path"])), []).append(f)
+        for same in by_hash.values():
+            if len(same) < 2:
+                continue
+            keep = sorted(same, key=lambda f: (not f["named"], f["path"]))[0]
+            for f in same:
+                if f is not keep:
+                    f["same_as"] = keep["path"]
+    return files
+
+
+def project_path(project_folder, rel):
+    """The absolute path of `rel`, only if it is inside the project (else ValueError)."""
+    path = os.path.abspath(os.path.join(project_folder or "", rel or ""))
+    if not project_folder or not _inside(path, project_folder):
+        raise ValueError(f"{rel}: not in the project")
+    return path

@@ -2285,3 +2285,24 @@ body.picking-follower #slide-canvas .canvas-element:hover { outline: 2px solid #
 #slide-canvas [data-element-id].selected .gl-slider input[data-glslider] { pointer-events: auto; }
 body.gl-shift-held #slide-canvas [data-element-id] .gl-input :is(input, select),
 body.gl-shift-held #slide-canvas [data-element-id] .gl-slider input[data-glslider] { pointer-events: none; }
+
+/* ui/projectFiles.js: 🗂 Project files */
+.files-badge { margin-left: auto; background: #f59e0b; color: #1f2937; border-radius: 9px; padding: 0 7px; font-size: 11px; font-weight: 600; }
+.modal.project-files { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+.pf-list { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.pf-section { margin-bottom: 14px; }
+.pf-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.pf-head .btn { margin-left: auto; padding: 2px 8px; font-size: 12px; }
+.pf-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 4px; border-bottom: 1px solid var(--border-color); font-size: 12px; }
+.pf-row.unused code { opacity: 0.75; }
+.pf-tick { width: 18px; padding-top: 2px; }
+.pf-main { flex: 1; min-width: 0; }
+.pf-main code { word-break: break-all; }
+.pf-uses { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; align-items: center; }
+.pf-use { border: 1px solid var(--border-color); border-radius: 10px; padding: 0 7px; font-size: 11px; background: transparent; color: var(--text-main); cursor: default; }
+button.pf-use { cursor: pointer; }
+button.pf-use:hover { border-color: #3b82f6; }
+.pf-unused { color: var(--text-muted); font-style: italic; font-size: 11px; }
+.pf-dup { color: #d97706; font-size: 11px; }
+.pf-merge { padding: 1px 8px; font-size: 11px; }
+.pf-ops { display: flex; gap: 2px; }

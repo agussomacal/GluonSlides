@@ -223,7 +223,7 @@ const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0
 function filesTab() {
     if (!ui.files) loadUnusedFiles();
     const f = ui.files || { loading: true };
-    const head = '<p class="prop-hint">Files in the project\'s <code>data/</code> and <code>figures/</code> folders that nothing in the project names any more (a figure replaced, a CSV linked twice before). Nothing is deleted unless you ask.</p>';
+    const head = '<p class="prop-hint">Files in the project\'s <code>data/</code> and <code>figures/</code> folders that nothing in the project names any more (a figure replaced, a CSV linked twice before). Nothing is deleted unless you ask. <b>🗂 Project files</b> in the sidebar shows every file, what uses it and duplicates (to merge).</p>';
     if (f.loading) return `${head}<p class="prop-hint">Looking…</p>`;
     if (f.error) return `${head}<p class="prop-error">${escapeHtml(f.error)}</p>`;
     if (!f.list.length) return `${head}<p>✓ Every file there is used.</p><button type="button" class="btn btn-secondary" data-settings-action="files-refresh">↻ Look again</button>`;

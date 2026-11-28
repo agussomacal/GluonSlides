@@ -18,6 +18,7 @@ import { initKeyboardShortcuts } from './core/clipboard.js';
 import { initStyledSelects } from './ui/selectMenu.js';
 import { loadSystemFonts } from './core/fonts.js';
 import { openProjectSettings } from './ui/projectSettings.js';
+import { openProjectFiles, startFilesBadge } from './ui/projectFiles.js';
 import { initColorPicker } from './ui/colorPicker.js';
 
 // Side-effectful import: each element module self-registers.
@@ -70,6 +71,7 @@ const clickActions = {
     'close-modal': (id) => closeModal(id),
     'open-macros': openMacrosModal,
     'open-project-settings': openProjectSettings,
+    'open-project-files': openProjectFiles,
     'save-macros': saveMacros,
     'open-bib': openBibModal,
     'save-bib': saveBib,
@@ -147,6 +149,7 @@ window.addEventListener('beforeunload', flushPendingSave);
 // (pywebview adds its functions asynchronously): both wait for it.
 startFigureSync(); // linked figures follow their original files
 startTableSync(); // linked tables follow their CSV files
+startFilesBadge(); // 🗂 Project files: how many could be cleaned up
 startVarSync(); // variable files (\var{…}, plots) follow theirs
 startPlotDataSync(); // data files of plots follow theirs
 initFileDrop((type, props) => insertElement(type, props)); // images and CSV files dropped on the window
