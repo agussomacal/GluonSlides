@@ -96,12 +96,16 @@ export function plotFrom(info, cfg, file, original) {
     let choice = null;
     if (cfg.format === 'long') {
         const g = ref(cfg.group);
-        code = `.${kind} ${head}${xPart} ${yKey}:${q(ref(cfg.y))} group:${q(g)}${pick ? ` show:"=${pick}"` : ''}`;
+        // a colour key for the runs: their colours, and (without a choice) its legend shows and hides them
+        const key = cfg.colorkey ? freshVar(`${g.replace(/\W+/g, '_').replace(/^(\d)/, '_$1')}col`) : null;
+        const show = pick ? ` show:"=${pick}"` : key ? ` show:"=${key}.shown"` : '';
+        code = `.${kind} ${head}${xPart} ${yKey}:${q(ref(cfg.y))} group:${q(g)}${key ? ` colors:${key}` : ''}${show}`;
+        const values = [...new Set(info.rows.map(r => String(r[cfg.group] ?? '').trim()).filter(Boolean))];
         if (pick) {
-            const values = [...new Set(info.rows.map(r => String(r[cfg.group] ?? '').trim()).filter(Boolean))];
             choice = { var: pick, source: file, use: `column:${g}`, original, multiple: cfg.several ? 'yes' : 'no', value: cfg.several ? values.join(', ') : (values[0] || ''), label: g, options: values.join(', ') };
         }
-        return { code, choice, xlabel: kind === 'hist' ? ref(cfg.y) : ref(cfg.x), ylabel: kind === 'hist' ? '' : ref(cfg.y) };
+        const colorkey = key ? { var: key, source: file, use: `column:${g}`, original, label: g, legend: 'yes', clickable: pick ? 'no' : 'yes', entries: '', rows: values.length } : null;
+        return { code, choice, colorkey, xlabel: kind === 'hist' ? ref(cfg.y) : ref(cfg.x), ylabel: kind === 'hist' ? '' : ref(cfg.y) };
     }
     const ys = [...cfg.ys].sort((a, b) => a - b);
     const names = ys.map(ref);
@@ -183,7 +187,8 @@ function body(info, cfg) {
         : `<div class="prop-group"><label>${hist ? 'Columns' : 'y'}</label><div class="dd-ys">${cols.filter(k => info.cols[k].numeric && (hist || k !== xCol)).map(k => `<label class="prop-check"><input type="checkbox" data-dd-y="${k}" ${cfg.ys.has(k) ? 'checked' : ''}> ${escapeHtml(info.cols[k].label)}</label>`).join('')}</div></div>`}
         </div>
         <label class="prop-check"><input type="checkbox" data-dd="interactive" ${cfg.interactive ? 'checked' : ''}> let me choose the ${cfg.format === 'long' ? escapeHtml(info.cols[cfg.group] ? info.cols[cfg.group].label : 'group') : 'column'} while presenting (a choice under the plot)</label>
-        ${cfg.interactive ? `<label class="prop-check dd-sub"><input type="checkbox" data-dd="several" ${cfg.several ? 'checked' : ''}> several at once (Ctrl+click)</label>` : ''}`;
+        ${cfg.interactive ? `<label class="prop-check dd-sub"><input type="checkbox" data-dd="several" ${cfg.several ? 'checked' : ''}> several at once (Ctrl+click)</label>` : ''}
+        ${cfg.format === 'long' ? `<label class="prop-check"><input type="checkbox" data-dd="colorkey" ${cfg.colorkey ? 'checked' : ''}> 🎨 a colour key for the ${escapeHtml(info.cols[cfg.group] ? info.cols[cfg.group].label : 'group')}s: the same colours in every plot${cfg.interactive ? '' : ', a click in its legend shows and hides them'}</label>` : ''}`;
 }
 
 function render(info, cfg, name) {
@@ -213,7 +218,7 @@ let markerAt = null;
 /** The size of what the panel would make now (slide pixels). */
 function sizeFor(cfg) {
     const scale = state.slideWidth / 1920;
-    if (cfg.mode === 'plot') return { w: 1100 * scale, h: 640 * scale + (cfg.interactive ? ((cfg.several ? 200 : 70) + 16) * scale : 0) };
+    if (cfg.mode === 'plot') return { w: 1100 * scale + (cfg.colorkey && cfg.format === 'long' ? 196 * scale : 0), h: 640 * scale + (cfg.interactive ? ((cfg.several ? 200 : 70) + 16) * scale : 0) };
     if (cfg.mode === 'choice') return { w: 460 * scale, h: 70 * scale };
     if (cfg.mode === 'table') return { w: 1000 * scale, h: 400 * scale };
     return null;
@@ -274,6 +279,7 @@ export async function openDataDrop(item, at, client, insert) {
         group: guess.group, x: guess.x, y: guess.y, barX: guess.barX,
         ys: new Set(guess.ys || []),
         interactive: Boolean(last && last.interactive),
+        colorkey: Boolean(last && last.colorkey),
         several: Boolean(last && last.several),
         use: 'header',
     };
@@ -310,7 +316,7 @@ export async function openDataDrop(item, at, client, insert) {
         if (!key) return;
         if (key === 'linked') cfg.linked = t.value === 'yes';
         else if (key === 'format') cfg.format = t.value;
-        else if (key === 'interactive' || key === 'several') cfg[key] = t.checked;
+        else if (key === 'interactive' || key === 'several' || key === 'colorkey') cfg[key] = t.checked;
         else if (key === 'use') cfg.use = t.value;
         else cfg[key] = Number(t.value);
         if (key === 'x') cfg.ys.delete(cfg.x);
@@ -337,7 +343,7 @@ function placeAt(at, w, h) {
 async function make(info, cfg, item, at, insert) {
     const scale = state.slideWidth / 1920;
     const remember = () => {
-        last = { mode: cfg.mode, linked: cfg.linked, kind: cfg.kind, interactive: cfg.interactive, several: cfg.several };
+        last = { mode: cfg.mode, linked: cfg.linked, kind: cfg.kind, interactive: cfg.interactive, several: cfg.several, colorkey: cfg.colorkey };
         try { localStorage.setItem('gluon-data-drop', JSON.stringify(last)); } catch (e) { /* not kept */ }
     };
     const needFolder = () => { if (state.projectFolder) return true; flashSaveIndicator('Save the project first: the file is copied into its folder'); return false; };
@@ -379,10 +385,16 @@ async function make(info, cfg, item, at, insert) {
     }
     const plot = plotFrom(info, cfg, file, link.original);
     const choiceH = plot.choice ? Math.round((cfg.several ? 200 : 70) * scale) : 0;
-    const w = Math.round(1100 * scale);
+    // a colour key: a legend on the plot's right
+    const keyW = plot.colorkey ? Math.round(300 * scale) : 0;
+    const w = Math.round(1100 * scale) - (keyW ? Math.round(120 * scale) : 0);
     const h = Math.min(Math.round(640 * scale), state.slideHeight - choiceH - Math.round(30 * scale));
-    const pos = placeAt(at, w, h + (choiceH ? choiceH + Math.round(16 * scale) : 0));
-    insert('plot', { ...pos, width: w, height: h, lang: 'python', code: plot.code, xmin: '', xmax: '', ymin: '', ymax: '', xlabel: plot.xlabel, ylabel: plot.ylabel });
+    const pos = placeAt(at, w + (keyW ? keyW + Math.round(16 * scale) : 0), h + (choiceH ? choiceH + Math.round(16 * scale) : 0));
+    insert('plot', { ...pos, width: w, height: h, lang: 'python', code: plot.code, xmin: '', xmax: '', ymin: '', ymax: '', xlabel: plot.xlabel, ylabel: plot.ylabel, ...(plot.colorkey ? { legend: 'no' } : {}) });
+    if (plot.colorkey) {
+        const { rows, ...props } = plot.colorkey;
+        insert('colorkey', { ...props, x: pos.x + w + Math.round(16 * scale), y: pos.y + Math.round(20 * scale), width: keyW, height: Math.min(h, Math.round((rows + (props.label ? 1.3 : 0)) * 40 * scale + 20 * scale)) });
+    }
     if (plot.choice) {
         insert('choice', { ...plot.choice, x: pos.x, y: pos.y + h + Math.round(16 * scale), width: Math.round(520 * scale), height: choiceH });
     }

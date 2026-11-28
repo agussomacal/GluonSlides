@@ -217,6 +217,23 @@ await drop('/home/me/exp/long.csv', 900, 500);
 plot = (await elements()).find(e => e.type === 'plot');
 check('a CSV dropped on a plot: a layer of it added (long: a line per run)', plot && plot.code === 'y = x\n.line data:{data/long.csv} original:/home/me/exp/long.csv x:step y:loss group:run' && !(await page.isVisible('.data-drop')), plot && plot.code);
 
+// ---------- long format with a colour key ----------
+await clear();
+await drop('/home/me/exp/long.csv');
+await page.click('[data-dd-mode="plot"]');
+await page.click('[data-dd-kind="line"]');
+if (await page.isChecked('input[data-dd="interactive"]')) await page.uncheck('input[data-dd="interactive"]');
+await page.check('input[data-dd="colorkey"]');
+await page.click('[data-dd-add]');
+await page.waitForTimeout(400);
+els = await elements();
+plot = els.find(e => e.type === 'plot');
+const ck = els.find(e => e.type === 'colorkey');
+check('long format + a colour key: colors:runcol, show:"=runcol.shown", its own legend off', plot && plot.code === '.line data:{data/long.csv} original:/home/me/exp/long.csv x:step y:loss group:run colors:runcol show:"=runcol.shown"' && plot.legend === 'no', plot && plot.code);
+check('…the colour key: the runs of the file, a clickable legend right of the plot', ck && ck.var === 'runcol' && ck.source === 'data/long.csv' && ck.use === 'column:run' && ck.clickable === 'yes' && ck.x >= plot.x + plot.width, ck);
+const keyLegend = await app(() => [...document.querySelectorAll('#slide-canvas .element-colorkey [data-glkey]')].map(k => k.dataset.glkey));
+check('…its legend: adam, sgd', JSON.stringify(keyLegend) === '["adam","sgd"]', keyLegend);
+
 // ---------- Project settings → Files ----------
 await app(async () => (await import('/ui/projectSettings.js')).openProjectSettings('files'));
 await page.waitForTimeout(200);
