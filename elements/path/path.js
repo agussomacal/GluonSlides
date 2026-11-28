@@ -29,7 +29,7 @@ import { state, markDirty } from '../../core/state.js';
 import { ElementRegistry } from '../../core/registry.js';
 import { escapeHtml } from '../../core/render.js';
 import { colorField } from '../../ui/colorPicker.js';
-import { parseEnd } from '../../core/connectors.js';
+import { parseEnd, connectorExportSpec } from '../../core/connectors.js';
 
 const MIN_BOX = 1;              // a horizontal line still gets a 1px-tall box
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
@@ -277,6 +277,12 @@ const PathElement = {
 
     exportInner(el) {
         return svgMarkup(el);
+    },
+
+    // a connector to shapes that follow the variables: redrawn in the export as they move
+    exportAttrs(el) {
+        const spec = connectorExportSpec(el);
+        return spec ? ` data-glconnect="${escapeHtml(JSON.stringify(spec))}"` : '';
     },
 
     // ---------- Handles (drawn by the editor when selected) ----------

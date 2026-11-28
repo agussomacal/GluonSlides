@@ -238,7 +238,9 @@ export function exportElementMarkup(raw) {
         + (Number(el.rotate) ? `transform:rotate(${Number(el.rotate)}deg);` : '')
         + (raw.opacity !== undefined && Number(raw.opacity) < 1 ? `opacity:${Math.max(0, Number(raw.opacity))};` : '')
         + (def && typeof def.exportStyle === 'function' ? def.exportStyle(el) : '');
-    const bind = bindAttr(raw);
+    // its id (connectors find their shapes by it), formulas, a connector's ends (redrawn as they move)
+    const connect = def && typeof def.exportAttrs === 'function' ? def.exportAttrs(raw) : '';
+    const bind = `${raw.id !== undefined ? ` data-glid="${escapeHtml(String(raw.id))}"` : ''}${bindAttr(raw)}${connect}`;
     // hidden by its condition (a class: the element's own display stays for when it shows)
     const off = raw._hidden ? ' gl-off' : '';
     const hide = '';

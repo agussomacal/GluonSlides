@@ -158,6 +158,47 @@ await exp.close();
 const after = await els();
 check('after exporting, the editor keeps its values (mu = 1)', after[1].width === 250, after[1].width);
 
+// ---------- an arrow attached to a shape that follows a slider, in the export ----------
+await app(async () => {
+    const { state } = await import('/core/state.js');
+    const { updateAllConnectors } = await import('/core/connectors.js');
+    (await import('/core/variables.js')).resetLiveValues();
+    state.slides = [{ id: 1, title: 'C', elements: [
+        { type: 'slider', id: 60, x: 100, y: 950, width: 600, height: 70, var: 'k', min: 0, max: 4, step: 1, value: 0 },
+        { type: 'shape', id: 61, x: 100, y: 100, width: 200, height: 100, formulas: { x: '100 + 200*k' } },
+        { type: 'shape', id: 62, x: 1400, y: 600, width: 200, height: 100 },
+        { type: 'path', id: 63, x: 0, y: 0, width: 10, height: 10, points: [[0, 0], [1, 1]], from: '61@auto', to: '62@left', route: 'elbow', end: 'arrow', stroke: '#000', strokeWidth: 4 },
+        { type: 'path', id: 64, x: 0, y: 0, width: 10, height: 10, points: [[0, 0], [1, 1]], from: '62@top', to: '62@top', stroke: '#000', strokeWidth: 4 },
+    ] }];
+    (await import('/core/bindings.js')).applyFormulas();
+    updateAllConnectors();
+    (await import('/editor/editor.js')).selectSlide(0);
+});
+await page.waitForTimeout(200);
+const cHtml = await app(async () => (await import('/export/html.js')).getExportHtmlString({ localAssets: true }));
+check('export: an arrow attached to a moving shape carries its ends; one between still shapes doesn\'t', (cHtml.match(/data-glconnect=/g) || []).length === 1, (cHtml.match(/data-glconnect=/g) || []).length);
+const cexp = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+const cErrors = [];
+cexp.on('pageerror', x => cErrors.push(x.message));
+await cexp.goto(`${BASE_URL}/index.html`);
+await cexp.setContent(cHtml);
+await cexp.waitForTimeout(300);
+const arrow = await cexp.evaluate(() => {
+    const node = document.querySelector('.slide.active [data-glconnect]');
+    const read = () => ({ left: parseFloat(node.style.left), top: parseFloat(node.style.top), width: parseFloat(node.style.width), d: node.querySelector('svg > path').getAttribute('d'), marker: node.querySelector('defs path')?.getAttribute('d') });
+    const before = read();
+    const input = document.querySelector('.slide.active input[data-glslider="k"]');
+    input.value = '3';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const shape = document.querySelector('.slide.active [data-glid="61"]');
+    return { before, after: read(), shapeLeft: shape.style.left };
+});
+// the shape now at x = 700: the arrow leaves the side facing the other (its bottom, x = 800) and ends at the other's left (x = 1400)
+check('export: moving the slider moves the shape and its arrow follows (from its bottom to the other\'s left)', arrow.shapeLeft === '700px' && Math.round(arrow.after.left) === 800 && Math.round(arrow.after.left + arrow.after.width) === 1400 && arrow.after.d !== arrow.before.d, arrow);
+check('…its arrowhead kept', arrow.after.marker === arrow.before.marker && Boolean(arrow.before.marker), arrow);
+check('export: no script errors (connectors)', !cErrors.length, cErrors.join(' | '));
+await cexp.close();
+
 console.log(out.join('\n'));
 console.log('--- errors ---\n' + (errors.join('\n') || '(none)'));
 await browser.close();

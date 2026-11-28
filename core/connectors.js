@@ -221,3 +221,29 @@ export function remapConnectors(pasted, idMap, container) {
         }
     });
 }
+
+/**
+ * For the exported HTML: a connector whose shapes follow the variables
+ * (formulas) is redrawn there as they move (core/liveEngine.js
+ * liveConnectors). Its ends as ids and sides, its route and its free ends
+ * (absolute points); null when nothing it is attached to moves.
+ */
+export function connectorExportSpec(el) {
+    if (!isConnector(el)) return null;
+    let container = null;
+    const lists = [...(state.slides || []).map(s => s.elements), ...(state.masters || []).map(m => m.elements)];
+    for (const list of lists) if ((list || []).includes(el)) { container = list; break; }
+    if (!container) return null;
+    const moves = (t) => Boolean(t && t.el && t.el.formulas && Object.keys(t.el.formulas).length);
+    const ends = {};
+    let any = false;
+    for (const key of ['from', 'to']) {
+        const end = parseEnd(el[key]);
+        const t = end && findTarget(container, end, el);
+        // only top-level shapes (a group's children are in its frame)
+        if (t && container.includes(t.el)) { ends[key] = { id: t.el.id, side: end.side }; any = any || moves(t); }
+    }
+    if (!any) return null;
+    const pts = (el.points || []).map(([fx, fy]) => [el.x + fx * el.width, el.y + fy * el.height]);
+    return { ...ends, route: el.route || 'straight', free: [pts[0], pts[pts.length - 1]] };
+}

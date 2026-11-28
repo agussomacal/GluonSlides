@@ -1743,6 +1743,98 @@ export function legendStyle(kind) {
 // ---------- live values in a page ----------
 
 /** Objects whose settings are formulas (data-glbind, core/bindings.js): moved, sized, turned, shown for these values. */
+// ---------- connectors in an exported page (core/connectors.js, kept in step) ----------
+
+const SIDE_NORMALS = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0], center: [0, 0] };
+
+function boxAnchor(box, side) {
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const local = { top: [0, -box.height / 2], right: [box.width / 2, 0], bottom: [0, box.height / 2], left: [-box.width / 2, 0], center: [0, 0] }[side] || [0, 0];
+    const a = (box.rotate || 0) * Math.PI / 180;
+    const turn = ([x, y]) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
+    const [dx, dy] = turn(local);
+    return { point: [cx + dx, cy + dy], normal: turn(SIDE_NORMALS[side] || [0, 0]) };
+}
+
+function boxFacing(box, toward) {
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const a = -(box.rotate || 0) * Math.PI / 180;
+    const vx = toward[0] - cx;
+    const vy = toward[1] - cy;
+    const lx = vx * Math.cos(a) - vy * Math.sin(a);
+    const ly = vx * Math.sin(a) + vy * Math.cos(a);
+    return Math.abs(lx) / (box.width || 1) >= Math.abs(ly) / (box.height || 1) ? (lx >= 0 ? 'right' : 'left') : (ly >= 0 ? 'bottom' : 'top');
+}
+
+function connectorRoute(a, na, b, nb, kind) {
+    const dist = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    if (kind === 'curved') {
+        const k = Math.max(30, dist * 0.4);
+        const dir = (n, from, to) => (n[0] || n[1] ? n : [(to[0] - from[0]) / dist, (to[1] - from[1]) / dist]);
+        const da = dir(na, a, b);
+        const db = dir(nb, b, a);
+        return { points: [a, [a[0] + da[0] * k, a[1] + da[1] * k], [b[0] + db[0] * k, b[1] + db[1] * k], b], bezier: true };
+    }
+    if (kind === 'elbow') {
+        const horizontal = (n) => Math.abs(n[0]) >= Math.abs(n[1]) && (n[0] || n[1]);
+        const ha = na[0] || na[1] ? horizontal(na) : Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]);
+        const hb = nb[0] || nb[1] ? horizontal(nb) : ha;
+        let pts;
+        if (ha && hb) { const mx = (a[0] + b[0]) / 2; pts = [a, [mx, a[1]], [mx, b[1]], b]; }
+        else if (!ha && !hb) { const my = (a[1] + b[1]) / 2; pts = [a, [a[0], my], [b[0], my], b]; }
+        else if (ha) pts = [a, [b[0], a[1]], b];
+        else pts = [a, [a[0], b[1]], b];
+        return { points: pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.01), bezier: false };
+    }
+    return { points: [a, b], bezier: false };
+}
+
+/** Lines attached to shapes that moved (data-glconnect): redrawn from where the shapes are now. */
+function liveConnectors(root) {
+    within(root, '[data-glconnect]').forEach(node => {
+        let spec;
+        try { spec = JSON.parse(node.getAttribute('data-glconnect')); } catch (e) { return; }
+        const scope = node.parentElement || root;
+        const boxOf = (end) => {
+            if (!end) return null;
+            const t = scope.querySelector(`:scope > [data-glid="${end.id}"]`);
+            if (!t) return null;
+            const px = (v) => parseFloat(v) || 0;
+            const rot = /rotate\((-?[\d.]+)deg\)/.exec(t.style.transform || '');
+            return { x: px(t.style.left), y: px(t.style.top), width: px(t.style.width), height: px(t.style.height), rotate: rot ? Number(rot[1]) : 0, off: t.classList.contains('gl-off') };
+        };
+        const A0 = boxOf(spec.from);
+        const B0 = boxOf(spec.to);
+        if (!A0 && !B0) return;
+        node.classList.toggle('gl-off', Boolean((A0 && A0.off) || (B0 && B0.off)));
+        const centre = (b) => [b.x + b.width / 2, b.y + b.height / 2];
+        const freeA = (spec.free && spec.free[0]) || [0, 0];
+        const freeB = (spec.free && spec.free[1]) || [0, 0];
+        const end = (box, e, other, free) => (box ? boxAnchor(box, e.side === 'auto' ? boxFacing(box, other) : e.side) : { point: free, normal: [0, 0] });
+        const A = end(A0, spec.from, B0 ? centre(B0) : freeB, freeA);
+        const B = end(B0, spec.to, A0 ? centre(A0) : freeA, freeB);
+        const { points, bezier } = connectorRoute(A.point, A.normal, B.point, B.normal, spec.route);
+        let x = Math.min(...points.map(p => p[0]));
+        let y = Math.min(...points.map(p => p[1]));
+        let w = Math.max(...points.map(p => p[0])) - x;
+        let h = Math.max(...points.map(p => p[1])) - y;
+        if (w < 1) { x -= (1 - w) / 2; w = 1; }
+        if (h < 1) { y -= (1 - h) / 2; h = 1; }
+        Object.assign(node.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+        const svg = node.querySelector('svg');
+        const path = svg && svg.querySelector(':scope > path'); // the line (an arrowhead's path is in <defs>)
+        if (!path) return;
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        const P = (p) => `${(p[0] - x).toFixed(2)},${(p[1] - y).toFixed(2)}`;
+        let d = `M${P(points[0])}`;
+        if (bezier) d += ` C${P(points[1])} ${P(points[2])} ${P(points[3])}`;
+        else d += points.slice(1).map(p => ` L${P(p)}`).join('');
+        path.setAttribute('d', d);
+    });
+}
+
 function liveBindings(root, vars) {
     within(root, '[data-glbind]').forEach(node => {
         let formulas;
@@ -1789,6 +1881,7 @@ function liveBindings(root, vars) {
             }
         });
     });
+    liveConnectors(root);
 }
 
 /** Nodes of `root` matching `selector`, but not inside the print pages (unless `root` is one). */
