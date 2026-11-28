@@ -226,7 +226,7 @@ await page.uncheck('[data-unused-file="figures/old.png"]');
 await page.click('[data-settings-action="files-delete"]');
 await page.waitForTimeout(100);
 const asking = await app(() => document.querySelector('[data-settings-action="files-delete"]')?.textContent.trim());
-check('…Delete asks once more, nothing deleted yet', asking === 'Click again: delete 1 file' && (await app(() => window.__deleted)) === undefined, asking);
+check('…Delete asks once more, nothing deleted yet', asking === 'Click again: move 1 file to the trash' && (await app(() => window.__deleted)) === undefined, asking);
 await page.click('[data-settings-action="files-delete"]');
 await page.waitForTimeout(250);
 const afterDelete = await app(() => ({ deleted: window.__deleted, left: [...document.querySelectorAll('[data-unused-file]')].map(i => i.dataset.unusedFile) }));

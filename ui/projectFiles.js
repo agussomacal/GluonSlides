@@ -3,8 +3,9 @@
 // project's figures/ and data/ folders, what uses each (a click goes to
 // it), the ones nothing uses, and the same file twice (same content:
 // backend/projectfiles.py). Open a file or its folder with the system;
-// merge a duplicate (what uses it then uses the other copy, and it is
-// deleted); delete the ticked files (asks once more). The sidebar button
+// merge a duplicate (what uses it then uses the other copy, and it goes
+// to the trash); move the ticked files to the project's .trash/ (asks once
+// more); Restore puts one back (a merge undone too); empty the trash. The sidebar button
 // shows how many could be cleaned up.
 // ============================================================
 
@@ -13,7 +14,7 @@ import { escapeHtml } from '../core/render.js';
 import { linkedCopies } from '../core/projectLinks.js';
 
 const MODAL_ID = 'project-files-modal';
-const ui = { files: null, ticked: new Set(), confirm: false, error: '' };
+const ui = { files: null, trash: [], ticked: new Set(), confirm: false, confirmEmpty: false, error: '' };
 
 const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 const LABELS = { figure: 'figure', table: 'table', plot: 'plot', choice: 'choice', text: 'text', columns: 'columns', shape: 'shape', group: 'group' };
@@ -95,6 +96,9 @@ async function load() {
     });
     ui.ticked = new Set(ui.files.filter(f => !f.used).map(f => f.path));
     ui.confirm = false;
+    ui.confirmEmpty = false;
+    const t = typeof api.list_project_trash === 'function' ? await api.list_project_trash(state.projectFolder) : null;
+    ui.trash = (t && t.entries) || [];
 }
 
 function originalOf(path) {
@@ -136,9 +140,9 @@ function render() {
         <h2>🗂 Project files</h2>
         <p class="prop-hint">The project's <code>figures/</code> and <code>data/</code>: what uses each file, those nothing uses, and the same file twice.${n ? ` <b>${n}</b> could be cleaned up.` : ' Nothing to clean up.'}</p>
         ${ui.error ? `<p class="prop-error">${escapeHtml(ui.error)}</p>` : ''}
-        <div class="pf-list">${ui.files === null ? '<p class="prop-hint">Looking…</p>' : `${section('figures', 'Figures')}${section('data', 'Data')}`}</div>
+        <div class="pf-list">${ui.files === null ? '<p class="prop-hint">Looking…</p>' : `${section('figures', 'Figures')}${section('data', 'Data')}${trashSection()}`}</div>
         <div class="modal-actions">
-            <button type="button" class="btn ${ui.confirm ? 'btn-danger' : 'btn-secondary'}" data-pf-delete ${ui.ticked.size ? '' : 'disabled'}>${ui.confirm ? `Click again: delete ${ui.ticked.size} file${ui.ticked.size === 1 ? '' : 's'}` : `🗑 Delete the ticked (${ui.ticked.size}, ${size(total)})`}</button>
+            <button type="button" class="btn ${ui.confirm ? 'btn-danger' : 'btn-secondary'}" data-pf-delete ${ui.ticked.size ? '' : 'disabled'}>${ui.confirm ? `Click again: move ${ui.ticked.size} file${ui.ticked.size === 1 ? '' : 's'} to the trash` : `🗑 Move the ticked to the trash (${ui.ticked.size}, ${size(total)})`}</button>
             <button type="button" class="btn btn-secondary" data-pf-refresh>↻ Look again</button>
             <button type="button" class="btn btn-primary" data-pf-close>Done</button>
         </div>`;
@@ -146,20 +150,46 @@ function render() {
     if (list) list.scrollTop = scroll;
 }
 
-/** What uses `from` uses `to` instead (every place the project names it). */
-function replaceReferences(from, to) {
+function trashSection() {
+    if (!ui.trash.length) return '';
+    const when = (t) => new Date(t * 1000).toLocaleString();
+    return `<div class="pf-section"><div class="pf-head"><b>Recently removed</b> <span class="prop-hint">in the project's .trash/ folder</span>
+        <button type="button" class="btn ${ui.confirmEmpty ? 'btn-danger' : 'btn-secondary'}" data-pf-empty>${ui.confirmEmpty ? 'Click again: delete them for good' : 'Empty the trash'}</button></div>
+        ${ui.trash.map(e => `<div class="pf-row unused"><label class="pf-tick"></label><div class="pf-main"><div><code>${escapeHtml(e.path)}</code> <span class="prop-hint">${size(e.size || 0)} · ${escapeHtml(when(e.time))}${e.note && e.note.merged_into ? ` · merged into ${escapeHtml(e.note.merged_into)}` : ''}</span></div></div>
+            <div class="pf-ops"><button type="button" class="btn btn-secondary pf-merge" data-pf-restore="${escapeHtml(e.id)}" title="Put it back${e.note && e.note.merged_into ? ', and what used it uses it again' : ''}">Restore</button></div></div>`).join('')}</div>`;
+}
+
+/** Every element, wherever it is: [{ el }]. */
+function everyElement(fn) {
+    const visit = (els) => forEachElementDeep(els || [], fn);
+    (state.slides || []).forEach(s => visit(s.elements));
+    (state.masters || []).forEach(m => visit(m.elements));
+    Object.values(state.macros || {}).forEach(m => visit(m.children));
+}
+
+/** In these elements (ids; null: all) and the variable files, `from` becomes `to`. Returns the ids changed. */
+function replaceReferences(from, to, ids = null) {
     const re = new RegExp(pathRe(from).source, 'g');
     const swap = (v) => {
         if (typeof v === 'string') return v.replace(re, to);
         if (Array.isArray(v)) return v.map(swap);
-        if (v && typeof v === 'object') { Object.keys(v).forEach(k => { v[k] = swap(v[k]); }); return v; }
+        if (v && typeof v === 'object') { Object.keys(v).forEach(k => { if (k !== 'children') v[k] = swap(v[k]); }); return v; }
         return v;
     };
-    swap(state.slides);
-    swap(state.masters);
-    swap(state.macros);
-    state.varFiles = (state.varFiles || []).filter(f => f.file !== from || !(state.varFiles || []).some(g => g.file === to));
-    swap(state.varFiles);
+    const changed = [];
+    everyElement(el => {
+        if (ids && !ids.includes(el.id)) return;
+        const before = JSON.stringify(el, (k, v) => (k === 'children' ? undefined : v));
+        if (!re.test(before)) return;
+        re.lastIndex = 0;
+        swap(el);
+        changed.push(el.id);
+    });
+    if (!ids) {
+        state.varFiles = (state.varFiles || []).filter(f => f.file !== from || !(state.varFiles || []).some(g => g.file === to));
+        swap(state.varFiles);
+    }
+    return changed;
 }
 
 async function refresh() {
@@ -201,11 +231,32 @@ function wire(m) {
             const from = merge.dataset.pfMerge;
             const f = ui.files.find(x => x.path === from);
             if (!f || !f.same_as) return;
-            replaceReferences(from, f.same_as);
+            const ids = replaceReferences(from, f.same_as);
             markDirty();
             (await import('../editor/editor.js')).renderEditor();
-            const res = await api.delete_project_files(state.projectFolder, [from]);
+            // to the trash, with what changed: Restore puts it back
+            const res = await api.delete_project_files(state.projectFolder, [from], { merged_into: f.same_as, ids });
             flashSaveIndicator(res && res.deleted && res.deleted.length ? `${from} merged into ${f.same_as} ✓` : `Now using ${f.same_as}; ${from} could not be deleted`);
+            refresh();
+            return;
+        }
+        const restore = at('[data-pf-restore]');
+        if (restore) {
+            const res = await api.restore_project_files(state.projectFolder, [restore.dataset.pfRestore]);
+            const back = (res && res.restored) || [];
+            back.forEach(r => {
+                // a merged file: what used it uses it again
+                if (r.note && r.note.merged_into && Array.isArray(r.note.ids)) replaceReferences(r.note.merged_into, r.path, r.note.ids);
+            });
+            if (back.some(r => r.note && r.note.merged_into)) { markDirty(); (await import('../editor/editor.js')).renderEditor(); }
+            flashSaveIndicator(back.length ? `${back[0].path} restored ✓` : `Could not restore it${res && res.errors && res.errors[0] ? `: ${res.errors[0]}` : ''}`);
+            refresh();
+            return;
+        }
+        if (at('[data-pf-empty]')) {
+            if (!ui.confirmEmpty) { ui.confirmEmpty = true; render(); return; }
+            await api.empty_project_trash(state.projectFolder);
+            flashSaveIndicator('Trash emptied');
             refresh();
             return;
         }
@@ -213,7 +264,7 @@ function wire(m) {
             if (!ui.confirm) { ui.confirm = true; render(); return; }
             const res = await api.delete_project_files(state.projectFolder, [...ui.ticked]);
             const n = res && res.deleted ? res.deleted.length : 0;
-            flashSaveIndicator(`${n} file${n === 1 ? '' : 's'} deleted${res && res.errors && res.errors.length ? ` (${res.errors.length} not: ${res.errors[0]})` : ''}`);
+            flashSaveIndicator(`${n} file${n === 1 ? '' : 's'} moved to the trash (Restore below)${res && res.errors && res.errors.length ? ` (${res.errors.length} not: ${res.errors[0]})` : ''}`);
             refresh();
         }
     });

@@ -239,9 +239,27 @@ class Api:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def delete_project_files(self, project_folder, paths):
-        """Deletes files of data/ and figures/ (Project settings → Files, clean up)."""
-        return {"success": True, **projectfiles.delete_files(project_folder, paths)}
+    def delete_project_files(self, project_folder, paths, note=None):
+        """Moves files of data/ and figures/ into the project's .trash/ (they can be restored)."""
+        return {"success": True, **projectfiles.delete_files(project_folder, paths, note=note)}
+
+    def list_project_trash(self, project_folder):
+        """What the project's .trash/ holds."""
+        try:
+            return {"success": True, "entries": projectfiles.list_trash(project_folder)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def restore_project_files(self, project_folder, ids):
+        """Puts files of .trash/ back."""
+        try:
+            return {"success": True, **projectfiles.restore_files(project_folder, ids)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def empty_project_trash(self, project_folder):
+        """Deletes what .trash/ holds for good."""
+        return {"success": True, **projectfiles.empty_trash(project_folder)}
 
     def refresh_plot_data(self, project_folder, items):
         """Re-copy plot data files whose original changed; the rows of those that changed."""

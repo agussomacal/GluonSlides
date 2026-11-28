@@ -23,10 +23,24 @@ await page.addInitScript(() => {
     ];
     window.__opened = [];
     window.__deleted = [];
+    window.__trash = [];
     window.pywebview = { api: {
         list_project_files: (folder, text) => ok({ files: window.__files.map(f => ({ ...f, mtime: 1, named: text.includes(f.path) })) }),
         open_project_file: (folder, rel, folderOnly) => { window.__opened.push(`${rel}${folderOnly ? ' (folder)' : ''}`); return ok(); },
-        delete_project_files: (folder, paths) => { window.__deleted.push(...paths); window.__files = window.__files.filter(f => !paths.includes(f.path)); return ok({ deleted: paths, errors: [] }); },
+        delete_project_files: (folder, paths, note) => {
+            window.__deleted.push(...paths);
+            paths.forEach(p => { const f = window.__files.find(x => x.path === p); window.__trash.push({ id: `t${window.__trash.length}`, path: p, size: f ? f.size : 0, time: 1795000000, note: note || null, file: f }); });
+            window.__files = window.__files.filter(f => !paths.includes(f.path));
+            return ok({ deleted: paths, errors: [] });
+        },
+        list_project_trash: () => ok({ entries: window.__trash.map(({ file, ...e }) => e) }),
+        restore_project_files: (folder, ids) => {
+            const back = window.__trash.filter(e => ids.includes(e.id));
+            window.__trash = window.__trash.filter(e => !ids.includes(e.id));
+            back.forEach(e => window.__files.push(e.file));
+            return ok({ restored: back.map(e => ({ id: e.id, path: e.path, was: e.path, note: e.note })), errors: [] });
+        },
+        empty_project_trash: () => { window.__trash = []; return ok({ emptied: true }); },
         read_plot_data: () => ok({ header: ['x', 'y'], rows: [['1', '2']], total: 1, mtime: 1 }),
         refresh_plot_data: () => ok({ updated: [] }),
         read_table_file: () => ok({ rows: [['x', 'y'], ['1', '2']], total: 2, mtime: 1 }),
@@ -84,7 +98,7 @@ await page.click('[data-pf-merge="data/run_1.csv"]');
 await page.waitForTimeout(300);
 const merged = await app(async () => ({ src: (await import('/core/state.js')).state.slides[1].elements[1].data.src, deleted: window.__deleted }));
 check('Merge: the table now uses data/run.csv, run_1.csv deleted', merged.src === 'data/run.csv' && JSON.stringify(merged.deleted) === '["data/run_1.csv"]', merged);
-const rows2 = await app(() => [...document.querySelectorAll('.pf-row')].map(r => r.textContent.replace(/\s+/g, ' ').trim()));
+const rows2 = await app(() => [...document.querySelectorAll('.pf-row')].filter(r => !r.querySelector('[data-pf-restore]')).map(r => r.textContent.replace(/\s+/g, ' ').trim()));
 check('…the list looked at again: run.csv used by the plot and the table', rows2.length === 3 && rows2.some(r => /run\.csv 39 B slide 2 · plot\s?slide 2 · table/.test(r)), rows2);
 
 // a duplicate following another original can't be merged
@@ -102,10 +116,24 @@ check('…a duplicate that follows another original: Merge off, saying why', blo
 await page.click('[data-pf-delete]');
 await page.waitForTimeout(80);
 const asking = await app(() => document.querySelector('[data-pf-delete]').textContent.trim());
-check('Delete asks once more', asking === 'Click again: delete 1 file' && !(await app(() => window.__deleted.includes('data/old.csv'))), asking);
+check('Delete asks once more', asking === 'Click again: move 1 file to the trash' && !(await app(() => window.__deleted.includes('data/old.csv'))), asking);
 await page.click('[data-pf-delete]');
 await page.waitForTimeout(250);
-check('…then deletes it', await app(() => window.__deleted.includes('data/old.csv') && ![...document.querySelectorAll('.pf-row')].some(r => r.textContent.includes('old.csv'))));
+check('…then moves it to the trash', await app(() => window.__deleted.includes('data/old.csv') && ![...document.querySelectorAll('.pf-row')].some(r => !r.querySelector('[data-pf-restore]') && r.textContent.includes('old.csv'))));
+
+// the trash: Restore puts a file back; a merged one: what used it uses it again
+const trashRows = await app(() => [...document.querySelectorAll('[data-pf-restore]')].map(b => b.closest('.pf-row').textContent.replace(/\s+/g, ' ').trim()));
+check('Recently removed: the merged file and the deleted one, Restore each', trashRows.length === 2 && trashRows.some(r => /run_1\.csv .*merged into data\/run\.csv/.test(r)) && trashRows.some(r => /old\.csv/.test(r)), trashRows);
+await page.click('[data-pf-restore="t0"]');
+await page.waitForTimeout(300);
+const restored = await app(async () => ({ src: (await import('/core/state.js')).state.slides[1].elements[1].data.src, plot: (await import('/core/state.js')).state.slides[1].elements[0].code, trash: window.__trash.map(e => e.path) }));
+check('…Restore of a merged file: back, and the table uses it again (the plot doesn\'t)', restored.src === 'data/run_1.csv' && restored.plot.includes('data:{data/run.csv}') && JSON.stringify(restored.trash) === '["data/old.csv"]', restored);
+await page.click('[data-pf-empty]');
+await page.waitForTimeout(80);
+check('…Empty the trash asks once more', (await app(() => document.querySelector('[data-pf-empty]').textContent.trim())) === 'Click again: delete them for good');
+await page.click('[data-pf-empty]');
+await page.waitForTimeout(250);
+check('…then empties it', (await app(() => window.__trash.length === 0 && !document.querySelector('[data-pf-restore]'))));
 
 // a click on what uses a file goes to it
 await page.click('.pf-use[data-pf-goto="2"]');
@@ -113,7 +141,7 @@ await page.waitForTimeout(250);
 const went = await app(async () => { const { state } = await import('/core/state.js'); return { slide: state.currentSlideIndex, open: document.getElementById('project-files-modal').classList.contains('show') }; });
 check('a click on "slide 1 · figure": the dialog closes, slide 1 shown', went.slide === 0 && !went.open, went);
 const badge2 = await app(async () => { await (await import('/ui/projectFiles.js')).refreshFilesBadge(); const b = document.querySelector('[data-action="open-project-files"] .files-badge'); return b.hidden ? 'hidden' : b.textContent; });
-check('the button\'s count follows (other.csv is still the same as run.csv)', badge2 === '1 to clean', badge2);
+check('the button\'s count follows (other.csv and run_1.csv are the same as run.csv)', badge2 === '2 to clean', badge2);
 
 check('no page errors', errors.length === 0, errors);
 console.log(out.join('\n'));

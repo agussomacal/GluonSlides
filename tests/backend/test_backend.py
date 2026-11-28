@@ -136,10 +136,28 @@ class ProjectFilesTest(TempDirTest):
         # named in the project's text (a picture in a text box): used
         unused = [f["path"] for f in unused_files(self.project, None, 'see ![](figures/old.png) and {data/used.csv}')]
         self.assertEqual(unused, ["data/old_1.csv"])
-        res = delete_files(self.project, ["data/old_1.csv", "../outside.txt", "Gluon.gl"])
+        res = delete_files(self.project, ["data/old_1.csv", "../outside.txt", "Gluon.gl"], note={"merged_into": "data/used.csv"})
         self.assertEqual(res["deleted"], ["data/old_1.csv"])
         self.assertEqual(len(res["errors"]), 2)
         self.assertFalse(os.path.exists(os.path.join(self.project, "data", "old_1.csv")))
+        # in the trash, with its note; restored where it was
+        from backend.projectfiles import list_trash, restore_files, empty_trash
+        trash = list_trash(self.project)
+        self.assertEqual([(e["path"], e["note"]) for e in trash], [("data/old_1.csv", {"merged_into": "data/used.csv"})])
+        # the trash isn't a project file
+        self.assertNotIn(".trash", " ".join(f["path"] for f in unused_files(self.project, [])))
+        got = restore_files(self.project, [trash[0]["id"]])
+        self.assertEqual([r["path"] for r in got["restored"]], ["data/old_1.csv"])
+        self.assertTrue(os.path.exists(os.path.join(self.project, "data", "old_1.csv")))
+        self.assertEqual(list_trash(self.project), [])
+        # a file of that name there since: restored under another name
+        delete_files(self.project, ["data/old_1.csv"])
+        Path(os.path.join(self.project, "data", "old_1.csv")).write_text("new")
+        got = restore_files(self.project, [list_trash(self.project)[0]["id"]])
+        self.assertEqual(got["restored"][0]["path"], "data/old_1_1.csv")
+        delete_files(self.project, ["data/old_1_1.csv"])
+        empty_trash(self.project)
+        self.assertFalse(os.path.exists(os.path.join(self.project, ".trash")))
 
 
 class ProjectFileListTest(TempDirTest):

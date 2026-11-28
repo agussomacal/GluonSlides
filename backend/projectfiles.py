@@ -15,8 +15,10 @@ or import a file, so the same file isn't copied twice.
 """
 
 import hashlib
+import json
 import os
 import shutil
+import time
 
 
 def _rel(path, project_folder):
@@ -114,21 +116,95 @@ def unused_files(project_folder, used=None, text="", folders=("data", "figures")
     return out
 
 
-def delete_files(project_folder, paths, folders=("data", "figures")):
-    """Deletes these files (only inside data/ and figures/): {"deleted": [...], "errors": [...]}."""
+TRASH = ".trash"
+
+
+def _trash_index(project_folder):
+    return os.path.join(project_folder, TRASH, "index.json")
+
+
+def _read_trash(project_folder):
+    try:
+        with open(_trash_index(project_folder), encoding="utf-8") as f:
+            entries = json.load(f)
+        return entries if isinstance(entries, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _write_trash(project_folder, entries):
+    os.makedirs(os.path.join(project_folder, TRASH), exist_ok=True)
+    with open(_trash_index(project_folder), "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=1)
+
+
+def delete_files(project_folder, paths, folders=("data", "figures"), note=None):
+    """Moves these files (only of data/ and figures/) into <project>/.trash/, so they can be
+    restored: {"deleted": [...], "errors": [...]}. `note`: kept with each (what a merge changed)."""
     deleted, errors = [], []
     allowed = [os.path.join(project_folder, f) for f in folders]
+    entries = _read_trash(project_folder)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
     for rel in paths or []:
         path = os.path.abspath(os.path.join(project_folder, rel))
         if not any(_inside(path, a) for a in allowed) or not os.path.isfile(path):
             errors.append(f"{rel}: not a file of data/ or figures/")
             continue
         try:
-            os.remove(path)
+            entry_id = f"{stamp}-{len(entries)}"
+            dest = os.path.join(project_folder, TRASH, entry_id, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.move(path, dest)
+            entries.append({"id": entry_id, "path": rel, "size": os.path.getsize(dest), "time": time.time(), "note": note})
             deleted.append(rel)
         except OSError as e:
             errors.append(f"{rel}: {e}")
+    if deleted:
+        _write_trash(project_folder, entries)
     return {"deleted": deleted, "errors": errors}
+
+
+def list_trash(project_folder):
+    """What .trash/ holds, newest first: [{"id", "path", "size", "time", "note"}]."""
+    entries = [e for e in _read_trash(project_folder)
+               if os.path.isfile(os.path.join(project_folder, TRASH, e.get("id", ""), e.get("path", "")))]
+    return sorted(entries, key=lambda e: -e.get("time", 0))
+
+
+def restore_files(project_folder, ids):
+    """Puts files of .trash/ back where they were (a file there since: a name not used, run_1.csv):
+    {"restored": [{"id", "path", "note"}], "errors": [...]}."""
+    entries = _read_trash(project_folder)
+    restored, errors, keep = [], [], []
+    wanted = set(ids or [])
+    for e in entries:
+        if e.get("id") not in wanted:
+            keep.append(e)
+            continue
+        src = os.path.join(project_folder, TRASH, e["id"], e["path"])
+        if not os.path.isfile(src):
+            errors.append(f"{e['path']}: no longer in the trash")
+            continue
+        dest = os.path.join(project_folder, e["path"])
+        base, ext = os.path.splitext(dest)
+        n = 1
+        while os.path.exists(dest):
+            dest = f"{base}_{n}{ext}"
+            n += 1
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(src, dest)
+        shutil.rmtree(os.path.join(project_folder, TRASH, e["id"]), ignore_errors=True)
+        restored.append({"id": e["id"], "path": _rel(dest, project_folder), "was": e["path"], "note": e.get("note")})
+    _write_trash(project_folder, keep)
+    return {"restored": restored, "errors": errors}
+
+
+def empty_trash(project_folder):
+    """Deletes what .trash/ holds for good."""
+    folder = os.path.join(project_folder or "", TRASH)
+    if project_folder and os.path.isdir(folder):
+        shutil.rmtree(folder, ignore_errors=True)
+    return {"emptied": True}
 
 
 def list_files(project_folder, text="", folders=("figures", "data")):

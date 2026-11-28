@@ -231,7 +231,7 @@ function filesTab() {
     return `${head}
         <div class="unused-files">${f.list.map(x => `<label class="prop-check"><input type="checkbox" data-unused-file="${escapeHtml(x.path)}" ${ui.ticked.has(x.path) ? 'checked' : ''}> <code>${escapeHtml(x.path)}</code> <span class="prop-hint">${size(x.size)}</span></label>`).join('')}</div>
         <div class="arrange-row" style="margin-top:8px;">
-            <button type="button" class="btn ${ui.confirm ? 'btn-danger' : 'btn-secondary'}" data-settings-action="files-delete" ${ui.ticked.size ? '' : 'disabled'}>${ui.confirm ? `Click again: delete ${ui.ticked.size} file${ui.ticked.size === 1 ? '' : 's'}` : `🗑 Delete the ticked files (${size(total)})`}</button>
+            <button type="button" class="btn ${ui.confirm ? 'btn-danger' : 'btn-secondary'}" data-settings-action="files-delete" ${ui.ticked.size ? '' : 'disabled'}>${ui.confirm ? `Click again: move ${ui.ticked.size} file${ui.ticked.size === 1 ? '' : 's'} to the trash` : `🗑 Move the ticked to the trash (${size(total)})`}</button>
             <button type="button" class="btn btn-secondary" data-settings-action="files-refresh">↻ Look again</button>
         </div>`;
 }
@@ -594,7 +594,7 @@ function wire(m) {
             const paths = [...ui.ticked];
             pyApi().delete_project_files(state.projectFolder, paths).then(res => {
                 const n = (res && res.deleted) ? res.deleted.length : 0;
-                flashSaveIndicator(`${n} file${n === 1 ? '' : 's'} deleted${res && res.errors && res.errors.length ? ` (${res.errors.length} not: ${res.errors[0]})` : ''}`);
+                flashSaveIndicator(`${n} file${n === 1 ? '' : 's'} moved to the trash (🗂 Project files can restore them)${res && res.errors && res.errors.length ? ` (${res.errors.length} not: ${res.errors[0]})` : ''}`);
                 ui.files = null;
                 render();
             });
