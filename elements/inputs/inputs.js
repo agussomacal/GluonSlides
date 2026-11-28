@@ -15,7 +15,8 @@
 // A choice may take its options from a file in the project (copied into
 // data/ and followed when the original changes): a CSV's column names
 // (use:header) or a column's values (use:column:optimizer), a JSON's keys
-// (use:keys) or the keys of an object inside it (use:keys:runs.final).
+// (use:keys) or the keys of an object inside it (use:keys:runs.final);
+// skip:"step" leaves some out (a plot's x column, say).
 // ============================================================
 
 import { state, activeElements, markDirty, pyApi, flashSaveIndicator } from '../../core/state.js';
@@ -246,12 +247,12 @@ function initChoicePanel() {
 function keepFileOptions(el) {
     if (!el.source) return;
     const r = fileOptions(el);
-    if (!r.loading && !r.error) el.options = r.options.join(', ');
+    if (!r.loading && !r.error) el.options = choiceOptions(el).join(', ');
 }
 
 ElementRegistry.register({
     type: 'choice', label: 'Add Choice', icon: '📋', className: 'element-choice', category: 'interactive',
-    gl: { props: [...COMMON_PROPS, 'options', 'multiple', 'source', 'use', 'original'], numericProps: COMMON_NUMERIC, body: null },
+    gl: { props: [...COMMON_PROPS, 'options', 'multiple', 'source', 'use', 'skip', 'original'], numericProps: COMMON_NUMERIC, body: null },
     defaults: base('choice', () => ({ var: freshName('choice'), options: 'A, B, C', value: 'A', multiple: 'no', label: 'Choose' }), [460, 70]),
     renderDom(domEl, el, ctx) { keepFileOptions(el); renderBox(domEl, el); domEl.innerHTML = choiceMarkup(el, current(el)); bindOnCanvas(domEl, ctx); },
     exportStyle,

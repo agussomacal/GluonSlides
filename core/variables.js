@@ -99,11 +99,12 @@ export function fileOptions(el) {
     return { options: [...new Set((t.rows || []).map(r => String(r[i] ?? '').trim()).filter(Boolean))] };
 }
 
-/** The options of a choice: written ("Adam, SGD, NGD"), or from a file (while it is read: the written ones). */
+/** The options of a choice: written ("Adam, SGD, NGD"), or from a file (while it is read: the written ones), less skip:"step, x". */
 export function choiceOptions(el) {
     if (el.source) {
         const r = fileOptions(el);
-        if (!r.loading && !r.error) return r.options;
+        const skip = new Set(String(el.skip || '').split(',').map(o => o.trim()).filter(Boolean));
+        if (!r.loading && !r.error) return r.options.filter(o => !skip.has(o));
     }
     return String(el.options ?? '').split(',').map(o => o.trim()).filter(Boolean);
 }

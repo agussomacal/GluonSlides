@@ -2250,3 +2250,23 @@ body.picking-follower #slide-canvas .canvas-element:hover { outline: 2px solid #
 .anim-row { display: grid; grid-template-columns: 1fr 1.2fr 0.8fr 0.8fr auto; gap: 4px; margin-bottom: 4px; align-items: center; }
 .anim-row .anim-wide { grid-column: span 2; }
 .element-checkbox input, .element-numberbox input, .element-textbox input, .element-choice select { pointer-events: auto; }
+
+/* ui/dataDrop.js: a CSV / JSON dropped on a slide */
+.data-drop { position: fixed; z-index: 2500; width: 400px; max-height: calc(100vh - 16px); overflow-y: auto; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,0.4); padding: 12px; color: var(--text-main); font-size: 13px; }
+.dd-title { font-weight: 600; margin-bottom: 8px; }
+.dd-title span { font-weight: 400; color: var(--text-muted); }
+.dd-preview { overflow-x: auto; margin-bottom: 8px; border: 1px solid var(--border-color); border-radius: 6px; }
+.dd-preview table { border-collapse: collapse; font-size: 11px; font-family: ui-monospace, Menlo, monospace; width: 100%; }
+.dd-preview th, .dd-preview td { padding: 2px 6px; border-bottom: 1px solid var(--border-color); text-align: left; white-space: nowrap; }
+.dd-preview th { color: var(--text-muted); font-weight: 600; }
+.dd-more { font-size: 11px; color: var(--text-muted); padding: 2px 6px; }
+.dd-keys { margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.dd-modes, .dd-kinds { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.dd-mode, .dd-chip { border: 1px solid var(--border-color); background: transparent; color: var(--text-main); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.dd-mode.on, .dd-chip.on { background: rgba(59, 130, 246, 0.25); border-color: #3b82f6; }
+.dd-body { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.dd-format { display: flex; flex-direction: column; gap: 4px; }
+.dd-inline { display: inline-block; width: auto; padding: 1px 4px; margin-left: 4px; }
+.dd-ys { display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; }
+.dd-sub { margin-left: 22px; }
+.dd-actions { display: flex; justify-content: flex-end; gap: 8px; }

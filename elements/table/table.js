@@ -425,7 +425,7 @@ export function parseCellsText(text) {
 }
 
 /** Props for a new table holding `rows`: the box grows to fit them. */
-function propsForRows(rows, extra = {}) {
+export function propsForRows(rows, extra = {}) {
     const scale = state.slideWidth / 1920;
     const cols = rows.length ? rows[0].length : 1;
     const fontSize = Math.round(28 * scale);
